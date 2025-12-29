@@ -1,0 +1,217 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum ContentType {
+  SYMPTOMS      // Sintomas
+  DIET          // Dieta
+  ACTIVITIES    // Atividades
+  CARE          // Cuidados
+  TRAINING      // Treino
+  EXAMS         // Exames
+  DOCUMENTS     // Documentos
+  MEDICATIONS   // Medicações
+  DIARY         // Diário
+}
+
+enum ContentCategory {
+  // Sintomas
+  NORMAL        // Verde - esperado
+  WARNING       // Amarelo - avisar
+  EMERGENCY     // Vermelho - emergência
+  // Dieta/Atividades
+  ALLOWED       // Permitido/Recomendado
+  RESTRICTED    // Evitar/Com moderação
+  PROHIBITED    // Proibido
+  // Genérico
+  INFO          // Informativo
+}
+
+enum AdjustmentType {
+  ADD           // Adicionar item novo
+  DISABLE       // Desativar item base
+  MODIFY        // Modificar item base
+}
+
+enum UserRole {
+  PATIENT
+  CLINIC_ADMIN
+  CLINIC_STAFF
+  THIRD_PARTY
+}
+
+// ==================== USUÁRIOS E CLÍNICAS ====================
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          UserRole  @default(PATIENT)
+
+  clinicId      String?
+  clinic        Clinic?   @relation(fields: [clinicId], references: [id])
+
+  patient       Patient?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Clinic {
+  id            String    @id @default(uuid())
+  name          String
+  email         String?
+  phone         String?
+  address       String?
+
+  // Branding
+  logoUrl       String?
+  primaryColor  String?   @default("#4F4A34")
+  secondaryColor String?  @default("#A49E86")
+
+  users         User[]
+  patients      Patient[]
+  contents      ClinicContent[]
+
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("clinics")
+}
+
+model Patient {
+  id            String    @id @default(uuid())
+
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  clinicId      String
+  clinic        Clinic    @relation(fields: [clinicId], references: [id])
+
+  // Dados do paciente
+  cpf           String?
+  phone         String?
+  birthDate     DateTime?
+
+  // Dados da cirurgia
+  surgeryDate   DateTime?
+  surgeryType   String?
+
+  contentAdjustments PatientContentAdjustment[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("patients")
+}
+
+// ==================== TEMPLATES DO SISTEMA ====================
+// Conteúdos padrão copiados automaticamente para toda nova clínica
+
+model SystemContentTemplate {
+  id              String          @id @default(uuid())
+
+  type            ContentType
+  category        ContentCategory
+
+  title           String
+  description     String?
+
+  // Relevância por dia pós-operatório
+  validFromDay    Int?
+  validUntilDay   Int?
+
+  sortOrder       Int             @default(0)
+  isActive        Boolean         @default(true)
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([type])
+  @@index([type, category])
+  @@map("system_content_templates")
+}
+
+// ==================== CONTEÚDOS DA CLÍNICA ====================
+// Copiados dos templates + customizações da clínica
+
+model ClinicContent {
+  id              String          @id @default(uuid())
+
+  clinicId        String
+  clinic          Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // Referência ao template original
+  templateId      String?
+
+  type            ContentType
+  category        ContentCategory
+
+  title           String
+  description     String?
+
+  validFromDay    Int?
+  validUntilDay   Int?
+
+  sortOrder       Int             @default(0)
+  isActive        Boolean         @default(true)
+  isCustom        Boolean         @default(false)  // true = criado pela clínica
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  patientAdjustments PatientContentAdjustment[]
+
+  @@index([clinicId])
+  @@index([clinicId, type])
+  @@index([clinicId, type, category])
+  @@index([clinicId, type, isActive])
+  @@map("clinic_contents")
+}
+
+// ==================== AJUSTES POR PACIENTE ====================
+
+model PatientContentAdjustment {
+  id              String          @id @default(uuid())
+
+  patientId       String
+  patient         Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  // Referência ao conteúdo base (null se for ADD)
+  baseContentId   String?
+  baseContent     ClinicContent?  @relation(fields: [baseContentId], references: [id], onDelete: Cascade)
+
+  adjustmentType  AdjustmentType
+
+  // Dados para ADD ou MODIFY
+  contentType     ContentType?
+  category        ContentCategory?
+  title           String?
+  description     String?
+  validFromDay    Int?
+  validUntilDay   Int?
+
+  // Motivo médico
+  reason          String?
+
+  isActive        Boolean         @default(true)
+  createdBy       String?
+  createdAt       DateTime        @default(now())
+
+  @@index([patientId])
+  @@index([baseContentId])
+  @@map("patient_content_adjustments")
+}

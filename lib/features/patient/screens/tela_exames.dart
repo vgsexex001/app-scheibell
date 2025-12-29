@@ -1,0 +1,681 @@
+import 'package:flutter/material.dart';
+
+enum StatusExame {
+  normal,
+  alteracaoLeve,
+  precisaRevisao,
+}
+
+class ExameCompleto {
+  final String id;
+  final String nome;
+  final DateTime data;
+  final StatusExame status;
+  final String analiseIA;
+
+  ExameCompleto({
+    required this.id,
+    required this.nome,
+    required this.data,
+    required this.status,
+    required this.analiseIA,
+  });
+}
+
+class TelaExames extends StatefulWidget {
+  const TelaExames({super.key});
+
+  @override
+  State<TelaExames> createState() => _TelaExamesState();
+}
+
+class _TelaExamesState extends State<TelaExames> {
+  // Cores
+  static const _gradientStart = Color(0xFFA49E86);
+  static const _gradientEnd = Color(0xFFD7D1C5);
+  static const _textoPrimario = Color(0xFF1A1A1A);
+  static const _textoSecundario = Color(0xFF495565);
+  static const _textoAnalise = Color(0xFF354152);
+  static const _corBorda = Color(0xFFE0E0E0);
+
+  // Banner
+  static const _bannerFundo = Color(0xFFEFF6FF);
+  static const _bannerBorda = Color(0xFFBDDAFF);
+  static const _bannerTexto = Color(0xFF1B388E);
+
+  // Status colors
+  static const _corBadgeNormal = Color(0xFF00C950);
+  static const _corBadgeAlteracao = Color(0xFFF0B100);
+  static const _corBadgeRevisao = Color(0xFFFB2C36);
+
+  // Análise colors
+  static const _analiseNormalFundo = Color(0xFFF0FDF4);
+  static const _analiseNormalBorda = Color(0xFFB8F7CF);
+  static const _analiseAlteracaoFundo = Color(0xFFFEFCE8);
+  static const _analiseAlteracaoBorda = Color(0xFFFEEF85);
+  static const _analiseRevisaoFundo = Color(0xFFFEF2F2);
+  static const _analiseRevisaoBorda = Color(0xFFFFC9C9);
+
+  // Botões
+  static const _botaoFundo = Color(0xFFF5F7FA);
+  static const _botaoAgendar = Color(0xFF155DFC);
+  static const _botaoPrincipal = Color(0xFF4F4A34);
+
+  // Dados mock
+  final List<ExameCompleto> _exames = [
+    ExameCompleto(
+      id: '1',
+      nome: 'Hemograma completo',
+      data: DateTime(2024, 11, 5),
+      status: StatusExame.normal,
+      analiseIA: 'Todos os valores dentro da normalidade. Hemoglobina e leucócitos em níveis adequados.',
+    ),
+    ExameCompleto(
+      id: '2',
+      nome: 'Glicemia em jejum',
+      data: DateTime(2024, 11, 5),
+      status: StatusExame.normal,
+      analiseIA: 'Glicemia dentro da faixa normal (85 mg/dL).',
+    ),
+    ExameCompleto(
+      id: '3',
+      nome: 'Ultrassom abdominal',
+      data: DateTime(2024, 11, 3),
+      status: StatusExame.precisaRevisao,
+      analiseIA: 'Detectada pequena alteração na região hepática. Recomenda-se avaliação médica.',
+    ),
+    ExameCompleto(
+      id: '4',
+      nome: 'ECG',
+      data: DateTime(2024, 11, 2),
+      status: StatusExame.alteracaoLeve,
+      analiseIA: 'Ritmo sinusal normal com ligeira taquicardia. Acompanhamento recomendado.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Column(
+        children: [
+          // Header gradiente
+          _buildHeader(),
+
+          // Banner informativo
+          _buildBannerInfo(),
+
+          // Lista de exames
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(24),
+              itemCount: _exames.length,
+              itemBuilder: (context, index) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: _buildCardExame(_exames[index]),
+                );
+              },
+            ),
+          ),
+
+          // Botão Adicionar exame
+          _buildBotaoAdicionar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 24,
+        left: 24,
+        right: 24,
+        bottom: 16,
+      ),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [_gradientStart, _gradientEnd],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Botão voltar + Título
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Text(
+                'Exames',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  height: 1.33,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Subtítulo
+          Opacity(
+            opacity: 0.9,
+            child: const Text(
+              'Resultados e análises com IA',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                height: 1.43,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBannerInfo() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: _bannerFundo,
+        border: Border(
+          bottom: BorderSide(
+            color: _bannerBorda,
+            width: 1,
+          ),
+        ),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: _bannerTexto,
+            size: 20,
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Os resultados são analisados por IA para identificação rápida de alterações. Sempre consulte seu médico para avaliação completa.',
+              style: TextStyle(
+                color: _bannerTexto,
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                height: 1.43,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardExame(ExameCompleto exame) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: _corBorda,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Linha 1: Nome + Badge de status
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      exame.nome,
+                      style: const TextStyle(
+                        color: _textoPrimario,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        height: 1.50,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatarData(exame.data),
+                      style: const TextStyle(
+                        color: _textoSecundario,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        height: 1.43,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildBadgeStatus(exame.status),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Caixa de análise IA
+          _buildCaixaAnaliseIA(exame),
+          const SizedBox(height: 12),
+
+          // Botões de ação
+          _buildBotoesAcao(exame),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBadgeStatus(StatusExame status) {
+    return Container(
+      height: 21,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: _getCorBadge(status),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _getIconeBadge(status),
+            color: Colors.white,
+            size: 12,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            _getTextoBadge(status),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1.33,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCaixaAnaliseIA(ExameCompleto exame) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _getCorAnaliseFundo(exame.status),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _getCorAnaliseBorda(exame.status),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '🤖 Análise IA:',
+            style: TextStyle(
+              color: _textoAnalise,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1.33,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            exame.analiseIA,
+            style: const TextStyle(
+              color: _textoAnalise,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              height: 1.43,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBotoesAcao(ExameCompleto exame) {
+    // Se precisa revisão, mostra 2 botões
+    if (exame.status == StatusExame.precisaRevisao) {
+      return Row(
+        children: [
+          // Botão Ver laudo
+          Expanded(
+            child: _buildBotaoVerLaudo(),
+          ),
+          const SizedBox(width: 8),
+          // Botão Agendar consulta (azul)
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                Navigator.pushNamed(context, '/agenda');
+              },
+              child: Container(
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _botaoAgendar,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Agendar consulta',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        height: 1.43,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Caso contrário, só mostra Ver laudo
+    return _buildBotaoVerLaudo();
+  }
+
+  Widget _buildBotaoVerLaudo() {
+    return GestureDetector(
+      onTap: () {
+        // TODO: Abrir laudo
+        debugPrint('Ver laudo');
+      },
+      child: Container(
+        height: 32,
+        decoration: BoxDecoration(
+          color: _botaoFundo,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _corBorda,
+            width: 1,
+          ),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.description_outlined,
+              color: _textoPrimario,
+              size: 16,
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Ver laudo',
+              style: TextStyle(
+                color: _textoPrimario,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                height: 1.43,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBotaoAdicionar() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.only(
+        top: 24,
+        left: 24,
+        right: 24,
+        bottom: MediaQuery.of(context).padding.bottom + 24,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: _corBorda,
+            width: 1,
+          ),
+        ),
+      ),
+      child: GestureDetector(
+        onTap: () {
+          _mostrarOpcoesAdicionar();
+        },
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            color: _botaoPrincipal,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.add,
+                color: Colors.white,
+                size: 16,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Adicionar exame',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1.43,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _mostrarOpcoesAdicionar() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0E0E0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Adicionar exame',
+              style: TextStyle(
+                color: _textoPrimario,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 24),
+            _buildOpcaoAdicionar(
+              icone: Icons.camera_alt_outlined,
+              titulo: 'Tirar foto',
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            _buildOpcaoAdicionar(
+              icone: Icons.photo_library_outlined,
+              titulo: 'Escolher da galeria',
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            _buildOpcaoAdicionar(
+              icone: Icons.upload_file_outlined,
+              titulo: 'Importar PDF',
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            SizedBox(height: MediaQuery.of(context).padding.bottom),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOpcaoAdicionar({
+    required IconData icone,
+    required String titulo,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F7FA),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Icon(
+                icone,
+                color: _botaoPrincipal,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text(
+              titulo,
+              style: const TextStyle(
+                color: _textoPrimario,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            const Icon(
+              Icons.chevron_right,
+              color: _textoSecundario,
+              size: 24,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helpers
+  Color _getCorBadge(StatusExame status) {
+    switch (status) {
+      case StatusExame.normal:
+        return _corBadgeNormal;
+      case StatusExame.alteracaoLeve:
+        return _corBadgeAlteracao;
+      case StatusExame.precisaRevisao:
+        return _corBadgeRevisao;
+    }
+  }
+
+  IconData _getIconeBadge(StatusExame status) {
+    switch (status) {
+      case StatusExame.normal:
+        return Icons.check_circle_outline;
+      case StatusExame.alteracaoLeve:
+        return Icons.warning_amber_outlined;
+      case StatusExame.precisaRevisao:
+        return Icons.error_outline;
+    }
+  }
+
+  String _getTextoBadge(StatusExame status) {
+    switch (status) {
+      case StatusExame.normal:
+        return 'Normal';
+      case StatusExame.alteracaoLeve:
+        return 'Alteração leve';
+      case StatusExame.precisaRevisao:
+        return 'Precisa revisão';
+    }
+  }
+
+  Color _getCorAnaliseFundo(StatusExame status) {
+    switch (status) {
+      case StatusExame.normal:
+        return _analiseNormalFundo;
+      case StatusExame.alteracaoLeve:
+        return _analiseAlteracaoFundo;
+      case StatusExame.precisaRevisao:
+        return _analiseRevisaoFundo;
+    }
+  }
+
+  Color _getCorAnaliseBorda(StatusExame status) {
+    switch (status) {
+      case StatusExame.normal:
+        return _analiseNormalBorda;
+      case StatusExame.alteracaoLeve:
+        return _analiseAlteracaoBorda;
+      case StatusExame.precisaRevisao:
+        return _analiseRevisaoBorda;
+    }
+  }
+
+  String _formatarData(DateTime data) {
+    const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+                   'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    return '${data.day} ${meses[data.month - 1]} ${data.year}';
+  }
+}
