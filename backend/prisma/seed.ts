@@ -1,4 +1,4 @@
-import { PrismaClient, ContentType, ContentCategory } from '@prisma/client';
+import { PrismaClient, ContentType, ContentCategory, AppointmentType, AppointmentStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -110,8 +110,20 @@ async function main() {
     { type: ContentType.TRAINING, category: ContentCategory.INFO, title: 'Após 60 dias: Retorno gradual', description: 'Academia com cargas leves, aumentando gradualmente', sortOrder: 5, validFromDay: 61 },
   ];
 
+  // ==================== MEDICAÇÕES ====================
+  const medicacoes: TemplateData[] = [
+    { type: ContentType.MEDICATIONS, category: ContentCategory.INFO, title: 'Antibiótico', description: 'Tomar 1 comprimido de 8 em 8 horas por 7 dias', sortOrder: 1, validFromDay: 1, validUntilDay: 7 },
+    { type: ContentType.MEDICATIONS, category: ContentCategory.INFO, title: 'Anti-inflamatório', description: 'Tomar 1 comprimido de 12 em 12 horas por 5 dias', sortOrder: 2, validFromDay: 1, validUntilDay: 5 },
+    { type: ContentType.MEDICATIONS, category: ContentCategory.INFO, title: 'Analgésico', description: 'Tomar 1 comprimido de 6 em 6 horas se dor', sortOrder: 3, validFromDay: 1, validUntilDay: 14 },
+    { type: ContentType.MEDICATIONS, category: ContentCategory.INFO, title: 'Protetor gástrico', description: 'Tomar 1 comprimido em jejum pela manhã', sortOrder: 4, validFromDay: 1, validUntilDay: 7 },
+    { type: ContentType.MEDICATIONS, category: ContentCategory.INFO, title: 'Pomada cicatrizante', description: 'Aplicar na cicatriz 2x ao dia após higienização', sortOrder: 5, validFromDay: 7, validUntilDay: 60 },
+    { type: ContentType.MEDICATIONS, category: ContentCategory.WARNING, title: 'Anticoagulante', description: 'Atenção: não usar sem orientação médica', sortOrder: 10 },
+    { type: ContentType.MEDICATIONS, category: ContentCategory.WARNING, title: 'Anti-inflamatórios não prescritos', description: 'Não tomar sem consultar o médico', sortOrder: 11 },
+    { type: ContentType.MEDICATIONS, category: ContentCategory.PROHIBITED, title: 'Aspirina', description: 'Proibido por 15 dias - aumenta risco de sangramento', sortOrder: 20, validUntilDay: 15 },
+  ];
+
   // ==================== INSERIR TODOS ====================
-  const allTemplates = [...sintomas, ...dieta, ...atividades, ...cuidados, ...treino];
+  const allTemplates = [...sintomas, ...dieta, ...atividades, ...cuidados, ...treino, ...medicacoes];
 
   let created = 0;
   let updated = 0;
@@ -156,6 +168,174 @@ async function main() {
   });
 }
 
-main()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect());
+async function createDefaultClinic() {
+  console.log('\n🏥 Criando clínica padrão...\n');
+
+  const clinicId = 'clinic-default-scheibell';
+
+  const existingClinic = await prisma.clinic.findUnique({
+    where: { id: clinicId },
+  });
+
+  if (existingClinic) {
+    console.log('   Clínica já existe, pulando criação...');
+    return clinicId;
+  }
+
+  await prisma.clinic.create({
+    data: {
+      id: clinicId,
+      name: 'Clínica Scheibell',
+      email: 'contato@clinicascheibell.com.br',
+      phone: '(11) 99999-9999',
+      address: 'Rua Exemplo, 123 - São Paulo, SP',
+      primaryColor: '#4F4A34',
+      secondaryColor: '#A49E86',
+      isActive: true,
+    },
+  });
+
+  console.log('✅ Clínica padrão criada: Clínica Scheibell');
+  return clinicId;
+}
+
+async function syncTemplatesForClinic(clinicId: string) {
+  console.log('\n📋 Sincronizando templates para a clínica...\n');
+
+  // Verificar quais templates já foram sincronizados
+  const existingTemplateIds = await prisma.clinicContent.findMany({
+    where: { clinicId, templateId: { not: null } },
+    select: { templateId: true },
+  });
+
+  const existingIds = new Set(existingTemplateIds.map((c) => c.templateId));
+
+  // Buscar templates que ainda não foram sincronizados
+  const newTemplates = await prisma.systemContentTemplate.findMany({
+    where: {
+      isActive: true,
+      id: { notIn: Array.from(existingIds) as string[] },
+    },
+  });
+
+  if (newTemplates.length === 0) {
+    console.log('   Todos os templates já estão sincronizados');
+    return;
+  }
+
+  // Criar conteúdos da clínica baseados nos templates
+  await prisma.clinicContent.createMany({
+    data: newTemplates.map((t) => ({
+      clinicId,
+      templateId: t.id,
+      type: t.type,
+      category: t.category,
+      title: t.title,
+      description: t.description,
+      validFromDay: t.validFromDay,
+      validUntilDay: t.validUntilDay,
+      sortOrder: t.sortOrder,
+      isCustom: false,
+    })),
+  });
+
+  console.log(`✅ ${newTemplates.length} conteúdos sincronizados para a clínica`);
+}
+
+async function createSampleAppointments() {
+  console.log('\n📅 Criando consultas de exemplo...\n');
+
+  // Buscar todos os pacientes
+  const patients = await prisma.patient.findMany({
+    select: { id: true, surgeryDate: true },
+  });
+
+  if (patients.length === 0) {
+    console.log('   Nenhum paciente encontrado, pulando criação de consultas...');
+    return;
+  }
+
+  for (const patient of patients) {
+    // Verificar se já tem consultas
+    const existingAppointments = await prisma.appointment.count({
+      where: { patientId: patient.id },
+    });
+
+    if (existingAppointments > 0) {
+      console.log(`   Paciente ${patient.id} já tem consultas, pulando...`);
+      continue;
+    }
+
+    const surgeryDate = patient.surgeryDate || new Date();
+    const now = new Date();
+
+    // Criar consultas de exemplo
+    const appointments = [
+      {
+        patientId: patient.id,
+        title: 'Retorno Pós-Operatório',
+        description: 'Avaliação de cicatrização e retirada de pontos',
+        date: new Date(surgeryDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 dias após cirurgia
+        time: '09:00',
+        type: AppointmentType.RETURN_VISIT,
+        status: now > new Date(surgeryDate.getTime() + 7 * 24 * 60 * 60 * 1000)
+          ? AppointmentStatus.COMPLETED
+          : AppointmentStatus.CONFIRMED,
+        location: 'Consultório 1',
+      },
+      {
+        patientId: patient.id,
+        title: 'Avaliação 1 Mês',
+        description: 'Avaliação de evolução e ajuste de medicação',
+        date: new Date(surgeryDate.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 dias após cirurgia
+        time: '10:30',
+        type: AppointmentType.EVALUATION,
+        status: AppointmentStatus.PENDING,
+        location: 'Consultório 2',
+      },
+      {
+        patientId: patient.id,
+        title: 'Fisioterapia',
+        description: 'Sessão de drenagem linfática',
+        date: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000), // 3 dias a partir de hoje
+        time: '14:00',
+        type: AppointmentType.PHYSIOTHERAPY,
+        status: AppointmentStatus.CONFIRMED,
+        location: 'Sala de Fisioterapia',
+      },
+      {
+        patientId: patient.id,
+        title: 'Avaliação 3 Meses',
+        description: 'Avaliação final de resultado',
+        date: new Date(surgeryDate.getTime() + 90 * 24 * 60 * 60 * 1000), // 90 dias após cirurgia
+        time: '11:00',
+        type: AppointmentType.EVALUATION,
+        status: AppointmentStatus.PENDING,
+        location: 'Consultório 1',
+      },
+    ];
+
+    await prisma.appointment.createMany({
+      data: appointments,
+    });
+
+    console.log(`   ✅ ${appointments.length} consultas criadas para paciente ${patient.id}`);
+  }
+}
+
+async function run() {
+  try {
+    await main();
+    const clinicId = await createDefaultClinic();
+    await syncTemplatesForClinic(clinicId);
+    await createSampleAppointments();
+    console.log('\n🎉 Seed concluído com sucesso!\n');
+  } catch (error) {
+    console.error('❌ Erro no seed:', error);
+    throw error;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+run();

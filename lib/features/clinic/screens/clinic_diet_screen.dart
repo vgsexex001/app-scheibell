@@ -301,7 +301,7 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
   ];
 
   // Mock data - será substituído por chamadas de API
-  List<_DietItem> _items = [
+  final List<_DietItem> _items = [
     _DietItem('1', 'Verduras', 'Alface, Rúcula, Espinafre, Couve', '+0', 'TODO', true),
     _DietItem('2', 'Proteínas Magras', 'Frango, Peixe, Ovos', '+0', 'TODO', true),
     _DietItem('3', 'Frutas', 'Maçã, Banana, Mamão, Melão', '+3', 'TODO', true),

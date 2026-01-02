@@ -366,7 +366,7 @@ class _PatientDocumentsDetailScreen extends StatefulWidget {
 
 class _PatientDocumentsDetailScreenState extends State<_PatientDocumentsDetailScreen> {
   // Mock data - será substituído por chamadas de API
-  List<_DocumentItem> _documents = [
+  final List<_DocumentItem> _documents = [
     _DocumentItem(
       '1',
       'Termo de Consentimento',
@@ -542,7 +542,7 @@ class _PatientDocumentsDetailScreenState extends State<_PatientDocumentsDetailSc
               ],
             ),
           ),
-          Container(
+          SizedBox(
             width: 20,
             height: 20,
             child: const Icon(

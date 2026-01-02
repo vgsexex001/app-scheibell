@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'tela_agenda.dart';
+import '../../../core/services/api_service.dart';
 
 // ========== ENUMS E MODELOS ==========
 enum StatusConsulta {
   confirmado,
   pendente,
   cancelado,
+  realizado,
 }
 
 enum TipoAgendamento {
@@ -110,6 +112,87 @@ class _TelaAgendamentosState extends State<TelaAgendamentos> {
   DateTime _mesSelecionado = DateTime.now();
   int? _diaSelecionado = 19; // Dia selecionado no calendário
 
+  // API
+  final ApiService _apiService = ApiService();
+  List<Consulta> _consultas = [];
+  bool _isLoading = true;
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarConsultas();
+  }
+
+  Future<void> _carregarConsultas() async {
+    setState(() {
+      _isLoading = true;
+      _erro = null;
+    });
+
+    try {
+      final data = await _apiService.getAppointments();
+      final consultasApi = data.map((item) => _mapearConsultaApi(item)).toList();
+
+      setState(() {
+        _consultas = consultasApi;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Erro ao carregar consultas: $e');
+      setState(() {
+        // Fallback para dados mock em caso de erro
+        _consultas = consultasMock;
+        _isLoading = false;
+        _erro = 'Não foi possível carregar as consultas. Usando dados locais.';
+      });
+    }
+  }
+
+  Consulta _mapearConsultaApi(Map<String, dynamic> item) {
+    // Mapear status da API para enum local
+    StatusConsulta status;
+    switch (item['status']) {
+      case 'CONFIRMED':
+        status = StatusConsulta.confirmado;
+        break;
+      case 'PENDING':
+        status = StatusConsulta.pendente;
+        break;
+      case 'CANCELLED':
+        status = StatusConsulta.cancelado;
+        break;
+      case 'COMPLETED':
+        status = StatusConsulta.realizado;
+        break;
+      default:
+        status = StatusConsulta.pendente;
+    }
+
+    // Mapear tipo da API para enum local
+    TipoAgendamento tipo;
+    switch (item['type']) {
+      case 'PHYSIOTHERAPY':
+        tipo = TipoAgendamento.externo;
+        break;
+      default:
+        tipo = TipoAgendamento.consulta;
+    }
+
+    return Consulta(
+      id: item['id'],
+      titulo: item['title'],
+      medico: null, // API não retorna médico ainda
+      data: DateTime.parse(item['date']),
+      horario: item['time'],
+      local: item['location'] ?? 'Local a definir',
+      status: status,
+      tipo: tipo,
+      notificacoes: [],
+      observacoes: item['description'],
+    );
+  }
+
   // Nomes dos meses em português
   static const List<String> _nomesMeses = [
     'Janeiro',
@@ -159,20 +242,94 @@ class _TelaAgendamentosState extends State<TelaAgendamentos> {
                     ),
                   ),
 
-                  // Lista de consultas
-                  ...consultasMock.map((consulta) => Padding(
-                        padding: const EdgeInsets.only(
-                            left: 24, right: 24, bottom: 16),
-                        child: _CardConsulta(
-                          consulta: consulta,
-                          onEditar: consulta.tipo == TipoAgendamento.externo
-                              ? () => _mostrarModalEditarExterno(context, consulta)
-                              : null,
-                          onSincronizar: consulta.tipo == TipoAgendamento.externo
-                              ? () => _sincronizarCalendario(consulta)
-                              : null,
+                  // Mensagem de erro (se houver)
+                  if (_erro != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF3CD),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      )),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning_amber, color: Color(0xFF856404), size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _erro!,
+                                style: const TextStyle(
+                                  color: Color(0xFF856404),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  // Loading indicator
+                  if (_isLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF4F4A34),
+                        ),
+                      ),
+                    ),
+
+                  // Lista de consultas
+                  if (!_isLoading)
+                    ..._consultas.map((consulta) => Padding(
+                          padding: const EdgeInsets.only(
+                              left: 24, right: 24, bottom: 16),
+                          child: _CardConsulta(
+                            consulta: consulta,
+                            onEditar: consulta.tipo == TipoAgendamento.externo
+                                ? () => _mostrarModalEditarExterno(context, consulta)
+                                : null,
+                            onSincronizar: consulta.tipo == TipoAgendamento.externo
+                                ? () => _sincronizarCalendario(consulta)
+                                : null,
+                          ),
+                        )),
+
+                  // Mensagem quando não há consultas
+                  if (!_isLoading && _consultas.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 48,
+                              color: Color(0xFFA49E86),
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Nenhuma consulta agendada',
+                              style: TextStyle(
+                                color: Color(0xFF495565),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Clique em "Nova consulta" para agendar',
+                              style: TextStyle(
+                                color: Color(0xFF697282),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                   const SizedBox(height: 16),
                 ],
@@ -548,9 +705,9 @@ class _TelaAgendamentosState extends State<TelaAgendamentos> {
       builder: (context) => _ModalCompromissoExterno(
         onSalvar: (novoCompromisso) {
           setState(() {
-            consultasMock.add(novoCompromisso);
+            _consultas.add(novoCompromisso);
             // Ordenar por data
-            consultasMock.sort((a, b) => a.data.compareTo(b.data));
+            _consultas.sort((a, b) => a.data.compareTo(b.data));
           });
 
           // Mostrar feedback
@@ -577,10 +734,10 @@ class _TelaAgendamentosState extends State<TelaAgendamentos> {
         consulta: consulta,
         onSalvar: (consultaAtualizada) {
           setState(() {
-            final index = consultasMock.indexWhere((c) => c.id == consulta.id);
+            final index = _consultas.indexWhere((c) => c.id == consulta.id);
             if (index != -1) {
-              consultasMock[index] = consultaAtualizada;
-              consultasMock.sort((a, b) => a.data.compareTo(b.data));
+              _consultas[index] = consultaAtualizada;
+              _consultas.sort((a, b) => a.data.compareTo(b.data));
             }
           });
 
@@ -597,7 +754,7 @@ class _TelaAgendamentosState extends State<TelaAgendamentos> {
         },
         onExcluir: () {
           setState(() {
-            consultasMock.removeWhere((c) => c.id == consulta.id);
+            _consultas.removeWhere((c) => c.id == consulta.id);
           });
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -820,6 +977,10 @@ class _CardConsulta extends StatelessWidget {
       case StatusConsulta.cancelado:
         cor = const Color(0xFFE7000B);
         texto = 'Cancelado';
+        break;
+      case StatusConsulta.realizado:
+        cor = const Color(0xFF2196F3);
+        texto = 'Realizado';
         break;
     }
 

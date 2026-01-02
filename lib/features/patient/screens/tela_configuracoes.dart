@@ -1,4 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../core/providers/auth_provider.dart';
+import '../../../core/services/api_service.dart';
+import '../providers/recovery_provider.dart';
+import '../providers/home_provider.dart';
+import 'tela_privacidade.dart';
+import 'tela_termos.dart';
+import 'tela_ajuda.dart';
 
 class TelaConfiguracoes extends StatefulWidget {
   const TelaConfiguracoes({super.key});
@@ -21,26 +29,97 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
   static const _corTextoPerigo2 = Color(0xFF9E0711);
   static const _corBadgeAtivo = Color(0xFF00A63E);
 
-  // Dados mock do usuário
-  final String _nomeUsuario = 'Maria';
-  final int _diasRecuperacao = 7;
-  final int _porcentagemAdesao = 85;
-  final int _tarefasConcluidas = 12;
+  // API
+  final ApiService _apiService = ApiService();
+  Map<String, dynamic> _adesaoData = {};
+  bool _carregandoDados = true;
 
-  // Dados de contato
-  final String _email = 'maria.silva@email.com';
-  final String _telefone = '(11) 98765-4321';
-  final String _endereco = 'Rua Example, 123';
-  final String _cidade = 'São Paulo, SP - 01234-567';
+  @override
+  void initState() {
+    super.initState();
+    _carregarDados();
+  }
 
-  // Dados de saúde
-  final String _tipoSanguineo = 'O+';
-  final String _alergias = 'Nenhuma';
+  Future<void> _carregarDados() async {
+    try {
+      final adesao = await _apiService.getMedicationAdherence(days: 7).catchError((_) => <String, dynamic>{});
+      if (mounted) {
+        setState(() {
+          _adesaoData = adesao;
+          _carregandoDados = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _carregandoDados = false;
+        });
+      }
+    }
+  }
 
-  // Contato de emergência
-  final String _nomeEmergencia = 'João Silva';
-  final String _relacaoEmergencia = 'Cônjuge';
-  final String _telefoneEmergencia = '(11) 99876-5432';
+  // Dados do usuário - vindos do AuthProvider
+  String get _nomeUsuario {
+    final user = context.read<AuthProvider>().user;
+    return user?.firstName ?? 'Usuário';
+  }
+
+  int get _diasRecuperacao {
+    final user = context.read<AuthProvider>().user;
+    return user?.daysPostOp ?? 0;
+  }
+
+  String get _email {
+    final user = context.read<AuthProvider>().user;
+    return user?.email ?? 'email@exemplo.com';
+  }
+
+  int get _porcentagemAdesao {
+    if (_adesaoData.isEmpty) return 0;
+    return _adesaoData['adherence'] as int? ?? 0;
+  }
+
+  int get _tarefasConcluidas {
+    if (_adesaoData.isEmpty) return 0;
+    return _adesaoData['taken'] as int? ?? 0;
+  }
+
+  // Dados de contato - vindos do AuthProvider
+  String get _telefone {
+    final user = context.read<AuthProvider>().user;
+    return user?.phone ?? 'Não informado';
+  }
+
+  // Dados de saúde - TODO: Adicionar no backend
+  String get _tipoSanguineo {
+    return 'Não informado';
+  }
+
+  String get _alergias {
+    return 'Não informado';
+  }
+
+  // Contato de emergência - TODO: Adicionar no backend
+  String get _nomeEmergencia {
+    return 'Não cadastrado';
+  }
+
+  String get _relacaoEmergencia {
+    return '-';
+  }
+
+  String get _telefoneEmergencia {
+    return '-';
+  }
+
+  // Endereço - TODO: Adicionar no backend
+  String get _endereco {
+    return 'Não informado';
+  }
+
+  String get _cidade {
+    return '';
+  }
 
   // Configurações
   bool _notificacoesPush = true;
@@ -656,14 +735,17 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
               icone: Icons.lock_outline,
               titulo: 'Alterar Senha',
               onTap: () {
-                // TODO: Navegar para alterar senha
+                Navigator.pushNamed(context, '/alterar-senha');
               },
             ),
             _buildItemNavegacao(
               icone: Icons.shield_outlined,
               titulo: 'Privacidade',
               onTap: () {
-                // TODO: Navegar para privacidade
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TelaPrivacidade()),
+                );
               },
             ),
           ],
@@ -701,14 +783,20 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
               icone: Icons.description_outlined,
               titulo: 'Termos de Uso',
               onTap: () {
-                // TODO: Abrir termos de uso
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TelaTermos()),
+                );
               },
             ),
             _buildItemNavegacao(
               icone: Icons.help_outline,
               titulo: 'Ajuda',
               onTap: () {
-                // TODO: Abrir ajuda
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TelaAjuda()),
+                );
               },
             ),
           ],
@@ -721,7 +809,7 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
   Widget _buildBotaoEditarPerfil() {
     return GestureDetector(
       onTap: () {
-        // TODO: Navegar para tela de edição
+        Navigator.pushNamed(context, '/editar-perfil');
       },
       child: Container(
         width: double.infinity,
@@ -792,20 +880,37 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
   }
 
   void _mostrarDialogSair() {
+    // Capturar referências aos providers ANTES de abrir o dialog
+    final authProvider = context.read<AuthProvider>();
+    final recoveryProvider = context.read<RecoveryProvider>();
+    final homeProvider = context.read<HomeProvider>();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Sair da Conta'),
         content: const Text('Tem certeza que deseja sair da sua conta?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+            onPressed: () async {
+              // Fechar dialog primeiro
+              Navigator.pop(dialogContext);
+
+              // Limpar dados dos providers
+              recoveryProvider.reset();
+              homeProvider.reset();
+
+              // Fazer logout usando a referência capturada
+              await authProvider.logout();
+
+              // Navegar para login removendo todas as rotas
+              if (mounted) {
+                Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+              }
             },
             child: const Text(
               'Sair',

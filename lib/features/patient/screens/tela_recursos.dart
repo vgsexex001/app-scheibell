@@ -1,4 +1,8 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 
 // ========== MODELOS ==========
 class Video {
@@ -41,8 +45,24 @@ class ContatoEmergencia {
   });
 }
 
-class TelaRecursos extends StatelessWidget {
+class TelaRecursos extends StatefulWidget {
   const TelaRecursos({super.key});
+
+  @override
+  State<TelaRecursos> createState() => _TelaRecursosState();
+}
+
+class _TelaRecursosState extends State<TelaRecursos> {
+  // Controller do Google Maps
+  GoogleMapController? _mapController;
+
+  // Localização atual
+  LatLng _currentPosition = const LatLng(-23.5505, -46.6333); // São Paulo como padrão
+  bool _isLoadingLocation = true;
+  String? _locationError;
+
+  // Marcadores no mapa (locais úteis)
+  final Set<Marker> _markers = {};
 
   // Cores
   static const _corGradienteInicio = Color(0xFFA49E86);
@@ -105,6 +125,187 @@ class TelaRecursos extends StatelessWidget {
     telefone: '+5511999999999',
     whatsapp: '5511999999999',
   );
+
+  // Locais úteis (farmácias, hospitais, clínicas próximas)
+  // TODO: Estes dados devem vir da API da clínica
+  static const List<Map<String, dynamic>> _locaisUteis = [
+    {
+      'id': '1',
+      'nome': 'Clínica Scheibell',
+      'tipo': 'clinica',
+      'lat': -23.5505,
+      'lng': -46.6333,
+    },
+    {
+      'id': '2',
+      'nome': 'Farmácia 24h',
+      'tipo': 'farmacia',
+      'lat': -23.5515,
+      'lng': -46.6343,
+    },
+    {
+      'id': '3',
+      'nome': 'Hospital São Paulo',
+      'tipo': 'hospital',
+      'lat': -23.5495,
+      'lng': -46.6323,
+    },
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeMap();
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  /// Inicializa o mapa e busca localização
+  Future<void> _initializeMap() async {
+    await _getCurrentLocation();
+    _setupMarkers();
+  }
+
+  /// Obtém a localização atual do usuário
+  Future<void> _getCurrentLocation() async {
+    try {
+      // Verifica se o serviço de localização está ativo
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          _locationError = 'Serviço de localização desativado';
+          _isLoadingLocation = false;
+        });
+        return;
+      }
+
+      // Verifica permissões
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _locationError = 'Permissão de localização negada';
+            _isLoadingLocation = false;
+          });
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _locationError = 'Permissão de localização negada permanentemente';
+          _isLoadingLocation = false;
+        });
+        return;
+      }
+
+      // Obtém a posição atual
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      setState(() {
+        _currentPosition = LatLng(position.latitude, position.longitude);
+        _isLoadingLocation = false;
+      });
+
+      // Move câmera para posição atual
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLng(_currentPosition),
+      );
+    } catch (e) {
+      setState(() {
+        _locationError = 'Erro ao obter localização: $e';
+        _isLoadingLocation = false;
+      });
+      debugPrint('Erro de localização: $e');
+    }
+  }
+
+  /// Configura os marcadores no mapa
+  void _setupMarkers() {
+    final markers = <Marker>{};
+
+    // Adiciona marcador da localização atual
+    markers.add(
+      Marker(
+        markerId: const MarkerId('current_location'),
+        position: _currentPosition,
+        infoWindow: const InfoWindow(title: 'Você está aqui'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+    );
+
+    // Adiciona marcadores dos locais úteis
+    for (final local in _locaisUteis) {
+      final position = LatLng(local['lat'] as double, local['lng'] as double);
+
+      // Cor do marcador baseada no tipo
+      double hue;
+      switch (local['tipo']) {
+        case 'clinica':
+          hue = BitmapDescriptor.hueViolet;
+          break;
+        case 'farmacia':
+          hue = BitmapDescriptor.hueGreen;
+          break;
+        case 'hospital':
+          hue = BitmapDescriptor.hueRed;
+          break;
+        default:
+          hue = BitmapDescriptor.hueOrange;
+      }
+
+      markers.add(
+        Marker(
+          markerId: MarkerId(local['id'] as String),
+          position: position,
+          infoWindow: InfoWindow(
+            title: local['nome'] as String,
+            snippet: _getTipoLabel(local['tipo'] as String),
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(hue),
+          onTap: () {
+            _onMarkerTapped(local);
+          },
+        ),
+      );
+    }
+
+    setState(() {
+      _markers.clear();
+      _markers.addAll(markers);
+    });
+  }
+
+  String _getTipoLabel(String tipo) {
+    switch (tipo) {
+      case 'clinica':
+        return 'Clínica';
+      case 'farmacia':
+        return 'Farmácia';
+      case 'hospital':
+        return 'Hospital';
+      default:
+        return 'Local';
+    }
+  }
+
+  void _onMarkerTapped(Map<String, dynamic> local) {
+    debugPrint('Marcador tocado: ${local['nome']}');
+    // TODO: Abrir detalhes do local ou navegação
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -695,15 +896,16 @@ class TelaRecursos extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // Mapa (placeholder)
+        // Mapa do Google Maps
         Container(
           width: double.infinity,
           height: 360,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: const Color(0xFFD9D9D9),
             borderRadius: BorderRadius.circular(15),
             border: Border.all(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               width: 1,
             ),
             boxShadow: const [
@@ -716,72 +918,243 @@ class TelaRecursos extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              // Placeholder do mapa
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.map,
-                      size: 64,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Mapa será exibido aqui',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Indicador de distância (canto inferior esquerdo)
-              Positioned(
-                left: 16,
-                bottom: 16,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.black.withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+              // Google Maps ou estado de loading/erro
+              if (_isLoadingLocation)
+                const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        'Distância',
-                        style: TextStyle(
-                          color: Color(0xFF373737),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w300,
-                        ),
+                      CircularProgressIndicator(
+                        color: Color(0xFFA49E86),
                       ),
-                      SizedBox(height: 4),
+                      SizedBox(height: 16),
                       Text(
-                        '3 Metros',
+                        'Carregando mapa...',
                         style: TextStyle(
-                          color: Color(0xFF373737),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF495565),
+                          fontSize: 14,
                         ),
                       ),
                     ],
                   ),
+                )
+              else if (_locationError != null)
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.location_off,
+                        size: 48,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _locationError!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _initializeMap,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Tentar novamente'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA49E86),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: _isMapsSupported()
+                      ? GoogleMap(
+                          onMapCreated: _onMapCreated,
+                          initialCameraPosition: CameraPosition(
+                            target: _currentPosition,
+                            zoom: 15,
+                          ),
+                          markers: _markers,
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: false,
+                          zoomControlsEnabled: false,
+                          mapToolbarEnabled: false,
+                        )
+                      : _buildMapPlaceholder(),
                 ),
-              ),
+
+              // Legenda dos marcadores (canto superior direito)
+              if (!_isLoadingLocation && _locationError == null)
+                Positioned(
+                  right: 12,
+                  top: 12,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x29000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildLegendaItem(Colors.purple, 'Clínica'),
+                        const SizedBox(height: 4),
+                        _buildLegendaItem(Colors.green, 'Farmácia'),
+                        const SizedBox(height: 4),
+                        _buildLegendaItem(Colors.red, 'Hospital'),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Botões de controle do mapa (canto inferior direito)
+              if (!_isLoadingLocation && _locationError == null)
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: Column(
+                    children: [
+                      // Botão centralizar na localização atual
+                      _buildMapButton(
+                        icon: Icons.my_location,
+                        onPressed: () {
+                          _mapController?.animateCamera(
+                            CameraUpdate.newLatLng(_currentPosition),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      // Botão zoom in
+                      _buildMapButton(
+                        icon: Icons.add,
+                        onPressed: () {
+                          _mapController?.animateCamera(CameraUpdate.zoomIn());
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      // Botão zoom out
+                      _buildMapButton(
+                        icon: Icons.remove,
+                        onPressed: () {
+                          _mapController?.animateCamera(CameraUpdate.zoomOut());
+                        },
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  // ========== HELPERS DO MAPA ==========
+
+  /// Verifica se a plataforma atual suporta Google Maps
+  bool _isMapsSupported() {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
+  }
+
+  /// Placeholder para plataformas que não suportam Google Maps (Windows, Linux, macOS, Web)
+  Widget _buildMapPlaceholder() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFFE8E8E8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.map_outlined,
+            size: 64,
+            color: Colors.grey[500],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Mapa disponível apenas\nno Android e iOS',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Execute o app em um dispositivo móvel\npara visualizar o mapa',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendaItem(Color cor, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: cor,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            color: Color(0xFF373737),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMapButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(8),
+      elevation: 2,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          child: Icon(
+            icon,
+            size: 20,
+            color: const Color(0xFF495565),
+          ),
+        ),
+      ),
     );
   }
 

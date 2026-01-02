@@ -11,7 +11,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _currentMonth = DateTime(2024, 12, 1);
   DateTime _selectedDate = DateTime(2024, 12, 8);
   String _selectedFilter = 'ALL';
-  int _selectedNavIndex = 4; // Calendário tab
+  final int _selectedNavIndex = 4; // Calendário tab
 
   // Mock - será substituído por API
   final List<_Appointment> _appointments = [

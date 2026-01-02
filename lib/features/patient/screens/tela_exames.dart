@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/services/api_service.dart';
 
 enum StatusExame {
   normal,
@@ -12,6 +13,7 @@ class ExameCompleto {
   final DateTime data;
   final StatusExame status;
   final String analiseIA;
+  final String? fileUrl;
 
   ExameCompleto({
     required this.id,
@@ -19,7 +21,32 @@ class ExameCompleto {
     required this.data,
     required this.status,
     required this.analiseIA,
+    this.fileUrl,
   });
+
+  factory ExameCompleto.fromJson(Map<String, dynamic> json) {
+    return ExameCompleto(
+      id: json['id'] as String,
+      nome: json['title'] as String,
+      data: DateTime.parse(json['date'] as String),
+      status: _parseStatus(json['status'] as String?),
+      analiseIA: json['result'] ?? json['notes'] ?? 'Resultado pendente',
+      fileUrl: json['fileUrl'] as String?,
+    );
+  }
+
+  static StatusExame _parseStatus(String? status) {
+    switch (status) {
+      case 'PENDING':
+        return StatusExame.alteracaoLeve;
+      case 'AVAILABLE':
+        return StatusExame.normal;
+      case 'VIEWED':
+        return StatusExame.normal;
+      default:
+        return StatusExame.alteracaoLeve;
+    }
+  }
 }
 
 class TelaExames extends StatefulWidget {
@@ -30,6 +57,14 @@ class TelaExames extends StatefulWidget {
 }
 
 class _TelaExamesState extends State<TelaExames> {
+  // API Service
+  final ApiService _apiService = ApiService();
+
+  // Estado
+  List<ExameCompleto> _examesApi = [];
+  bool _carregando = true;
+  String? _erro;
+
   // Cores
   static const _gradientStart = Color(0xFFA49E86);
   static const _gradientEnd = Color(0xFFD7D1C5);
@@ -37,11 +72,6 @@ class _TelaExamesState extends State<TelaExames> {
   static const _textoSecundario = Color(0xFF495565);
   static const _textoAnalise = Color(0xFF354152);
   static const _corBorda = Color(0xFFE0E0E0);
-
-  // Banner
-  static const _bannerFundo = Color(0xFFEFF6FF);
-  static const _bannerBorda = Color(0xFFBDDAFF);
-  static const _bannerTexto = Color(0xFF1B388E);
 
   // Status colors
   static const _corBadgeNormal = Color(0xFF00C950);
@@ -61,8 +91,8 @@ class _TelaExamesState extends State<TelaExames> {
   static const _botaoAgendar = Color(0xFF155DFC);
   static const _botaoPrincipal = Color(0xFF4F4A34);
 
-  // Dados mock
-  final List<ExameCompleto> _exames = [
+  // Dados mock (fallback)
+  final List<ExameCompleto> _examesMock = [
     ExameCompleto(
       id: '1',
       nome: 'Hemograma completo',
@@ -93,6 +123,40 @@ class _TelaExamesState extends State<TelaExames> {
     ),
   ];
 
+  // Lista efetiva de exames (API ou mock)
+  List<ExameCompleto> get _exames => _examesApi.isNotEmpty ? _examesApi : _examesMock;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarExames();
+  }
+
+  Future<void> _carregarExames() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+
+    try {
+      final examesData = await _apiService.getPatientExams();
+      final exames = examesData
+          .map((json) => ExameCompleto.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      setState(() {
+        _examesApi = exames;
+        _carregando = false;
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar exames: $e');
+      setState(() {
+        _erro = e.toString();
+        _carregando = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -102,26 +166,144 @@ class _TelaExamesState extends State<TelaExames> {
           // Header gradiente
           _buildHeader(),
 
-          // Banner informativo
-          _buildBannerInfo(),
-
-          // Lista de exames
+          // Conteúdo principal
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(24),
-              itemCount: _exames.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _buildCardExame(_exames[index]),
-                );
-              },
-            ),
+            child: _carregando
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: _botaoPrincipal,
+                    ),
+                  )
+                : _erro != null && _examesApi.isEmpty
+                    ? _buildEstadoErro()
+                    : _exames.isEmpty
+                        ? _buildEstadoVazio()
+                        : RefreshIndicator(
+                            onRefresh: _carregarExames,
+                            color: _botaoPrincipal,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(24),
+                              itemCount: _exames.length,
+                              itemBuilder: (context, index) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: _buildCardExame(_exames[index]),
+                                );
+                              },
+                            ),
+                          ),
           ),
 
           // Botão Adicionar exame
           _buildBotaoAdicionar(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEstadoVazio() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: _botaoFundo,
+                borderRadius: BorderRadius.circular(40),
+              ),
+              child: const Icon(
+                Icons.science_outlined,
+                color: _textoSecundario,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Nenhum exame registrado',
+              style: TextStyle(
+                color: _textoPrimario,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Seus exames aparecerão aqui quando forem adicionados pela clínica ou por você.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _textoSecundario,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEstadoErro() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: _analiseRevisaoFundo,
+                borderRadius: BorderRadius.circular(40),
+              ),
+              child: const Icon(
+                Icons.error_outline,
+                color: _corBadgeRevisao,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Erro ao carregar exames',
+              style: TextStyle(
+                color: _textoPrimario,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _erro ?? 'Tente novamente mais tarde',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _textoSecundario,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: _carregarExames,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _botaoPrincipal,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Tentar novamente',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -190,44 +372,6 @@ class _TelaExamesState extends State<TelaExames> {
                 fontWeight: FontWeight.w400,
                 height: 1.43,
                 letterSpacing: 0.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBannerInfo() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: _bannerFundo,
-        border: Border(
-          bottom: BorderSide(
-            color: _bannerBorda,
-            width: 1,
-          ),
-        ),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline,
-            color: _bannerTexto,
-            size: 20,
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Os resultados são analisados por IA para identificação rápida de alterações. Sempre consulte seu médico para avaliação completa.',
-              style: TextStyle(
-                color: _bannerTexto,
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-                height: 1.43,
               ),
             ),
           ),

@@ -49,12 +49,33 @@ enum UserRole {
   THIRD_PARTY
 }
 
+enum AppointmentType {
+  RETURN_VISIT    // Retorno
+  EVALUATION      // Avaliação
+  PHYSIOTHERAPY   // Fisioterapia
+  EXAM            // Exame
+  OTHER           // Outro
+}
+
+enum AppointmentStatus {
+  PENDING         // Pendente
+  CONFIRMED       // Confirmado
+  CANCELLED       // Cancelado
+  COMPLETED       // Realizado
+}
+
+enum ExamStatus {
+  PENDING         // Aguardando resultado
+  AVAILABLE       // Resultado disponível
+  VIEWED          // Visualizado pelo paciente
+}
+
 // ==================== USUÁRIOS E CLÍNICAS ====================
 
 model User {
   id            String    @id @default(uuid())
   email         String    @unique
-  password      String
+  passwordHash  String
   name          String
   role          UserRole  @default(PATIENT)
 
@@ -111,11 +132,90 @@ model Patient {
   surgeryType   String?
 
   contentAdjustments PatientContentAdjustment[]
+  appointments       Appointment[]
+  medicationLogs     MedicationLog[]
+  chatConversations  ChatConversation[]
+  exams              Exam[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@map("patients")
+}
+
+// ==================== AGENDAMENTOS ====================
+
+model Appointment {
+  id          String            @id @default(uuid())
+
+  patientId   String
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  date        DateTime
+  time        String            // Horário no formato "HH:mm"
+  type        AppointmentType
+  status      AppointmentStatus @default(PENDING)
+  location    String?
+  notes       String?
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([patientId])
+  @@index([patientId, status])
+  @@index([patientId, date])
+  @@map("appointments")
+}
+
+// ==================== HISTÓRICO DE MEDICAÇÕES ====================
+
+model MedicationLog {
+  id            String    @id @default(uuid())
+
+  patientId     String
+  patient       Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  contentId     String    // ID da medicação no ClinicContent
+  takenAt       DateTime  @default(now())
+  scheduledTime String    // Horário que deveria tomar "HH:mm"
+
+  createdAt     DateTime  @default(now())
+
+  @@index([patientId])
+  @@index([patientId, takenAt])
+  @@map("medication_logs")
+}
+
+// ==================== EXAMES DO PACIENTE ====================
+
+model Exam {
+  id          String      @id @default(uuid())
+
+  patientId   String
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  title       String                    // Nome do exame (Hemograma, Ultrassom, etc)
+  type        String                    // Tipo: HEMOGRAMA, ULTRASSOM, RAIO_X, TOMOGRAFIA, etc
+  date        DateTime                  // Data do exame
+  status      ExamStatus  @default(PENDING)
+
+  fileUrl     String?                   // URL do arquivo (PDF/imagem)
+  fileName    String?                   // Nome original do arquivo
+  fileSize    Int?                      // Tamanho em bytes
+  mimeType    String?                   // Tipo MIME do arquivo
+
+  notes       String?                   // Observações do médico
+  result      String?                   // Resultado resumido
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([patientId])
+  @@index([patientId, status])
+  @@index([patientId, date])
+  @@map("exams")
 }
 
 // ==================== TEMPLATES DO SISTEMA ====================
@@ -214,4 +314,36 @@ model PatientContentAdjustment {
   @@index([patientId])
   @@index([baseContentId])
   @@map("patient_content_adjustments")
+}
+
+// ==================== CHAT IA ====================
+
+model ChatConversation {
+  id          String        @id @default(uuid())
+
+  patientId   String
+  patient     Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  messages    ChatMessage[]
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([patientId])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id              String           @id @default(uuid())
+
+  conversationId  String
+  conversation    ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role            String           // 'user' | 'assistant' | 'system'
+  content         String
+
+  createdAt       DateTime         @default(now())
+
+  @@index([conversationId])
+  @@map("chat_messages")
 }

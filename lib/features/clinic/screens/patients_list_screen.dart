@@ -11,7 +11,7 @@ class PatientsListScreen extends StatefulWidget {
 class _PatientsListScreenState extends State<PatientsListScreen> {
   String _selectedFilter = 'ALL';
   final TextEditingController _searchController = TextEditingController();
-  int _selectedNavIndex = 1; // Pacientes tab
+  final int _selectedNavIndex = 1; // Pacientes tab
 
   // Mock - será substituído por API
   final List<_Appointment> _appointments = [

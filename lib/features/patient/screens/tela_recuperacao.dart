@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'tela_medicamentos.dart';
+import '../providers/recovery_provider.dart';
 
 class TelaRecuperacao extends StatefulWidget {
   const TelaRecuperacao({super.key});
@@ -12,9 +14,6 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   // Cores
   static const _gradientStart = Color(0xFFA49E86);
   static const _gradientEnd = Color(0xFFD7D1C5);
-  static const _primaryDark = Color(0xFF4F4A34);
-  static const _textPrimary = Color(0xFF212621);
-  static const _navInactive = Color(0xFF697282);
 
   // Cores aba Normais
   static const _verdeEscuro = Color(0xFF008235);
@@ -532,6 +531,18 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Carregar dados da API quando a tela iniciar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<RecoveryProvider>();
+      if (!provider.hasLoadedFromApi) {
+        provider.loadAllContent();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _buscaController.dispose();
     super.dispose();
@@ -568,7 +579,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomNavBar(),
+      // Nota: bottomNavigationBar removida - gerenciada pelo MainNavigationScreen
     );
   }
 
@@ -801,6 +812,18 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   }
 
   Widget _buildConteudoNormais() {
+    final provider = context.watch<RecoveryProvider>();
+    final sintomasApi = provider.sintomasNormais;
+
+    // Dados fallback caso API não tenha retornado
+    final sintomasFallback = [
+      {'titulo': 'Inchaco leve', 'dias': '+0 a +14 dias'},
+      {'titulo': 'Sensibilidade ao toque', 'dias': '+0 a +21 dias'},
+      {'titulo': 'Hematomas pequenos', 'dias': '+0 a +10 dias'},
+      {'titulo': 'Vermelhidao leve', 'dias': '+0 a +7 dias'},
+      {'titulo': 'Formigamento leve', 'dias': '+0 a +30 dias'},
+    ];
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -814,57 +837,56 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
             corTitulo: _verdeEscuro,
           ),
           const SizedBox(height: 16),
-          _buildCardSintoma(
-            titulo: 'Inchaco leve',
-            dias: '+0 a +14 dias',
-            corTexto: _verdeTexto,
-            corFundo: _verdeFundo,
-            corBorda: _verdeBorda,
-            corBadge: _verdeBadge,
-            corBadgeTexto: _verdeEscuro,
-          ),
-          _buildCardSintoma(
-            titulo: 'Sensibilidade ao toque',
-            dias: '+0 a +21 dias',
-            corTexto: _verdeTexto,
-            corFundo: _verdeFundo,
-            corBorda: _verdeBorda,
-            corBadge: _verdeBadge,
-            corBadgeTexto: _verdeEscuro,
-          ),
-          _buildCardSintoma(
-            titulo: 'Hematomas pequenos',
-            dias: '+0 a +10 dias',
-            corTexto: _verdeTexto,
-            corFundo: _verdeFundo,
-            corBorda: _verdeBorda,
-            corBadge: _verdeBadge,
-            corBadgeTexto: _verdeEscuro,
-          ),
-          _buildCardSintoma(
-            titulo: 'Vermelhidao leve',
-            dias: '+0 a +7 dias',
-            corTexto: _verdeTexto,
-            corFundo: _verdeFundo,
-            corBorda: _verdeBorda,
-            corBadge: _verdeBadge,
-            corBadgeTexto: _verdeEscuro,
-          ),
-          _buildCardSintoma(
-            titulo: 'Formigamento leve',
-            dias: '+0 a +30 dias',
-            corTexto: _verdeTexto,
-            corFundo: _verdeFundo,
-            corBorda: _verdeBorda,
-            corBadge: _verdeBadge,
-            corBadgeTexto: _verdeEscuro,
-          ),
+          if (provider.isLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (sintomasApi.isNotEmpty)
+            ...sintomasApi.map((item) => _buildCardSintoma(
+                  titulo: item.title,
+                  dias: _formatDias(item.validFromDay, item.validUntilDay),
+                  corTexto: _verdeTexto,
+                  corFundo: _verdeFundo,
+                  corBorda: _verdeBorda,
+                  corBadge: _verdeBadge,
+                  corBadgeTexto: _verdeEscuro,
+                ))
+          else
+            ...sintomasFallback.map((item) => _buildCardSintoma(
+                  titulo: item['titulo']!,
+                  dias: item['dias']!,
+                  corTexto: _verdeTexto,
+                  corFundo: _verdeFundo,
+                  corBorda: _verdeBorda,
+                  corBadge: _verdeBadge,
+                  corBadgeTexto: _verdeEscuro,
+                )),
         ],
       ),
     );
   }
 
+  /// Formata os dias de validade para exibição
+  String _formatDias(int? fromDay, int? untilDay) {
+    if (fromDay == null && untilDay == null) return '';
+    if (fromDay != null && untilDay != null) {
+      return '+$fromDay a +$untilDay dias';
+    }
+    if (fromDay != null) return '+$fromDay dias';
+    return 'até +$untilDay dias';
+  }
+
   Widget _buildConteudoAvisar() {
+    final provider = context.watch<RecoveryProvider>();
+    final sintomasApi = provider.sintomasAvisar;
+
+    // Dados fallback
+    final sintomasFallback = [
+      {'titulo': 'Inchaco intenso persistente', 'urgencia': 'Contatar em 24h'},
+      {'titulo': 'Dor persistente sem melhora', 'urgencia': 'Contatar em 12h'},
+      {'titulo': 'Vermelhidao intensa', 'urgencia': 'Contatar em 24h'},
+      {'titulo': 'Calor local excessivo', 'urgencia': 'Contatar em 12h'},
+      {'titulo': 'Assimetria acentuada', 'urgencia': 'Contatar em 48h'},
+    ];
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -878,26 +900,18 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
             corTitulo: const Color(0xFFA65F00),
           ),
           const SizedBox(height: 16),
-          _buildCardAvisar(
-            titulo: 'Inchaco intenso persistente',
-            urgencia: 'Contatar em 24h',
-          ),
-          _buildCardAvisar(
-            titulo: 'Dor persistente sem melhora',
-            urgencia: 'Contatar em 12h',
-          ),
-          _buildCardAvisar(
-            titulo: 'Vermelhidao intensa',
-            urgencia: 'Contatar em 24h',
-          ),
-          _buildCardAvisar(
-            titulo: 'Calor local excessivo',
-            urgencia: 'Contatar em 12h',
-          ),
-          _buildCardAvisar(
-            titulo: 'Assimetria acentuada',
-            urgencia: 'Contatar em 48h',
-          ),
+          if (provider.isLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (sintomasApi.isNotEmpty)
+            ...sintomasApi.map((item) => _buildCardAvisar(
+                  titulo: item.title,
+                  urgencia: item.description ?? 'Contatar equipe',
+                ))
+          else
+            ...sintomasFallback.map((item) => _buildCardAvisar(
+                  titulo: item['titulo']!,
+                  urgencia: item['urgencia']!,
+                )),
         ],
       ),
     );
@@ -944,6 +958,19 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   }
 
   Widget _buildConteudoEmergencia() {
+    final provider = context.watch<RecoveryProvider>();
+    final sintomasApi = provider.sintomasEmergencia;
+
+    // Dados fallback
+    final sintomasFallback = [
+      {'titulo': 'Febre alta (> 38°C)', 'urgencia': 'Urgente'},
+      {'titulo': 'Sangramento excessivo', 'urgencia': 'Urgente'},
+      {'titulo': 'Secreção purulenta', 'urgencia': 'Urgente'},
+      {'titulo': 'Dificuldade para respirar', 'urgencia': 'Imediato'},
+      {'titulo': 'Necrose tecidual', 'urgencia': 'Imediato'},
+      {'titulo': 'Reação alérgica severa', 'urgencia': 'Imediato'},
+    ];
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -977,12 +1004,18 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
             ],
           ),
           const SizedBox(height: 16),
-          _buildCardEmergencia(titulo: 'Febre alta (> 38°C)', urgencia: 'Urgente'),
-          _buildCardEmergencia(titulo: 'Sangramento excessivo', urgencia: 'Urgente'),
-          _buildCardEmergencia(titulo: 'Secreção purulenta', urgencia: 'Urgente'),
-          _buildCardEmergencia(titulo: 'Dificuldade para respirar', urgencia: 'Imediato'),
-          _buildCardEmergencia(titulo: 'Necrose tecidual', urgencia: 'Imediato'),
-          _buildCardEmergencia(titulo: 'Reação alérgica severa', urgencia: 'Imediato'),
+          if (provider.isLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (sintomasApi.isNotEmpty)
+            ...sintomasApi.map((item) => _buildCardEmergencia(
+                  titulo: item.title,
+                  urgencia: item.description ?? 'Urgente',
+                ))
+          else
+            ...sintomasFallback.map((item) => _buildCardEmergencia(
+                  titulo: item['titulo']!,
+                  urgencia: item['urgencia']!,
+                )),
           const SizedBox(height: 100),
         ],
       ),
@@ -1963,11 +1996,6 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
           dosesTotal: 4,
         ),
 
-        const SizedBox(height: 8),
-
-        // Seção Marcar Doses
-        _buildSecaoMarcarDoses(),
-
         const SizedBox(height: 100),
       ],
     );
@@ -2405,63 +2433,24 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     );
   }
 
-  Widget _buildSecaoMarcarDoses() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.check_box_outlined,
-              color: Color(0xFF697282),
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Marcar Doses como Tomadas',
-              style: TextStyle(
-                color: Color(0xFF1A1A1A),
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const Icon(
-            Icons.expand_more,
-            color: Color(0xFF697282),
-            size: 24,
-          ),
-        ],
-      ),
-    );
-  }
-
   // ========== CATEGORIA TREINO ==========
 
   Widget _buildConteudoTreino() {
+    // Usar dados da API se disponíveis, caso contrário usar mock local
+    final provider = context.watch<RecoveryProvider>();
+    final semanasParaExibir = provider.semanasProtocolo.isNotEmpty
+        ? provider.semanasProtocolo
+        : _semanasProtocolo;
+    final fcBasalExibir = provider.fcBasal;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Banner Protocolo
-        _buildBannerProtocolo(),
+        _buildBannerProtocolo(fcBasalExibir),
 
         // Cards de Semanas
-        ..._semanasProtocolo.map((semana) => _buildCardSemana(
+        ...semanasParaExibir.map((semana) => _buildCardSemana(
               semana,
               _semanasExpandidas.contains(semana['numero'] as int),
               () => _toggleSemana(semana['numero'] as int),
@@ -2485,7 +2474,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     );
   }
 
-  Widget _buildBannerProtocolo() {
+  Widget _buildBannerProtocolo(int fcBasal) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.all(24),
@@ -2546,14 +2535,14 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
                 const SizedBox(height: 12),
                 // FC Basal
                 Row(
-                  children: const [
-                    Icon(
+                  children: [
+                    const Icon(
                       Icons.favorite_border,
                       color: Color(0xFF697282),
                       size: 16,
                     ),
-                    SizedBox(width: 6),
-                    Text(
+                    const SizedBox(width: 6),
+                    const Text(
                       'Sua FC Basal: ',
                       style: TextStyle(
                         color: Color(0xFF697282),
@@ -2561,8 +2550,8 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
                       ),
                     ),
                     Text(
-                      '65 bpm',
-                      style: TextStyle(
+                      '$fcBasal bpm',
+                      style: const TextStyle(
                         color: Color(0xFF1A1A1A),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -3245,80 +3234,6 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
                   ],
                 ),
               )),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomNavBar() {
-    return Container(
-      margin: const EdgeInsets.only(left: 24, right: 24, bottom: 16),
-      height: 68,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(69),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildNavItem(Icons.home, 'Home', false, () {
-            Navigator.pushReplacementNamed(context, '/home');
-          }),
-          _buildNavItem(Icons.chat_bubble_outline, 'Chatbot', false, () {
-            Navigator.pushReplacementNamed(context, '/chatbot');
-          }),
-          _buildNavItem(Icons.favorite, 'Recuperacao', true, () {}),
-          _buildNavItem(Icons.calendar_today, 'Agenda', false, () {
-            Navigator.pushReplacementNamed(context, '/agenda');
-          }),
-          _buildNavItem(Icons.person_outline, 'Perfil', false, () {
-            Navigator.pushReplacementNamed(context, '/perfil');
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(IconData icon, String label, bool isActive, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            size: 24,
-            color: isActive ? _textPrimary : _navInactive,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-              color: isActive ? _textPrimary : _navInactive,
-            ),
-          ),
-          if (isActive)
-            Container(
-              margin: const EdgeInsets.only(top: 4),
-              width: 40,
-              height: 4,
-              decoration: const BoxDecoration(
-                color: _primaryDark,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(999),
-                  topRight: Radius.circular(999),
-                ),
-              ),
-            ),
         ],
       ),
     );

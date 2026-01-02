@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'tela_selecao_data.dart';
-import 'tela_agendamentos.dart';
+import '../../../features/agenda/presentation/pages/agenda_page.dart';
 
 class TelaAgenda extends StatefulWidget {
   final bool modoSelecao; // true = selecionando data para nova consulta
@@ -344,7 +344,7 @@ class _TelaAgendaState extends State<TelaAgenda> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => const TelaAgendamentos(),
+            builder: (context) => const AgendaPage(),
           ),
         );
       },

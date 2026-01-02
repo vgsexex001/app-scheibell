@@ -1,3 +1,8 @@
+# Environment files (API keys, secrets)
+.env
+.env.local
+.env.*.local
+
 # Miscellaneous
 *.class
 *.log
@@ -43,3 +48,35 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# =================================
+# Backend (NestJS/Node.js)
+# =================================
+
+# Dependencies
+backend/node_modules/
+backend/npm-debug.log
+backend/yarn-error.log
+
+# Build output
+backend/dist/
+
+# Environment files
+backend/.env
+backend/.env.local
+backend/.env.*.local
+
+# IDE
+.vscode/
+
+# Test coverage
+backend/coverage/
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Logs
+*.log
+logs/
+nul

@@ -297,7 +297,7 @@ class _PatientExamsDetailScreenState extends State<_PatientExamsDetailScreen>
   ];
 
   // Mock data - será substituído por chamadas de API
-  List<ExamItem> _exams = [
+  final List<ExamItem> _exams = [
     ExamItem(
       '1',
       'Hemograma Completo',

@@ -11,7 +11,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   int _selectedTabIndex = 0; // 0 = IA, 1 = Clínico, 2 = Agendamentos
-  int _selectedNavIndex = 2; // Chat tab
+  final int _selectedNavIndex = 2; // Chat tab
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 

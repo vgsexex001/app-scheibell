@@ -10,7 +10,7 @@ class ClinicContentManagementScreen extends StatefulWidget {
 
 class _ClinicContentManagementScreenState
     extends State<ClinicContentManagementScreen> {
-  int _selectedNavIndex = 3; // Conteúdos tab
+  final int _selectedNavIndex = 3; // Conteúdos tab
 
   @override
   Widget build(BuildContext context) {

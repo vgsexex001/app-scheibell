@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../core/providers/auth_provider.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/content_service.dart';
 import 'tela_configuracoes.dart';
 import 'tela_exames.dart';
 import 'tela_documentos.dart';
@@ -90,15 +94,33 @@ class _TelaPerfilState extends State<TelaPerfil> {
   static const _gradientEnd = Color(0xFFD7D1C5);
   static const _textoPrimario = Color(0xFF212621);
   static const _textoSecundario = Color(0xFF4F4A34);
-  static const _navInativo = Color(0xFF697282);
   static const _corVerde = Color(0xFF008235);
 
-  // Dados do usuário (em produção viriam do backend)
-  final String _nomeUsuario = 'Maria';
-  final int _diasRecuperacao = 7;
-  final int _porcentagemAdesao = 85;
-  final int _tarefasConcluidas = 12;
-  final DateTime _dataCirurgia = DateTime(2024, 12, 2);
+  // Dados do usuário - valores padrão que serão substituídos pelo AuthProvider
+  String get _nomeUsuario {
+    final user = context.read<AuthProvider>().user;
+    return user?.firstName ?? 'Usuário';
+  }
+
+  int get _diasRecuperacao {
+    final user = context.read<AuthProvider>().user;
+    return user?.daysPostOp ?? 0;
+  }
+
+  DateTime get _dataCirurgia {
+    final user = context.read<AuthProvider>().user;
+    return user?.surgeryDate ?? user?.createdAt ?? DateTime.now();
+  }
+
+  // Dados da API
+  final ApiService _apiService = ApiService();
+  final ContentService _contentService = ContentService();
+  int _porcentagemAdesao = 0;
+  int _tarefasConcluidas = 0;
+
+  // Dados carregados da API
+  List<ContentItem> _recursosApi = [];
+  bool _carregandoRecursos = true;
 
   // Tab selecionada
   int _tabSelecionada = 0;
@@ -194,6 +216,40 @@ class _TelaPerfilState extends State<TelaPerfil> {
   void initState() {
     super.initState();
     _marcos = _calcularMarcos();
+    _carregarDadosApi();
+    _carregarRecursos();
+  }
+
+  Future<void> _carregarDadosApi() async {
+    try {
+      final adesao = await _apiService.getMedicationAdherence(days: 7);
+      if (mounted) {
+        setState(() {
+          _porcentagemAdesao = adesao['adherence'] ?? 0;
+          _tarefasConcluidas = adesao['taken'] ?? 0;
+        });
+      }
+    } catch (e) {
+      // Fallback silencioso - mantém valores padrão
+    }
+  }
+
+  Future<void> _carregarRecursos() async {
+    try {
+      final recursos = await _contentService.getTrainingItems();
+      if (mounted) {
+        setState(() {
+          _recursosApi = recursos;
+          _carregandoRecursos = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _carregandoRecursos = false;
+        });
+      }
+    }
   }
 
   List<MarcoTimeline> _calcularMarcos() {
@@ -286,7 +342,7 @@ class _TelaPerfilState extends State<TelaPerfil> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomNavBar(),
+      // Nota: bottomNavigationBar removida - gerenciada pelo MainNavigationScreen
     );
   }
 
@@ -1137,12 +1193,129 @@ class _TelaPerfilState extends State<TelaPerfil> {
           // Header: "Recursos Educativos" + "Ver todos >"
           _buildHeaderRecursos(),
           const SizedBox(height: 12),
-          // Lista de cards de recursos
-          ..._recursos.map((recurso) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildCardRecurso(recurso),
-          )),
+          // Conteúdo dinâmico
+          if (_carregandoRecursos)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(
+                  color: Color(0xFF4F4A34),
+                ),
+              ),
+            )
+          else if (_recursosApi.isNotEmpty)
+            // Usar dados da API
+            ..._recursosApi.map((recurso) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildCardRecursoApi(recurso),
+            ))
+          else
+            // Fallback para dados mock se API não retornar nada
+            ..._recursos.map((recurso) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildCardRecurso(recurso),
+            )),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCardRecursoApi(ContentItem recurso) {
+    // Cor marrom para borda esquerda
+    const corBordaMarrom = Color(0xFF4F4A34);
+
+    // Determinar tipo baseado no título ou descrição
+    String tipo = 'documento';
+    if (recurso.title.toLowerCase().contains('vídeo') ||
+        recurso.title.toLowerCase().contains('video')) {
+      tipo = 'video';
+    } else if (recurso.title.toLowerCase().contains('exercício') ||
+        recurso.title.toLowerCase().contains('exercicio')) {
+      tipo = 'tutorial';
+    }
+
+    return GestureDetector(
+      onTap: () {
+        debugPrint('Abrir recurso: ${recurso.title}');
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.only(top: 16, left: 16, bottom: 16, right: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: const Border(
+            left: BorderSide(
+              width: 4,
+              color: corBordaMarrom,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF212621).withOpacity(0.1),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+            BoxShadow(
+              color: const Color(0xFF212621).withOpacity(0.05),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Ícone circular com gradiente vertical
+            _buildIconeRecurso(tipo),
+            const SizedBox(width: 12),
+            // Título e informações
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Título do recurso
+                  Text(
+                    recurso.title,
+                    style: const TextStyle(
+                      color: _textoPrimario,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.40,
+                    ),
+                  ),
+                  if (recurso.description != null && recurso.description!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      recurso.description!,
+                      style: const TextStyle(
+                        color: _textoSecundario,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        height: 1.40,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  // Badge de tipo
+                  Row(
+                    children: [
+                      _buildBadgeRecurso(tipo),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // Seta/chevron à direita
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: Color(0xFF4F4A34),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1676,80 +1849,6 @@ class _TelaPerfilState extends State<TelaPerfil> {
                 Icons.check,
                 color: Colors.white,
                 size: 20,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomNavBar() {
-    return Container(
-      margin: const EdgeInsets.only(left: 24, right: 24, bottom: 16),
-      height: 68,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(69),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildNavItem(Icons.home, 'Home', false, () {
-            Navigator.pushReplacementNamed(context, '/home');
-          }),
-          _buildNavItem(Icons.chat_bubble_outline, 'Chatbot', false, () {
-            Navigator.pushReplacementNamed(context, '/chatbot');
-          }),
-          _buildNavItem(Icons.favorite, 'Recuperacao', false, () {
-            Navigator.pushReplacementNamed(context, '/recuperacao');
-          }),
-          _buildNavItem(Icons.calendar_today, 'Agenda', false, () {
-            Navigator.pushReplacementNamed(context, '/agenda');
-          }),
-          _buildNavItem(Icons.person_outline, 'Perfil', true, () {}),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(IconData icon, String label, bool isActive, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            size: 24,
-            color: isActive ? _textoPrimario : _navInativo,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-              color: isActive ? _textoPrimario : _navInativo,
-            ),
-          ),
-          if (isActive)
-            Container(
-              margin: const EdgeInsets.only(top: 4),
-              width: 40,
-              height: 4,
-              decoration: const BoxDecoration(
-                color: _textoSecundario,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(999),
-                  topRight: Radius.circular(999),
-                ),
               ),
             ),
         ],

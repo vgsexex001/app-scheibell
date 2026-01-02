@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(git -C \"c:\\\\Users\\\\danie\\\\Downloads\\\\App-Scheibell\\\\__MACOSX\\\\app-scheibell\" log --oneline -10)",
+      "Bash(git -C \"c:\\\\Users\\\\danie\\\\Downloads\\\\App-Scheibell\\\\__MACOSX\\\\app-scheibell\" remote:*)",
+      "Bash(npx prisma generate)",
+      "Bash(npm run prisma:seed:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjliYmE2ZS03ZTk1LTRhMWItODRkNC1hMjk3YzEzNGM3NTIiLCJlbWFpbCI6InRlc3RtdnBAdGVzdC5jb20iLCJyb2xlIjoiUEFUSUVOVCIsImNsaW5pY0lkIjoiY2xpbmljLWRlZmF1bHQtc2NoZWliZWxsIiwiaWF0IjoxNzY3MTM2NjAxLCJleHAiOjE3NjcyMjMwMDF9.WFWg36vaR9KzHBbiI4UAFtGELe43m87CGaMq9AJkWhE\")",
+      "Bash(curl:*)",
+      "Bash(npx prisma db push)"
+    ]
+  }
+}

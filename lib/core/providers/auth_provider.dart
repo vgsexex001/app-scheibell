@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import '../models/user_model.dart';
+import '../services/api_service.dart';
 
 enum AuthStatus {
   initial,
@@ -10,6 +12,8 @@ enum AuthStatus {
 }
 
 class AuthProvider extends ChangeNotifier {
+  final ApiService _apiService = ApiService();
+
   AuthStatus _status = AuthStatus.initial;
   UserModel? _user;
   String? _errorMessage;
@@ -29,27 +33,48 @@ class AuthProvider extends ChangeNotifier {
   bool get isThirdParty => _user?.isThirdParty ?? false;
   bool get isClinicMember => _user?.isClinicMember ?? false;
 
+  /// Verifica se há um token salvo e tenta validar
   Future<void> checkAuthStatus() async {
     _status = AuthStatus.loading;
     notifyListeners();
 
     try {
-      // TODO: Implement actual auth check with backend/local storage
-      // For now, simulate checking stored credentials
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Tenta carregar token salvo
+      final savedToken = await _apiService.loadSavedToken();
 
-      // Simulating no stored auth - user needs to login
+      if (savedToken == null) {
+        _status = AuthStatus.unauthenticated;
+        _user = null;
+        _token = null;
+        notifyListeners();
+        return;
+      }
+
+      // Valida o token com o backend
+      final response = await _apiService.validateToken();
+
+      if (response['valid'] == true && response['user'] != null) {
+        _user = UserModel.fromJson(response['user']);
+        _token = savedToken;
+        _status = AuthStatus.authenticated;
+      } else {
+        await _apiService.removeToken();
+        _status = AuthStatus.unauthenticated;
+        _user = null;
+        _token = null;
+      }
+    } catch (e) {
+      // Token inválido ou expirado
+      await _apiService.removeToken();
       _status = AuthStatus.unauthenticated;
       _user = null;
       _token = null;
-    } catch (e) {
-      _status = AuthStatus.error;
-      _errorMessage = e.toString();
     }
 
     notifyListeners();
   }
 
+  /// Login do usuário
   Future<bool> login({
     required String email,
     required String password,
@@ -59,48 +84,61 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // TODO: Implement actual login with backend
-      await Future.delayed(const Duration(seconds: 1));
+      final response = await _apiService.login(email, password);
 
-      // Simulated response - replace with actual API call
-      // For demo, determine role based on email pattern
-      UserRole role = UserRole.patient;
-      if (email.contains('admin')) {
-        role = UserRole.clinicAdmin;
-      } else if (email.contains('staff')) {
-        role = UserRole.clinicStaff;
-      } else if (email.contains('terceiro') || email.contains('third')) {
-        role = UserRole.thirdParty;
+      // Extrai dados da resposta
+      _token = response['accessToken'];
+      _user = UserModel.fromJson(response['user']);
+
+      // Salva token para persistência
+      if (_token != null) {
+        await _apiService.saveToken(_token!);
       }
 
-      _user = UserModel(
-        id: 'user_${DateTime.now().millisecondsSinceEpoch}',
-        name: 'Staff',
-        email: email,
-        role: role,
-        clinicId: role != UserRole.patient ? 'clinic_1' : null,
-        createdAt: DateTime.now(),
-      );
-      _token = 'mock_token_${DateTime.now().millisecondsSinceEpoch}';
       _status = AuthStatus.authenticated;
       notifyListeners();
       return true;
+    } on DioException catch (e) {
+      _status = AuthStatus.error;
+
+      // Log detalhado para debug
+      debugPrint('🔴 Login Error:');
+      debugPrint('   Type: ${e.type}');
+      debugPrint('   URL: ${e.requestOptions.uri}');
+      debugPrint('   Message: ${e.message}');
+
+      if (e.response?.statusCode == 401) {
+        _errorMessage = 'Email ou senha incorretos';
+      } else if (e.response?.statusCode == 400) {
+        _errorMessage = 'Dados inválidos';
+      } else if (e.type == DioExceptionType.connectionTimeout) {
+        _errorMessage = 'Tempo de conexão esgotado. Verifique sua internet.';
+      } else if (e.type == DioExceptionType.connectionError) {
+        _errorMessage = 'Servidor indisponível. Verifique se o backend está rodando.';
+      } else if (e.type == DioExceptionType.receiveTimeout) {
+        _errorMessage = 'Servidor demorou para responder. Tente novamente.';
+      } else {
+        _errorMessage = 'Erro ao fazer login. Tente novamente.';
+      }
+
+      notifyListeners();
+      return false;
     } catch (e) {
       _status = AuthStatus.error;
-      _errorMessage = 'Erro ao fazer login: ${e.toString()}';
+      _errorMessage = 'Erro inesperado: ${e.toString()}';
+      debugPrint('🔴 Unexpected Login Error: $e');
       notifyListeners();
       return false;
     }
   }
 
+  /// Logout do usuário
   Future<void> logout() async {
     _status = AuthStatus.loading;
     notifyListeners();
 
     try {
-      // TODO: Implement actual logout with backend/clear local storage
-      await Future.delayed(const Duration(milliseconds: 300));
-
+      await _apiService.removeToken();
       _user = null;
       _token = null;
       _status = AuthStatus.unauthenticated;
@@ -111,6 +149,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Registro de novo usuário
   Future<bool> register({
     required String name,
     required String email,
@@ -123,35 +162,75 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // TODO: Implement actual registration with backend
-      await Future.delayed(const Duration(seconds: 1));
-
-      _user = UserModel(
-        id: 'user_${DateTime.now().millisecondsSinceEpoch}',
+      final response = await _apiService.register(
         name: name,
         email: email,
-        role: role,
+        password: password,
+        role: role.name.toUpperCase(),
         clinicId: clinicId,
-        createdAt: DateTime.now(),
       );
-      _token = 'mock_token_${DateTime.now().millisecondsSinceEpoch}';
+
+      // Extrai dados da resposta
+      _token = response['accessToken'];
+      _user = UserModel.fromJson(response['user']);
+
+      // Salva token para persistência
+      if (_token != null) {
+        await _apiService.saveToken(_token!);
+      }
+
       _status = AuthStatus.authenticated;
       notifyListeners();
       return true;
+    } on DioException catch (e) {
+      _status = AuthStatus.error;
+
+      if (e.response?.statusCode == 409) {
+        _errorMessage = 'Este email já está em uso';
+      } else if (e.response?.statusCode == 400) {
+        final data = e.response?.data;
+        if (data is Map && data['message'] != null) {
+          _errorMessage = data['message'] is List
+              ? (data['message'] as List).first
+              : data['message'].toString();
+        } else {
+          _errorMessage = 'Dados inválidos';
+        }
+      } else if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        _errorMessage = 'Não foi possível conectar ao servidor';
+      } else {
+        _errorMessage = 'Erro ao criar conta. Tente novamente.';
+      }
+
+      notifyListeners();
+      return false;
     } catch (e) {
       _status = AuthStatus.error;
-      _errorMessage = 'Erro ao criar conta: ${e.toString()}';
+      _errorMessage = 'Erro inesperado: ${e.toString()}';
       notifyListeners();
       return false;
     }
   }
 
+  /// Limpa mensagem de erro
   void clearError() {
     _errorMessage = null;
     notifyListeners();
   }
 
-  // For testing purposes - set user directly
+  /// Atualiza os dados do perfil do usuário
+  Future<void> refreshProfile() async {
+    try {
+      final response = await _apiService.getProfile();
+      _user = UserModel.fromJson(response);
+      notifyListeners();
+    } catch (e) {
+      // Silently fail - user data will remain unchanged
+    }
+  }
+
+  /// Para testes - define usuário diretamente
   void setUserForTesting(UserModel user) {
     _user = user;
     _status = AuthStatus.authenticated;

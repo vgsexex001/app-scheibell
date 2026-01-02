@@ -132,6 +132,50 @@ export class ContentController {
     );
   }
 
+  @Get('patient/clinic')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async getPatientClinicContent(
+    @CurrentUser('patientId') patientId: string,
+    @Query('type') type: ContentType,
+    @Query('category') category?: ContentCategory,
+  ) {
+    return this.contentService.getPatientClinicContent(patientId, type, category);
+  }
+
+  @Get('patient/clinic/all')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async getPatientAllClinicContentByType(
+    @CurrentUser('patientId') patientId: string,
+    @Query('type') type: ContentType,
+  ) {
+    return this.contentService.getPatientAllClinicContentByType(patientId, type);
+  }
+
+  @Post('patient/medication')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async addPatientMedication(
+    @CurrentUser('patientId') patientId: string,
+    @Body() data: {
+      title: string;
+      description?: string;
+      dosage?: string;
+      frequency?: string;
+      times?: string[];
+    },
+  ) {
+    return this.contentService.addPatientMedication(patientId, data);
+  }
+
+  @Get('patient/training-protocol')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async getTrainingProtocol(@CurrentUser('patientId') patientId: string) {
+    return this.contentService.getPatientTrainingProtocol(patientId);
+  }
+
   // ========== AJUSTES POR PACIENTE (staff) ==========
 
   @Get('patients/:patientId/adjustments')

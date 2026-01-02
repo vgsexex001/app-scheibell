@@ -15,9 +15,9 @@ import '../../shared/screens/tela_onboarding2.dart';
 import '../../shared/screens/tela_onboarding3.dart';
 import '../../shared/screens/tela_onboarding4.dart';
 // Patient screens
-import '../../features/patient/screens/tela_home.dart';
+import '../../features/patient/screens/main_navigation_screen.dart';
 import '../../features/patient/screens/tela_chatbot.dart';
-import '../../features/patient/screens/tela_recuperacao.dart';
+import '../../features/recovery/presentation/pages/recovery_page.dart';
 import '../../features/patient/screens/tela_agenda.dart';
 import '../../features/patient/screens/tela_perfil.dart';
 import '../../features/patient/screens/tela_configuracoes.dart';
@@ -25,7 +25,9 @@ import '../../features/patient/screens/tela_exames.dart';
 import '../../features/patient/screens/tela_documentos.dart';
 import '../../features/patient/screens/tela_recursos.dart';
 import '../../features/patient/screens/tela_medicamentos.dart';
-import '../../features/patient/screens/tela_agendamentos.dart';
+import '../../features/agenda/presentation/pages/agenda_page.dart';
+import '../../features/patient/screens/tela_editar_perfil.dart';
+import '../../features/patient/screens/tela_alterar_senha.dart';
 // Clinic screens
 import '../../features/clinic/screens/clinic_dashboard_screen.dart';
 import '../../features/clinic/screens/clinic_content_management_screen.dart';
@@ -74,6 +76,8 @@ class AppRoutes {
   static const String recursos = '/recursos';
   static const String medicamentos = '/medicamentos';
   static const String agendamentos = '/agendamentos';
+  static const String editarPerfil = '/editar-perfil';
+  static const String alterarSenha = '/alterar-senha';
 
   // Clinic routes
   static const String clinicDashboard = '/clinic-dashboard';
@@ -114,18 +118,21 @@ class AppRoutes {
       onboarding3: (context) => const TelaOnboarding3(),
       onboarding4: (context) => const TelaOnboarding4(),
 
-      // Patient routes
-      home: (context) => const TelaHome(),
-      chatbot: (context) => const TelaChatbot(),
-      recuperacao: (context) => const TelaRecuperacao(),
-      agenda: (context) => const TelaAgenda(),
-      perfil: (context) => const TelaPerfil(),
-      configuracoes: (context) => const TelaConfiguracoes(),
-      exames: (context) => const TelaExames(),
-      documentos: (context) => const TelaDocumentos(),
-      recursos: (context) => const TelaRecursos(),
-      medicamentos: (context) => const TelaMedicamentos(),
-      agendamentos: (context) => const TelaAgendamentos(),
+      // Patient routes (protected by PatientGuard)
+      // MainNavigationScreen usa IndexedStack para manter estado das telas
+      home: (context) => const PatientGuard(child: MainNavigationScreen()),
+      // Rotas individuais para navegacao direta (sem bottom nav)
+      chatbot: (context) => const PatientGuard(child: TelaChatbot()),
+      recuperacao: (context) => const PatientGuard(child: RecoveryPage()),
+      perfil: (context) => const PatientGuard(child: TelaPerfil()),
+      configuracoes: (context) => const PatientGuard(child: TelaConfiguracoes()),
+      exames: (context) => const PatientGuard(child: TelaExames()),
+      documentos: (context) => const PatientGuard(child: TelaDocumentos()),
+      recursos: (context) => const PatientGuard(child: TelaRecursos()),
+      medicamentos: (context) => const PatientGuard(child: TelaMedicamentos()),
+      agendamentos: (context) => const PatientGuard(child: AgendaPage()),
+      editarPerfil: (context) => const PatientGuard(child: TelaEditarPerfil()),
+      alterarSenha: (context) => const PatientGuard(child: TelaAlterarSenha()),
 
       // Clinic routes
       clinicDashboard: (context) => const ClinicDashboardScreen(),

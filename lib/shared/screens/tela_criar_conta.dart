@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../config/theme/app_colors.dart';
+import 'package:provider/provider.dart';
+import '../../core/providers/auth_provider.dart';
 
 class TelaCriarConta extends StatefulWidget {
   const TelaCriarConta({super.key});
@@ -11,20 +12,24 @@ class TelaCriarConta extends StatefulWidget {
 class _TelaCriarContaState extends State<TelaCriarConta> {
   final _emailController = TextEditingController();
   final _senhaController = TextEditingController();
+  final _nomeController = TextEditingController();
   bool _senhaVisivel = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _emailController.dispose();
     _senhaController.dispose();
+    _nomeController.dispose();
     super.dispose();
   }
 
-  void _criarConta() {
+  Future<void> _criarConta() async {
     final email = _emailController.text.trim();
     final senha = _senhaController.text;
+    final nome = _nomeController.text.trim();
 
-    if (email.isEmpty || senha.isEmpty) {
+    if (nome.isEmpty || email.isEmpty || senha.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Preencha todos os campos')),
       );
@@ -45,8 +50,47 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
       return;
     }
 
-    // Sucesso - ir para verificação de email
-    Navigator.pushNamed(context, '/verificar-email-cadastro');
+    setState(() => _isLoading = true);
+
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final success = await authProvider.register(
+        name: nome,
+        email: email,
+        password: senha,
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Conta criada com sucesso! Faça login.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context); // Volta para tela de login
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(authProvider.errorMessage ?? 'Erro ao criar conta'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -75,6 +119,8 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
                   const SizedBox(height: 8),
                   _buildSubtitulo(),
                   const SizedBox(height: 32),
+                  _buildCampoNome(),
+                  const SizedBox(height: 24),
                   _buildCampoEmail(),
                   const SizedBox(height: 24),
                   _buildCampoSenha(),
@@ -111,6 +157,61 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
         fontSize: 14,
         fontWeight: FontWeight.w500,
       ),
+    );
+  }
+
+  Widget _buildCampoNome() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Nome completo',
+          style: TextStyle(
+            color: Color(0xFF1A1A1A),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _nomeController,
+          keyboardType: TextInputType.name,
+          textCapitalization: TextCapitalization.words,
+          style: const TextStyle(
+            color: Color(0xFF1A1A1A),
+            fontSize: 16,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Seu nome',
+            hintStyle: TextStyle(
+              color: const Color(0xFF1A1A1A).withOpacity(0.5),
+              fontSize: 16,
+            ),
+            filled: true,
+            fillColor: const Color(0xFFEBEBEB),
+            prefixIcon: const Icon(
+              Icons.person_outline,
+              color: Color(0xFF757575),
+              size: 20,
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF4F4A34), width: 2),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -234,7 +335,7 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
     return SizedBox(
       height: 56,
       child: ElevatedButton(
-        onPressed: _criarConta,
+        onPressed: _isLoading ? null : _criarConta,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF4F4A34),
           foregroundColor: Colors.white,
@@ -243,13 +344,22 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
           ),
           elevation: 0,
         ),
-        child: const Text(
-          'Criar uma conta',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        child: _isLoading
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : const Text(
+                'Criar uma conta',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
       ),
     );
   }

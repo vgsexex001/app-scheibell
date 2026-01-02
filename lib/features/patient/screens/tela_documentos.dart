@@ -120,6 +120,9 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
           // Header gradiente
           _buildHeader(),
 
+          // Banner Em breve
+          _buildBannerEmBreve(),
+
           // Barra de filtros
           _buildBarraFiltros(),
 
@@ -134,6 +137,60 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
                   child: _buildCardDocumento(_documentosFiltrados[index]),
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBannerEmBreve() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3CD),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFD93D), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFD93D),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.construction,
+              color: Color(0xFF856404),
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Funcionalidade em desenvolvimento',
+                  style: TextStyle(
+                    color: Color(0xFF856404),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Gerenciamento de documentos estará disponível em breve!',
+                  style: TextStyle(
+                    color: Color(0xFF856404),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

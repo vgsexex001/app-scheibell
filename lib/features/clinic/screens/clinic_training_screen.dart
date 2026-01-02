@@ -358,7 +358,7 @@ class _PatientTrainingDetailScreen extends StatefulWidget {
 
 class _PatientTrainingDetailScreenState extends State<_PatientTrainingDetailScreen> {
   // Mock data - será substituído por chamadas de API
-  List<_WeekItem> _weeks = [
+  final List<_WeekItem> _weeks = [
     _WeekItem(
       '1',
       'Semana 1',

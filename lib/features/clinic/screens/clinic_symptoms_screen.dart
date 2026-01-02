@@ -367,7 +367,7 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
   ];
 
   // Mock data - será substituído por chamadas de API
-  List<_ContentItem> _items = [
+  final List<_ContentItem> _items = [
     _ContentItem('1', 'Sensibilidade local', 'Pode durar até 30 dias', 'NORMAL', true),
     _ContentItem('2', 'Inchaço moderado', 'Normal até 14 dias', 'NORMAL', true),
     _ContentItem('3', 'Pequenos hematomas', 'Desaparecem gradualmente', 'NORMAL', true),

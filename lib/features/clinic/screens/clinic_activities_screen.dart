@@ -299,7 +299,7 @@ class _PatientActivitiesDetailScreenState extends State<_PatientActivitiesDetail
   ];
 
   // Mock data - será substituído por chamadas de API
-  List<_ActivityItem> _items = [
+  final List<_ActivityItem> _items = [
     _ActivityItem('1', 'Caminhada leve', '90 bpm', '15 min', '+3', 'ALLOWED', true),
     _ActivityItem('2', 'Subir escadas', '100 bpm', '5 min', '+7', 'ALLOWED', true),
     _ActivityItem('3', 'Trabalho remoto', '-', '4 horas', '+7', 'ALLOWED', true),

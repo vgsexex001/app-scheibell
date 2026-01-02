@@ -368,7 +368,7 @@ class _PatientCareDetailScreenState extends State<_PatientCareDetailScreen>
   ];
 
   // Mock data - será substituído por chamadas de API
-  List<_CareItem> _items = [
+  final List<_CareItem> _items = [
     _CareItem(
       '0a',
       'Atenção aos sinais de infecção',

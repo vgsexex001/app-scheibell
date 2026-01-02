@@ -287,7 +287,7 @@ class _PatientMedicationsDetailScreen extends StatefulWidget {
 
 class _PatientMedicationsDetailScreenState extends State<_PatientMedicationsDetailScreen> {
   // Mock data - será substituído por chamadas de API
-  List<_MedicationItem> _medications = [
+  final List<_MedicationItem> _medications = [
     _MedicationItem(
       '1',
       'Paracetamol',
