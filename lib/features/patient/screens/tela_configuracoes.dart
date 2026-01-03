@@ -887,6 +887,7 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
 
     showDialog(
       context: context,
+      barrierDismissible: false, // Evita fechar acidentalmente durante logout
       builder: (dialogContext) => AlertDialog(
         title: const Text('Sair da Conta'),
         content: const Text('Tem certeza que deseja sair da sua conta?'),
@@ -897,20 +898,22 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
           ),
           TextButton(
             onPressed: () async {
+              // Verifica se já está deslogando (mutex)
+              if (authProvider.isLoggingOut) {
+                Navigator.pop(dialogContext);
+                return;
+              }
+
               // Fechar dialog primeiro
               Navigator.pop(dialogContext);
 
-              // Limpar dados dos providers
+              // Limpar dados dos providers ANTES do logout
               recoveryProvider.reset();
               homeProvider.reset();
 
-              // Fazer logout usando a referência capturada
+              // Fazer logout - AuthProvider navega automaticamente
+              // REMOVIDO: Navigator.pushNamedAndRemoveUntil() duplicado
               await authProvider.logout();
-
-              // Navegar para login removendo todas as rotas
-              if (mounted) {
-                Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-              }
             },
             child: const Text(
               'Sair',

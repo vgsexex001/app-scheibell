@@ -17,7 +17,7 @@ import '../../shared/screens/tela_onboarding4.dart';
 // Patient screens
 import '../../features/patient/screens/main_navigation_screen.dart';
 import '../../features/patient/screens/tela_chatbot.dart';
-import '../../features/recovery/presentation/pages/recovery_page.dart';
+import '../../features/patient/screens/tela_recuperacao.dart';
 import '../../features/patient/screens/tela_agenda.dart';
 import '../../features/patient/screens/tela_perfil.dart';
 import '../../features/patient/screens/tela_configuracoes.dart';
@@ -123,7 +123,7 @@ class AppRoutes {
       home: (context) => const PatientGuard(child: MainNavigationScreen()),
       // Rotas individuais para navegacao direta (sem bottom nav)
       chatbot: (context) => const PatientGuard(child: TelaChatbot()),
-      recuperacao: (context) => const PatientGuard(child: RecoveryPage()),
+      recuperacao: (context) => const PatientGuard(child: TelaRecuperacao()),
       perfil: (context) => const PatientGuard(child: TelaPerfil()),
       configuracoes: (context) => const PatientGuard(child: TelaConfiguracoes()),
       exames: (context) => const PatientGuard(child: TelaExames()),

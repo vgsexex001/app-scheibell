@@ -1,4 +1,4 @@
-import { PrismaClient, ContentType, ContentCategory, AppointmentType, AppointmentStatus } from '@prisma/client';
+import { PrismaClient, ContentType, ContentCategory, AppointmentType, AppointmentStatus, TrainingWeekStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -323,12 +323,278 @@ async function createSampleAppointments() {
   }
 }
 
+async function createDefaultTrainingProtocol(clinicId: string) {
+  console.log('\n🏋️ Criando protocolo de treino padrão...\n');
+
+  const protocolId = 'protocol-default-rinoplastia';
+
+  // Verificar se já existe
+  const existing = await prisma.trainingProtocol.findUnique({
+    where: { id: protocolId },
+  });
+
+  if (existing) {
+    console.log('   Protocolo já existe, pulando criação...');
+    return protocolId;
+  }
+
+  // Criar protocolo padrão de 8 semanas para rinoplastia
+  await prisma.trainingProtocol.create({
+    data: {
+      id: protocolId,
+      clinicId,
+      name: 'Protocolo Rinoplastia Padrão',
+      surgeryType: 'RINOPLASTIA',
+      description: 'Protocolo de recuperação física para pacientes de rinoplastia',
+      totalWeeks: 8,
+      isDefault: true,
+      isActive: true,
+    },
+  });
+
+  console.log('✅ Protocolo de treino criado');
+
+  // Definição das 8 semanas do protocolo
+  const weeks = [
+    {
+      weekNumber: 1,
+      title: 'Semana 1',
+      dayRange: 'Dias 1-7',
+      objective: 'Repouso absoluto. Foco na recuperação inicial.',
+      maxHeartRate: null,
+      heartRateLabel: 'Repouso',
+      canDo: ['Repouso em casa', 'Caminhadas curtas dentro de casa', 'Exercícios respiratórios leves'],
+      avoid: ['Qualquer esforço físico', 'Abaixar a cabeça', 'Assoar o nariz', 'Exposição ao sol'],
+      sessions: [
+        { sessionNumber: 1, name: 'Respiração diafragmática', description: '5 minutos de respiração profunda', duration: 5, intensity: 'Muito leve' },
+        { sessionNumber: 2, name: 'Caminhada indoor', description: 'Andar pela casa por 5 minutos', duration: 5, intensity: 'Muito leve' },
+        { sessionNumber: 3, name: 'Alongamento sentado', description: 'Movimentos suaves de pescoço e ombros', duration: 5, intensity: 'Muito leve' },
+      ],
+    },
+    {
+      weekNumber: 2,
+      title: 'Semana 2',
+      dayRange: 'Dias 8-14',
+      objective: 'Início de movimentação leve. Caminhadas curtas.',
+      maxHeartRate: 90,
+      heartRateLabel: 'FC Basal + 25 bpm',
+      canDo: ['Caminhadas leves de 10-15 min', 'Exercícios de mobilidade articular', 'Trabalho remoto leve'],
+      avoid: ['Exercícios intensos', 'Pegar peso', 'Sol direto', 'Ambientes com muita poeira'],
+      sessions: [
+        { sessionNumber: 1, name: 'Caminhada leve', description: 'Caminhada de 10 minutos em ritmo lento', duration: 10, intensity: 'Leve' },
+        { sessionNumber: 2, name: 'Mobilidade articular', description: 'Movimentos circulares de articulações', duration: 10, intensity: 'Leve' },
+        { sessionNumber: 3, name: 'Caminhada + respiração', description: 'Caminhada com foco na respiração', duration: 10, intensity: 'Leve' },
+      ],
+    },
+    {
+      weekNumber: 3,
+      title: 'Semana 3',
+      dayRange: 'Dias 15-21',
+      objective: 'Aumento gradual da atividade. Caminhadas mais longas.',
+      maxHeartRate: 100,
+      heartRateLabel: 'FC Basal + 35 bpm',
+      canDo: ['Caminhadas de 20-30 min', 'Alongamentos suaves', 'Subir escadas devagar'],
+      avoid: ['Corrida', 'Musculação', 'Esportes de contato', 'Nadar'],
+      sessions: [
+        { sessionNumber: 1, name: 'Caminhada moderada', description: 'Caminhada de 20 minutos', duration: 20, intensity: 'Leve' },
+        { sessionNumber: 2, name: 'Alongamento completo', description: 'Série de alongamentos para todo corpo', duration: 15, intensity: 'Leve' },
+        { sessionNumber: 3, name: 'Caminhada ao ar livre', description: 'Caminhada de 25 minutos em local aberto', duration: 25, intensity: 'Leve-Moderada' },
+      ],
+    },
+    {
+      weekNumber: 4,
+      title: 'Semana 4',
+      dayRange: 'Dias 22-28',
+      objective: 'Consolidação da fase de caminhadas. Preparação para próxima fase.',
+      maxHeartRate: 110,
+      heartRateLabel: 'FC Basal + 45 bpm',
+      canDo: ['Caminhadas de 30-40 min', 'Yoga restaurativa', 'Bicicleta ergométrica leve'],
+      avoid: ['Corrida', 'Peso', 'Exercícios abdominais', 'Sol direto no nariz'],
+      sessions: [
+        { sessionNumber: 1, name: 'Caminhada longa', description: 'Caminhada de 30 minutos', duration: 30, intensity: 'Moderada' },
+        { sessionNumber: 2, name: 'Yoga restaurativa', description: 'Posturas suaves de yoga', duration: 20, intensity: 'Leve' },
+        { sessionNumber: 3, name: 'Bicicleta ergométrica', description: 'Pedalar leve por 15 minutos', duration: 15, intensity: 'Leve-Moderada' },
+      ],
+    },
+    {
+      weekNumber: 5,
+      title: 'Semana 5',
+      dayRange: 'Dias 29-35',
+      objective: 'Início de exercícios mais estruturados. Cardio leve.',
+      maxHeartRate: 120,
+      heartRateLabel: 'FC Basal + 55 bpm',
+      canDo: ['Caminhada rápida', 'Bicicleta', 'Elíptico', 'Exercícios de força leve (sem peso)'],
+      avoid: ['Corrida intensa', 'Musculação pesada', 'Esportes de impacto'],
+      sessions: [
+        { sessionNumber: 1, name: 'Cardio leve', description: 'Elíptico ou bicicleta 20 min', duration: 20, intensity: 'Moderada' },
+        { sessionNumber: 2, name: 'Força leve', description: 'Exercícios com peso corporal', duration: 20, intensity: 'Moderada' },
+        { sessionNumber: 3, name: 'Caminhada intensa', description: 'Caminhada em ritmo acelerado', duration: 30, intensity: 'Moderada' },
+      ],
+    },
+    {
+      weekNumber: 6,
+      title: 'Semana 6',
+      dayRange: 'Dias 36-42',
+      objective: 'Aumento da intensidade. Introdução de exercícios de força.',
+      maxHeartRate: 130,
+      heartRateLabel: 'FC Basal + 65 bpm',
+      canDo: ['Musculação leve', 'Natação (com liberação)', 'Corrida leve/trote'],
+      avoid: ['Exercícios de alta intensidade', 'Mergulho', 'Esportes de contato'],
+      sessions: [
+        { sessionNumber: 1, name: 'Musculação leve', description: 'Série de exercícios com peso leve', duration: 30, intensity: 'Moderada' },
+        { sessionNumber: 2, name: 'Trote/Corrida leve', description: 'Alternância entre caminhada e trote', duration: 25, intensity: 'Moderada-Alta' },
+        { sessionNumber: 3, name: 'Natação', description: 'Nado livre em ritmo leve', duration: 30, intensity: 'Moderada' },
+      ],
+    },
+    {
+      weekNumber: 7,
+      title: 'Semana 7',
+      dayRange: 'Dias 43-49',
+      objective: 'Retorno gradual às atividades normais. Aumento de carga.',
+      maxHeartRate: 140,
+      heartRateLabel: 'FC Basal + 75 bpm',
+      canDo: ['Musculação moderada', 'Corrida', 'Maioria dos esportes'],
+      avoid: ['Esportes de contato no rosto', 'HIIT muito intenso'],
+      sessions: [
+        { sessionNumber: 1, name: 'Treino de força', description: 'Musculação com carga moderada', duration: 40, intensity: 'Moderada-Alta' },
+        { sessionNumber: 2, name: 'Corrida', description: 'Corrida contínua 20-25 minutos', duration: 25, intensity: 'Alta' },
+        { sessionNumber: 3, name: 'Treino funcional', description: 'Circuito funcional moderado', duration: 35, intensity: 'Moderada-Alta' },
+      ],
+    },
+    {
+      weekNumber: 8,
+      title: 'Semana 8',
+      dayRange: 'Dias 50-56',
+      objective: 'Retorno completo. Atividades físicas liberadas (exceto contato facial).',
+      maxHeartRate: null,
+      heartRateLabel: 'Normal',
+      canDo: ['Todos os exercícios', 'Esportes', 'Academia sem restrição'],
+      avoid: ['Impactos diretos no nariz', 'Esportes com risco de trauma facial'],
+      sessions: [
+        { sessionNumber: 1, name: 'Treino completo A', description: 'Treino de força superior', duration: 45, intensity: 'Alta' },
+        { sessionNumber: 2, name: 'Treino completo B', description: 'Treino de força inferior', duration: 45, intensity: 'Alta' },
+        { sessionNumber: 3, name: 'Cardio intenso', description: 'HIIT ou corrida longa', duration: 40, intensity: 'Alta' },
+      ],
+    },
+  ];
+
+  // Criar semanas e sessões
+  for (const week of weeks) {
+    const weekId = `week-${protocolId}-${week.weekNumber}`;
+
+    await prisma.trainingWeek.create({
+      data: {
+        id: weekId,
+        protocolId,
+        weekNumber: week.weekNumber,
+        title: week.title,
+        dayRange: week.dayRange,
+        objective: week.objective,
+        maxHeartRate: week.maxHeartRate,
+        heartRateLabel: week.heartRateLabel,
+        canDo: week.canDo,
+        avoid: week.avoid,
+        sortOrder: week.weekNumber,
+      },
+    });
+
+    // Criar sessões da semana
+    for (const session of week.sessions) {
+      await prisma.trainingSession.create({
+        data: {
+          id: `session-${weekId}-${session.sessionNumber}`,
+          weekId,
+          sessionNumber: session.sessionNumber,
+          name: session.name,
+          description: session.description,
+          duration: session.duration,
+          intensity: session.intensity,
+          sortOrder: session.sessionNumber,
+        },
+      });
+    }
+  }
+
+  console.log(`✅ ${weeks.length} semanas com sessões criadas`);
+  return protocolId;
+}
+
+async function initializePatientTrainingProgress() {
+  console.log('\n📊 Inicializando progresso de treino dos pacientes...\n');
+
+  // Buscar pacientes com data de cirurgia definida
+  const patients = await prisma.patient.findMany({
+    where: { surgeryDate: { not: null } },
+    select: { id: true, surgeryDate: true },
+  });
+
+  if (patients.length === 0) {
+    console.log('   Nenhum paciente com data de cirurgia encontrado');
+    return;
+  }
+
+  // Buscar protocolo padrão
+  const protocol = await prisma.trainingProtocol.findFirst({
+    where: { isDefault: true },
+    include: { weeks: { orderBy: { weekNumber: 'asc' } } },
+  });
+
+  if (!protocol) {
+    console.log('   Protocolo padrão não encontrado');
+    return;
+  }
+
+  for (const patient of patients) {
+    // Verificar se já tem progresso
+    const existingProgress = await prisma.patientTrainingProgress.count({
+      where: { patientId: patient.id },
+    });
+
+    if (existingProgress > 0) {
+      console.log(`   Paciente ${patient.id} já tem progresso, pulando...`);
+      continue;
+    }
+
+    const surgeryDate = patient.surgeryDate!;
+    const now = new Date();
+    const daysSinceSurgery = Math.floor((now.getTime() - surgeryDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentWeekNumber = Math.min(Math.floor(daysSinceSurgery / 7) + 1, protocol.totalWeeks);
+
+    // Criar progresso para cada semana
+    for (const week of protocol.weeks) {
+      let status: TrainingWeekStatus;
+
+      if (week.weekNumber < currentWeekNumber) {
+        status = TrainingWeekStatus.COMPLETED;
+      } else if (week.weekNumber === currentWeekNumber) {
+        status = TrainingWeekStatus.CURRENT;
+      } else {
+        status = TrainingWeekStatus.FUTURE;
+      }
+
+      await prisma.patientTrainingProgress.create({
+        data: {
+          patientId: patient.id,
+          weekId: week.id,
+          status,
+          startedAt: week.weekNumber <= currentWeekNumber ? surgeryDate : null,
+          completedAt: week.weekNumber < currentWeekNumber ? new Date() : null,
+        },
+      });
+    }
+
+    console.log(`   ✅ Progresso criado para paciente ${patient.id} (semana ${currentWeekNumber})`);
+  }
+}
+
 async function run() {
   try {
     await main();
     const clinicId = await createDefaultClinic();
     await syncTemplatesForClinic(clinicId);
     await createSampleAppointments();
+    await createDefaultTrainingProtocol(clinicId);
+    await initializePatientTrainingProgress();
     console.log('\n🎉 Seed concluído com sucesso!\n');
   } catch (error) {
     console.error('❌ Erro no seed:', error);

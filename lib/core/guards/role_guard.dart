@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/user_model.dart';
 
-class RoleGuard extends StatelessWidget {
+class RoleGuard extends StatefulWidget {
   final Widget child;
   final List<UserRole> allowedRoles;
   final Widget? fallback;
@@ -18,30 +18,58 @@ class RoleGuard extends StatelessWidget {
   });
 
   @override
+  State<RoleGuard> createState() => _RoleGuardState();
+}
+
+class _RoleGuardState extends State<RoleGuard> {
+  bool _hasRedirected = false;
+
+  @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
-        // Check if user is authenticated
+        // Durante logout, mostra loading e não redireciona
+        if (authProvider.isLoggingOut) {
+          debugPrint('[ROLE_GUARD] Logout em progresso - mostrando loading');
+          return const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
+            ),
+          );
+        }
+
+        // Se não autenticado e ainda não redirecionou
         if (!authProvider.isAuthenticated || authProvider.user == null) {
-          if (redirectRoute != null) {
+          if (!_hasRedirected && widget.redirectRoute != null) {
+            _hasRedirected = true;
+            debugPrint('[ROLE_GUARD] Não autenticado - redirecionando para ${widget.redirectRoute}');
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              Navigator.of(context).pushReplacementNamed(redirectRoute!);
+              if (mounted) {
+                Navigator.of(context).pushReplacementNamed(widget.redirectRoute!);
+              }
             });
           }
-          return fallback ?? const _AccessDeniedScreen();
+          return widget.fallback ?? const _AccessDeniedScreen();
         }
+
+        // NÃO resetar _hasRedirected aqui!
+        // A flag será resetada apenas quando widget for recriado
+        // Isso evita redirects duplicados durante rebuilds do Consumer
 
         // Check if user has allowed role
-        if (!allowedRoles.contains(authProvider.user!.role)) {
-          if (redirectRoute != null) {
+        if (!widget.allowedRoles.contains(authProvider.user!.role)) {
+          if (widget.redirectRoute != null) {
+            debugPrint('[ROLE_GUARD] Role não permitido - redirecionando');
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              Navigator.of(context).pushReplacementNamed(redirectRoute!);
+              if (mounted) {
+                Navigator.of(context).pushReplacementNamed(widget.redirectRoute!);
+              }
             });
           }
-          return fallback ?? const _AccessDeniedScreen();
+          return widget.fallback ?? const _AccessDeniedScreen();
         }
 
-        return child;
+        return widget.child;
       },
     );
   }

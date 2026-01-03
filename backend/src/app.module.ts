@@ -8,6 +8,7 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { MedicationsModule } from './modules/medications/medications.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ExamsModule } from './modules/exams/exams.module';
+import { TrainingModule } from './modules/training/training.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ExamsModule } from './modules/exams/exams.module';
     MedicationsModule,
     ChatModule,
     ExamsModule,
+    TrainingModule,
   ],
   controllers: [],
   providers: [],

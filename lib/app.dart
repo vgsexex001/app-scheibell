@@ -9,8 +9,23 @@ import 'features/chatbot/presentation/controller/chat_controller.dart';
 import 'features/agenda/presentation/controller/agenda_controller.dart';
 import 'features/recovery/presentation/controller/recovery_controller.dart';
 
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   const App({super.key});
+
+  @override
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  // Chave global do Navigator para navegação centralizada
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Configura a chave global no AuthProvider para navegação centralizada
+    AuthProvider.navigatorKey = _navigatorKey;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +46,8 @@ class App extends StatelessWidget {
             title: 'App Scheibell',
             debugShowCheckedModeBanner: false,
             theme: brandingProvider.themeData,
+            // Chave global do Navigator para navegação centralizada
+            navigatorKey: _navigatorKey,
             // Configuração de localização pt-BR
             locale: const Locale('pt', 'BR'),
             supportedLocales: const [
@@ -42,7 +59,8 @@ class App extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            initialRoute: AppRoutes.login,
+            // Inicia no GateScreen para verificar autenticação
+            initialRoute: AppRoutes.gate,
             routes: AppRoutes.routes,
             onGenerateRoute: AppRoutes.onGenerateRoute,
           );

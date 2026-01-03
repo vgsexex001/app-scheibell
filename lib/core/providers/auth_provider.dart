@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../models/user_model.dart';
 import '../services/api_service.dart';
@@ -8,6 +8,7 @@ enum AuthStatus {
   loading,
   authenticated,
   unauthenticated,
+  loggingOut,  // Estado intermediário durante logout
   error,
 }
 
@@ -19,12 +20,19 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
   String? _token;
 
+  // Flag para evitar múltiplos logouts simultâneos (mutex)
+  bool _isLoggingOut = false;
+
+  // Chave global do Navigator para navegação centralizada
+  static GlobalKey<NavigatorState>? navigatorKey;
+
   AuthStatus get status => _status;
   UserModel? get user => _user;
   String? get errorMessage => _errorMessage;
   String? get token => _token;
   bool get isAuthenticated => _status == AuthStatus.authenticated && _user != null;
   bool get isLoading => _status == AuthStatus.loading;
+  bool get isLoggingOut => _isLoggingOut;
 
   UserRole? get userRole => _user?.role;
   bool get isPatient => _user?.isPatient ?? false;
@@ -101,52 +109,71 @@ class AuthProvider extends ChangeNotifier {
     } on DioException catch (e) {
       _status = AuthStatus.error;
 
-      // Log detalhado para debug
-      debugPrint('🔴 Login Error:');
-      debugPrint('   Type: ${e.type}');
-      debugPrint('   URL: ${e.requestOptions.uri}');
-      debugPrint('   Message: ${e.message}');
+      // Usa o mapeamento centralizado de erros
+      final apiError = _apiService.mapDioError(e);
 
-      if (e.response?.statusCode == 401) {
+      // Mensagem específica para login
+      if (apiError.statusCode == 401) {
         _errorMessage = 'Email ou senha incorretos';
-      } else if (e.response?.statusCode == 400) {
-        _errorMessage = 'Dados inválidos';
-      } else if (e.type == DioExceptionType.connectionTimeout) {
-        _errorMessage = 'Tempo de conexão esgotado. Verifique sua internet.';
-      } else if (e.type == DioExceptionType.connectionError) {
-        _errorMessage = 'Servidor indisponível. Verifique se o backend está rodando.';
-      } else if (e.type == DioExceptionType.receiveTimeout) {
-        _errorMessage = 'Servidor demorou para responder. Tente novamente.';
       } else {
-        _errorMessage = 'Erro ao fazer login. Tente novamente.';
+        _errorMessage = apiError.message;
       }
 
       notifyListeners();
       return false;
     } catch (e) {
       _status = AuthStatus.error;
-      _errorMessage = 'Erro inesperado: ${e.toString()}';
+      _errorMessage = 'Erro inesperado. Tente novamente.';
       debugPrint('🔴 Unexpected Login Error: $e');
       notifyListeners();
       return false;
     }
   }
 
-  /// Logout do usuário
+  /// Logout do usuário - idempotente e com navegação centralizada
   Future<void> logout() async {
-    _status = AuthStatus.loading;
+    // Mutex: se já está deslogando, ignora chamadas duplicadas
+    if (_isLoggingOut) {
+      debugPrint('[AUTH] logout() ignorado - já em progresso');
+      return;
+    }
+
+    _isLoggingOut = true;
+    _status = AuthStatus.loggingOut;
     notifyListeners();
+
+    debugPrint('[AUTH] logout() iniciado');
 
     try {
       await _apiService.removeToken();
       _user = null;
       _token = null;
       _status = AuthStatus.unauthenticated;
+      debugPrint('[AUTH] logout() concluído - status: unauthenticated');
     } catch (e) {
+      debugPrint('[AUTH] logout() erro: $e');
       _errorMessage = e.toString();
-    }
+      _status = AuthStatus.unauthenticated; // Mesmo com erro, desloga
+    } finally {
+      _isLoggingOut = false;
+      notifyListeners();
 
-    notifyListeners();
+      // Navegação centralizada - única fonte de verdade
+      _navigateToLogin();
+    }
+  }
+
+  /// Navegação centralizada para login após logout
+  void _navigateToLogin() {
+    if (navigatorKey?.currentState != null) {
+      navigatorKey!.currentState!.pushNamedAndRemoveUntil(
+        '/',
+        (route) => false,
+      );
+      debugPrint('[AUTH] Navegou para login');
+    } else {
+      debugPrint('[AUTH] navigatorKey não configurado - navegação manual necessária');
+    }
   }
 
   /// Registro de novo usuário
@@ -185,29 +212,22 @@ class AuthProvider extends ChangeNotifier {
     } on DioException catch (e) {
       _status = AuthStatus.error;
 
-      if (e.response?.statusCode == 409) {
+      // Usa o mapeamento centralizado de erros
+      final apiError = _apiService.mapDioError(e);
+
+      // Mensagem específica para registro
+      if (apiError.statusCode == 409) {
         _errorMessage = 'Este email já está em uso';
-      } else if (e.response?.statusCode == 400) {
-        final data = e.response?.data;
-        if (data is Map && data['message'] != null) {
-          _errorMessage = data['message'] is List
-              ? (data['message'] as List).first
-              : data['message'].toString();
-        } else {
-          _errorMessage = 'Dados inválidos';
-        }
-      } else if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.connectionError) {
-        _errorMessage = 'Não foi possível conectar ao servidor';
       } else {
-        _errorMessage = 'Erro ao criar conta. Tente novamente.';
+        _errorMessage = apiError.message;
       }
 
       notifyListeners();
       return false;
     } catch (e) {
       _status = AuthStatus.error;
-      _errorMessage = 'Erro inesperado: ${e.toString()}';
+      _errorMessage = 'Erro inesperado. Tente novamente.';
+      debugPrint('🔴 Unexpected Register Error: $e');
       notifyListeners();
       return false;
     }

@@ -1,6 +1,49 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+
+/// Tipos de erro de rede para mapeamento preciso
+enum NetworkErrorType {
+  noInternet,
+  connectionTimeout,
+  receiveTimeout,
+  sendTimeout,
+  serverError,
+  clientError,
+  unauthorized,
+  notFound,
+  conflict,
+  badRequest,
+  sslHandshake,
+  dnsLookup,
+  connectionRefused,
+  unknown,
+}
+
+/// Exceção customizada com tipo de erro e mensagem amigável
+class ApiException implements Exception {
+  final NetworkErrorType type;
+  final String message;
+  final String? technicalDetails;
+  final int? statusCode;
+  final dynamic originalError;
+
+  ApiException({
+    required this.type,
+    required this.message,
+    this.technicalDetails,
+    this.statusCode,
+    this.originalError,
+  });
+
+  @override
+  String toString() => message;
+
+  /// Mensagem amigável para exibir ao usuário
+  String get userMessage => message;
+}
 
 /// Serviço centralizado para comunicação com a API
 class ApiService {
@@ -16,6 +59,7 @@ class ApiService {
         baseUrl: ApiConfig.baseUrl,
         connectTimeout: Duration(seconds: ApiConfig.connectTimeout),
         receiveTimeout: Duration(seconds: ApiConfig.receiveTimeout),
+        sendTimeout: const Duration(seconds: 30),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -23,26 +67,284 @@ class ApiService {
       ),
     );
 
-    // Interceptor para adicionar token e logging
+    // Interceptor para adicionar token e logging detalhado
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
           if (_authToken != null) {
             options.headers['Authorization'] = 'Bearer $_authToken';
           }
-          print('REQUEST[${options.method}] => PATH: ${options.path}');
+
+          // Log detalhado apenas em debug
+          _logRequest(options);
+
           return handler.next(options);
         },
         onResponse: (response, handler) {
-          print('RESPONSE[${response.statusCode}] => PATH: ${response.requestOptions.path}');
+          _logResponse(response);
           return handler.next(response);
         },
         onError: (error, handler) {
-          print('ERROR[${error.response?.statusCode}] => PATH: ${error.requestOptions.path}');
-          print('ERROR MESSAGE: ${error.message}');
+          _logError(error);
           return handler.next(error);
         },
       ),
+    );
+  }
+
+  /// Log de request (apenas em debug)
+  void _logRequest(RequestOptions options) {
+    if (!kDebugMode) return;
+
+    final uri = options.uri;
+    debugPrint('');
+    debugPrint('╔══════════════════════════════════════════════════════════════');
+    debugPrint('║ 📤 REQUEST');
+    debugPrint('╠══════════════════════════════════════════════════════════════');
+    debugPrint('║ Method: ${options.method}');
+    debugPrint('║ URL: $uri');
+    debugPrint('║ Base URL: ${options.baseUrl}');
+    debugPrint('║ Path: ${options.path}');
+    debugPrint('║ Connect Timeout: ${options.connectTimeout?.inSeconds}s');
+    debugPrint('║ Receive Timeout: ${options.receiveTimeout?.inSeconds}s');
+    debugPrint('║ Headers: ${_sanitizeHeaders(options.headers)}');
+    if (options.data != null) {
+      debugPrint('║ Body: ${_sanitizeBody(options.data)}');
+    }
+    debugPrint('╚══════════════════════════════════════════════════════════════');
+  }
+
+  /// Log de response (apenas em debug)
+  void _logResponse(Response response) {
+    if (!kDebugMode) return;
+
+    debugPrint('');
+    debugPrint('╔══════════════════════════════════════════════════════════════');
+    debugPrint('║ 📥 RESPONSE');
+    debugPrint('╠══════════════════════════════════════════════════════════════');
+    debugPrint('║ Status: ${response.statusCode}');
+    debugPrint('║ Path: ${response.requestOptions.path}');
+    debugPrint('║ Data: ${_truncate(response.data.toString(), 500)}');
+    debugPrint('╚══════════════════════════════════════════════════════════════');
+  }
+
+  /// Log de erro (apenas em debug)
+  void _logError(DioException error) {
+    if (!kDebugMode) return;
+
+    debugPrint('');
+    debugPrint('╔══════════════════════════════════════════════════════════════');
+    debugPrint('║ ❌ ERROR');
+    debugPrint('╠══════════════════════════════════════════════════════════════');
+    debugPrint('║ Type: ${error.type}');
+    debugPrint('║ Path: ${error.requestOptions.path}');
+    debugPrint('║ URL: ${error.requestOptions.uri}');
+    debugPrint('║ Status Code: ${error.response?.statusCode ?? "N/A"}');
+    debugPrint('║ Message: ${error.message}');
+    if (error.error != null) {
+      debugPrint('║ Inner Error: ${error.error.runtimeType} - ${error.error}');
+    }
+    if (error.response?.data != null) {
+      debugPrint('║ Response Data: ${error.response?.data}');
+    }
+    debugPrint('╚══════════════════════════════════════════════════════════════');
+  }
+
+  /// Sanitiza headers para não vazar token completo
+  Map<String, dynamic> _sanitizeHeaders(Map<String, dynamic> headers) {
+    final sanitized = Map<String, dynamic>.from(headers);
+    if (sanitized.containsKey('Authorization')) {
+      final auth = sanitized['Authorization'] as String;
+      if (auth.length > 20) {
+        sanitized['Authorization'] = '${auth.substring(0, 20)}...';
+      }
+    }
+    return sanitized;
+  }
+
+  /// Sanitiza body para não vazar senha
+  dynamic _sanitizeBody(dynamic data) {
+    if (data is Map) {
+      final sanitized = Map<String, dynamic>.from(data);
+      if (sanitized.containsKey('password')) {
+        sanitized['password'] = '***';
+      }
+      if (sanitized.containsKey('currentPassword')) {
+        sanitized['currentPassword'] = '***';
+      }
+      if (sanitized.containsKey('newPassword')) {
+        sanitized['newPassword'] = '***';
+      }
+      return sanitized;
+    }
+    return data;
+  }
+
+  /// Trunca strings longas
+  String _truncate(String text, int maxLength) {
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength)}...';
+  }
+
+  /// Mapeia erros Dio para tipos específicos com mensagens amigáveis
+  ApiException mapDioError(DioException e) {
+    final statusCode = e.response?.statusCode;
+
+    // Erros de timeout
+    if (e.type == DioExceptionType.connectionTimeout) {
+      return ApiException(
+        type: NetworkErrorType.connectionTimeout,
+        message: 'Não foi possível conectar ao servidor. Verifique sua conexão.',
+        technicalDetails: 'Connection timeout after ${e.requestOptions.connectTimeout?.inSeconds}s to ${e.requestOptions.uri}',
+        originalError: e,
+      );
+    }
+
+    if (e.type == DioExceptionType.receiveTimeout) {
+      return ApiException(
+        type: NetworkErrorType.receiveTimeout,
+        message: 'O servidor demorou para responder. Tente novamente.',
+        technicalDetails: 'Receive timeout after ${e.requestOptions.receiveTimeout?.inSeconds}s',
+        originalError: e,
+      );
+    }
+
+    if (e.type == DioExceptionType.sendTimeout) {
+      return ApiException(
+        type: NetworkErrorType.sendTimeout,
+        message: 'Falha ao enviar dados. Verifique sua conexão.',
+        technicalDetails: 'Send timeout',
+        originalError: e,
+      );
+    }
+
+    // Erros de conexão
+    if (e.type == DioExceptionType.connectionError) {
+      final innerError = e.error;
+
+      // Sem internet
+      if (innerError is SocketException) {
+        if (innerError.message.contains('Network is unreachable') ||
+            innerError.message.contains('No address associated') ||
+            innerError.osError?.errorCode == 101) {
+          return ApiException(
+            type: NetworkErrorType.noInternet,
+            message: 'Sem conexão com a internet.',
+            technicalDetails: 'SocketException: ${innerError.message}',
+            originalError: e,
+          );
+        }
+
+        // Conexão recusada (backend não está rodando)
+        if (innerError.message.contains('Connection refused') ||
+            innerError.osError?.errorCode == 111 ||
+            innerError.osError?.errorCode == 10061) {
+          return ApiException(
+            type: NetworkErrorType.connectionRefused,
+            message: 'Servidor indisponível. Verifique se o backend está rodando.',
+            technicalDetails: 'Connection refused to ${e.requestOptions.uri}',
+            originalError: e,
+          );
+        }
+      }
+
+      // Erro de SSL/TLS
+      if (innerError is HandshakeException) {
+        return ApiException(
+          type: NetworkErrorType.sslHandshake,
+          message: 'Erro de segurança na conexão.',
+          technicalDetails: 'SSL Handshake failed: ${innerError.message}',
+          originalError: e,
+        );
+      }
+
+      // Erro genérico de conexão
+      return ApiException(
+        type: NetworkErrorType.connectionRefused,
+        message: 'Não foi possível conectar ao servidor.',
+        technicalDetails: 'Connection error: ${e.error}',
+        originalError: e,
+      );
+    }
+
+    // Erros de resposta HTTP
+    if (e.type == DioExceptionType.badResponse) {
+      switch (statusCode) {
+        case 400:
+          final data = e.response?.data;
+          String message = 'Dados inválidos';
+          if (data is Map && data['message'] != null) {
+            message = data['message'] is List
+                ? (data['message'] as List).first.toString()
+                : data['message'].toString();
+          }
+          return ApiException(
+            type: NetworkErrorType.badRequest,
+            message: message,
+            statusCode: statusCode,
+            originalError: e,
+          );
+
+        case 401:
+          return ApiException(
+            type: NetworkErrorType.unauthorized,
+            message: 'Credenciais inválidas ou sessão expirada.',
+            statusCode: statusCode,
+            originalError: e,
+          );
+
+        case 403:
+          return ApiException(
+            type: NetworkErrorType.unauthorized,
+            message: 'Acesso negado.',
+            statusCode: statusCode,
+            originalError: e,
+          );
+
+        case 404:
+          return ApiException(
+            type: NetworkErrorType.notFound,
+            message: 'Recurso não encontrado.',
+            technicalDetails: 'Endpoint ${e.requestOptions.path} not found',
+            statusCode: statusCode,
+            originalError: e,
+          );
+
+        case 409:
+          return ApiException(
+            type: NetworkErrorType.conflict,
+            message: 'Este registro já existe.',
+            statusCode: statusCode,
+            originalError: e,
+          );
+
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          return ApiException(
+            type: NetworkErrorType.serverError,
+            message: 'Erro no servidor. Tente novamente mais tarde.',
+            statusCode: statusCode,
+            originalError: e,
+          );
+
+        default:
+          return ApiException(
+            type: NetworkErrorType.unknown,
+            message: 'Erro inesperado (código $statusCode).',
+            statusCode: statusCode,
+            originalError: e,
+          );
+      }
+    }
+
+    // Erro desconhecido
+    return ApiException(
+      type: NetworkErrorType.unknown,
+      message: 'Erro de conexão. Tente novamente.',
+      technicalDetails: 'Unknown error: ${e.type} - ${e.message}',
+      originalError: e,
     );
   }
 

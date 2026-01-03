@@ -12,40 +12,74 @@ class GateScreen extends StatefulWidget {
 }
 
 class _GateScreenState extends State<GateScreen> {
+  // Mutex flags para garantir execução única
+  bool _isInitialized = false;
+  bool _hasNavigated = false;
+
   @override
   void initState() {
     super.initState();
-    _checkAuthAndRedirect();
+    debugPrint('[GATE] initState');
+
+    // Verificar auth após primeiro frame (UMA VEZ)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeAuth();
+    });
   }
 
-  Future<void> _checkAuthAndRedirect() async {
+  @override
+  void dispose() {
+    debugPrint('[GATE] dispose');
+    super.dispose();
+  }
+
+  Future<void> _initializeAuth() async {
+    // Mutex: só executa uma vez
+    if (_isInitialized) {
+      debugPrint('[GATE] _initializeAuth ignorado - já inicializado');
+      return;
+    }
+    _isInitialized = true;
+    debugPrint('[GATE] _initializeAuth iniciando');
+
     final authProvider = context.read<AuthProvider>();
 
-    // Check authentication status
+    // Verifica status de autenticação
     await authProvider.checkAuthStatus();
 
     if (!mounted) return;
 
+    // Navega baseado no resultado
+    _handleAuthResult(authProvider);
+  }
+
+  void _handleAuthResult(AuthProvider authProvider) {
+    // Mutex: só navega uma vez
+    if (_hasNavigated || !mounted) return;
+    _hasNavigated = true;
+
+    debugPrint('[GATE] _handleAuthResult - isAuthenticated: ${authProvider.isAuthenticated}');
+
     if (authProvider.isAuthenticated && authProvider.user != null) {
-      // Load clinic branding if user has a clinic
-      if (authProvider.user!.clinicId != null) {
-        final brandingProvider = context.read<BrandingProvider>();
-        await brandingProvider.loadClinicBranding(authProvider.user!.clinicId!);
-      }
-
-      if (!mounted) return;
-
-      // Redirect based on user role
-      _redirectBasedOnRole(authProvider.user!.role);
+      _loadBrandingAndRedirect(authProvider.user!);
     } else {
-      // Not authenticated, go to login
-      Navigator.of(context).pushReplacementNamed('/');
+      _navigateToLogin();
     }
+  }
+
+  Future<void> _loadBrandingAndRedirect(UserModel user) async {
+    // Carrega branding da clínica se necessário
+    if (user.clinicId != null) {
+      final brandingProvider = context.read<BrandingProvider>();
+      await brandingProvider.loadClinicBranding(user.clinicId!);
+    }
+
+    if (!mounted) return;
+    _redirectBasedOnRole(user.role);
   }
 
   void _redirectBasedOnRole(UserRole role) {
     String route;
-
     switch (role) {
       case UserRole.patient:
         route = '/home';
@@ -59,33 +93,30 @@ class _GateScreenState extends State<GateScreen> {
         break;
     }
 
+    debugPrint('[GATE] Navegando para: $route');
     Navigator.of(context).pushReplacementNamed(route);
+  }
+
+  void _navigateToLogin() {
+    debugPrint('[GATE] Navegando para login');
+    Navigator.of(context).pushReplacementNamed('/');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFAF9F7),
+    debugPrint('[GATE] build');
+
+    // Build SIMPLES - sem Consumer, sem callbacks no build
+    // A lógica de navegação está em initState/callback
+    return const Scaffold(
+      backgroundColor: Color(0xFFFAF9F7),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Logo placeholder
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: const Color(0xFFA49E86),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Icon(
-                Icons.medical_services_outlined,
-                size: 60,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 32),
-            const Text(
+            _LogoWidget(),
+            SizedBox(height: 32),
+            Text(
               'App Scheibell',
               style: TextStyle(
                 fontSize: 24,
@@ -94,12 +125,12 @@ class _GateScreenState extends State<GateScreen> {
                 fontFamily: 'Inter',
               ),
             ),
-            const SizedBox(height: 16),
-            const CircularProgressIndicator(
+            SizedBox(height: 16),
+            CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
             ),
-            const SizedBox(height: 16),
-            const Text(
+            SizedBox(height: 16),
+            Text(
               'Carregando...',
               style: TextStyle(
                 fontSize: 14,
@@ -109,6 +140,27 @@ class _GateScreenState extends State<GateScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LogoWidget extends StatelessWidget {
+  const _LogoWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        color: const Color(0xFFA49E86),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: const Icon(
+        Icons.medical_services_outlined,
+        size: 60,
+        color: Colors.white,
       ),
     );
   }

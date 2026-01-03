@@ -105,6 +105,7 @@ model Clinic {
   users         User[]
   patients      Patient[]
   contents      ClinicContent[]
+  trainingProtocols TrainingProtocol[]
 
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
@@ -131,11 +132,13 @@ model Patient {
   surgeryDate   DateTime?
   surgeryType   String?
 
-  contentAdjustments PatientContentAdjustment[]
-  appointments       Appointment[]
-  medicationLogs     MedicationLog[]
-  chatConversations  ChatConversation[]
-  exams              Exam[]
+  contentAdjustments   PatientContentAdjustment[]
+  appointments         Appointment[]
+  medicationLogs       MedicationLog[]
+  chatConversations    ChatConversation[]
+  exams                Exam[]
+  trainingProgress     PatientTrainingProgress[]
+  sessionCompletions   PatientSessionCompletion[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -314,6 +317,136 @@ model PatientContentAdjustment {
   @@index([patientId])
   @@index([baseContentId])
   @@map("patient_content_adjustments")
+}
+
+// ==================== TREINO / PROTOCOLO DE EXERCÍCIOS ====================
+
+enum TrainingWeekStatus {
+  COMPLETED   // Semana concluída
+  CURRENT     // Semana atual
+  FUTURE      // Semana futura/bloqueada
+}
+
+/// Protocolo de treino padrão (configurado pela clínica ou sistema)
+model TrainingProtocol {
+  id              String    @id @default(uuid())
+
+  clinicId        String?
+  clinic          Clinic?   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  name            String    // Nome do protocolo (ex: "Rinoplastia Padrão")
+  surgeryType     String?   // Tipo de cirurgia associada
+  description     String?
+  totalWeeks      Int       @default(8)
+
+  isDefault       Boolean   @default(false)  // Protocolo padrão do sistema
+  isActive        Boolean   @default(true)
+
+  weeks           TrainingWeek[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([clinicId])
+  @@index([isDefault])
+  @@map("training_protocols")
+}
+
+/// Semana do protocolo de treino
+model TrainingWeek {
+  id              String    @id @default(uuid())
+
+  protocolId      String
+  protocol        TrainingProtocol @relation(fields: [protocolId], references: [id], onDelete: Cascade)
+
+  weekNumber      Int       // Número da semana (1, 2, 3, ...)
+  title           String    // "Semana 1", "Semana 2", etc
+  dayRange        String    // "Dias 1-7", "Dias 8-14", etc
+  objective       String    // Objetivo da semana
+  maxHeartRate    Int?      // Frequência cardíaca máxima (ex: 90)
+  heartRateLabel  String?   // Label da FC (ex: "FC Basal + 25 bpm")
+
+  canDo           String[]  // Lista de exercícios permitidos
+  avoid           String[]  // Lista de atividades a evitar
+
+  sortOrder       Int       @default(0)
+
+  sessions        TrainingSession[]
+  progress        PatientTrainingProgress[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([protocolId, weekNumber])
+  @@index([protocolId])
+  @@map("training_weeks")
+}
+
+/// Sessão de treino (ex: 3 sessões por semana)
+model TrainingSession {
+  id              String    @id @default(uuid())
+
+  weekId          String
+  week            TrainingWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  sessionNumber   Int       // Número da sessão na semana (1, 2, 3, ...)
+  name            String    // Nome da sessão (ex: "Caminhada leve")
+  description     String?   // Descrição ou instruções
+  duration        Int?      // Duração em minutos
+  intensity       String?   // Intensidade (ex: "Leve", "Moderada")
+
+  sortOrder       Int       @default(0)
+
+  completions     PatientSessionCompletion[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([weekId, sessionNumber])
+  @@index([weekId])
+  @@map("training_sessions")
+}
+
+/// Progresso do paciente na semana
+model PatientTrainingProgress {
+  id              String    @id @default(uuid())
+
+  patientId       String
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  weekId          String
+  week            TrainingWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  status          TrainingWeekStatus @default(FUTURE)
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([patientId, weekId])
+  @@index([patientId])
+  @@index([patientId, status])
+  @@map("patient_training_progress")
+}
+
+/// Registro de conclusão de sessão de treino
+model PatientSessionCompletion {
+  id              String    @id @default(uuid())
+
+  patientId       String
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  completedAt     DateTime  @default(now())
+  notes           String?   // Observações do paciente
+
+  @@unique([patientId, sessionId])
+  @@index([patientId])
+  @@index([patientId, completedAt])
+  @@map("patient_session_completions")
 }
 
 // ==================== CHAT IA ====================
