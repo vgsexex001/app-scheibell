@@ -1,4 +1,5 @@
-import { PrismaClient, ContentType, ContentCategory, AppointmentType, AppointmentStatus, TrainingWeekStatus } from '@prisma/client';
+import { PrismaClient, ContentType, ContentCategory, AppointmentType, AppointmentStatus, TrainingWeekStatus, UserRole } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -587,14 +588,105 @@ async function initializePatientTrainingProgress() {
   }
 }
 
+async function createTestUsers(clinicId: string) {
+  console.log('\n👥 Criando usuários de teste...\n');
+
+  const defaultPassword = await bcrypt.hash('123456', 10);
+
+  // Definição dos usuários de teste
+  const testUsers = [
+    {
+      id: 'user-paciente-d0',
+      email: 'paciente@teste.com',
+      name: 'Paciente Novo (D+0)',
+      role: UserRole.PATIENT,
+      surgeryDaysAgo: 0, // Cirurgia hoje
+    },
+    {
+      id: 'user-paciente-d7',
+      email: 'paciente.semana2@teste.com',
+      name: 'Paciente Semana 2 (D+7)',
+      role: UserRole.PATIENT,
+      surgeryDaysAgo: 7, // Cirurgia há 7 dias
+    },
+    {
+      id: 'user-paciente-d14',
+      email: 'paciente.semana3@teste.com',
+      name: 'Paciente Semana 3 (D+14)',
+      role: UserRole.PATIENT,
+      surgeryDaysAgo: 14, // Cirurgia há 14 dias
+    },
+    {
+      id: 'user-admin',
+      email: 'admin@teste.com',
+      name: 'Administrador',
+      role: UserRole.CLINIC_ADMIN,
+      surgeryDaysAgo: null, // Não é paciente
+    },
+  ];
+
+  for (const userData of testUsers) {
+    // Verificar se usuário já existe
+    const existingUser = await prisma.user.findUnique({
+      where: { email: userData.email },
+    });
+
+    if (existingUser) {
+      console.log(`   ⏭️  Usuário ${userData.email} já existe, pulando...`);
+      continue;
+    }
+
+    // Criar usuário
+    const user = await prisma.user.create({
+      data: {
+        id: userData.id,
+        email: userData.email,
+        name: userData.name,
+        passwordHash: defaultPassword,
+        role: userData.role,
+        clinicId: clinicId,
+      },
+    });
+
+    // Se for paciente, criar registro de Patient
+    if (userData.role === UserRole.PATIENT && userData.surgeryDaysAgo !== null) {
+      const surgeryDate = new Date();
+      surgeryDate.setDate(surgeryDate.getDate() - userData.surgeryDaysAgo);
+
+      await prisma.patient.create({
+        data: {
+          id: `patient-${userData.id}`,
+          userId: user.id,
+          clinicId: clinicId,
+          surgeryDate: surgeryDate,
+          surgeryType: 'RINOPLASTIA',
+        },
+      });
+    }
+
+    console.log(`   ✅ Usuário criado: ${userData.email} (${userData.role})`);
+  }
+
+  console.log('\n📋 Resumo dos logins de teste:');
+  console.log('   ┌─────────────────────────────────┬──────────┬───────────────────┐');
+  console.log('   │ Email                           │ Senha    │ Descrição         │');
+  console.log('   ├─────────────────────────────────┼──────────┼───────────────────┤');
+  console.log('   │ paciente@teste.com              │ 123456   │ Paciente D+0      │');
+  console.log('   │ paciente.semana2@teste.com      │ 123456   │ Paciente D+7      │');
+  console.log('   │ paciente.semana3@teste.com      │ 123456   │ Paciente D+14     │');
+  console.log('   │ admin@teste.com                 │ 123456   │ Admin da clínica  │');
+  console.log('   └─────────────────────────────────┴──────────┴───────────────────┘');
+}
+
 async function run() {
   try {
     await main();
     const clinicId = await createDefaultClinic();
     await syncTemplatesForClinic(clinicId);
-    await createSampleAppointments();
+    await createTestUsers(clinicId);
     await createDefaultTrainingProtocol(clinicId);
     await initializePatientTrainingProgress();
+    await createSampleAppointments();
     console.log('\n🎉 Seed concluído com sucesso!\n');
   } catch (error) {
     console.error('❌ Erro no seed:', error);

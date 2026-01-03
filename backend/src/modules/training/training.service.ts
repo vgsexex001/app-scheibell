@@ -25,15 +25,28 @@ export class TrainingService {
       throw new BadRequestException('Data de cirurgia não definida');
     }
 
-    // Calcular dias desde a cirurgia
+    // Calcular dias desde a cirurgia (normalizado para evitar problemas de timezone)
     const now = new Date();
-    const surgeryDate = new Date(patient.surgeryDate);
-    const daysSinceSurgery = Math.floor(
-      (now.getTime() - surgeryDate.getTime()) / (1000 * 60 * 60 * 24),
+    const surgery = new Date(patient.surgeryDate);
+
+    // Normalizar para "dia" (sem hora) para evitar problemas de timezone
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const surgeryDay = new Date(
+      surgery.getFullYear(),
+      surgery.getMonth(),
+      surgery.getDate(),
     );
 
-    // Semana atual (sempre começa em 1)
+    const daysSinceSurgery = Math.floor(
+      (today.getTime() - surgeryDay.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    // Semana atual (sempre começa em 1): dias 0-6 = semana 1, dias 7-13 = semana 2, etc.
     const currentWeekNumber = Math.max(1, Math.floor(daysSinceSurgery / 7) + 1);
+
+    console.log(
+      `[Training] surgeryDate=${surgeryDay.toISOString()}, today=${today.toISOString()}, daysSince=${daysSinceSurgery}, currentWeek=${currentWeekNumber}`,
+    );
 
     // Buscar protocolo (preferência: clínica > padrão)
     let protocol = await this.prisma.trainingProtocol.findFirst({

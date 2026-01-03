@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../../core/services/content_service.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/utils/recovery_calculator.dart';
 
 /// Provider para gerenciar o estado da tela de recuperação
 class RecoveryProvider extends ChangeNotifier {
@@ -83,7 +84,10 @@ class RecoveryProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Carregar dados em paralelo para melhor performance
+      // Carregar protocolo de treino PRIMEIRO (prioridade para a tela de treino)
+      await _loadTrainingProtocol();
+
+      // Carregar outros dados em paralelo para melhor performance
       final results = await Future.wait([
         _contentService.getSymptomsByCategory(),
         _contentService.getCareItems(),
@@ -118,13 +122,12 @@ class RecoveryProvider extends ChangeNotifier {
       _medicamentos = results[4] as List<ContentItem>;
       _treinos = results[5] as List<ContentItem>;
 
-      // Carregar protocolo de treino (semanas) separadamente
-      await _loadTrainingProtocol();
-
       _hasLoadedFromApi = true;
     } catch (e) {
       _errorMessage = 'Erro ao carregar dados: $e';
       debugPrint('RecoveryProvider Error: $e');
+      // Mesmo com erro, marcar como carregado para usar fallback
+      _hasLoadedFromApi = true;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -134,7 +137,10 @@ class RecoveryProvider extends ChangeNotifier {
   /// Carrega o protocolo de treino com as semanas da API
   Future<void> _loadTrainingProtocol() async {
     try {
+      debugPrint('RecoveryProvider: Iniciando carregamento do protocolo de treino...');
       final protocol = await _apiService.getTrainingProtocol();
+      debugPrint('RecoveryProvider: Protocolo recebido: $protocol');
+
       _trainingProtocol = protocol;
       _semanaAtual = protocol['currentWeek'] as int? ?? 1;
       _diasDesdeCirurgia = protocol['daysSinceSurgery'] as int? ?? 0;
@@ -142,22 +148,12 @@ class RecoveryProvider extends ChangeNotifier {
 
       // Processar semanas
       final weeks = protocol['weeks'] as List<dynamic>? ?? [];
+      debugPrint('RecoveryProvider: Processando ${weeks.length} semanas...');
+
       _semanasProtocolo = weeks.map((week) {
         final weekMap = week as Map<String, dynamic>;
-        // Converter status da API para formato do app (0=concluída, 1=atual, 2=futura)
-        int estado;
-        switch (weekMap['status']) {
-          case 'COMPLETED':
-            estado = 0;
-            break;
-          case 'CURRENT':
-            estado = 1;
-            break;
-          case 'FUTURE':
-          default:
-            estado = 2;
-            break;
-        }
+        // Usar RecoveryCalculator para converter status da API
+        final estado = RecoveryCalculator.apiStatusToInternal(weekMap['status'] as String?);
 
         return {
           'numero': weekMap['weekNumber'] as int,
@@ -176,9 +172,11 @@ class RecoveryProvider extends ChangeNotifier {
         };
       }).toList();
 
-      debugPrint('Protocolo carregado: semana atual = $_semanaAtual, dias = $_diasDesdeCirurgia');
-    } catch (e) {
-      debugPrint('Erro ao carregar protocolo de treino: $e');
+      debugPrint('RecoveryProvider: Protocolo carregado com sucesso!');
+      debugPrint('RecoveryProvider: semana atual = $_semanaAtual, dias = $_diasDesdeCirurgia, semanas = ${_semanasProtocolo.length}');
+    } catch (e, stackTrace) {
+      debugPrint('RecoveryProvider: Erro ao carregar protocolo de treino: $e');
+      debugPrint('RecoveryProvider: StackTrace: $stackTrace');
       // Se falhar, mantém os dados padrão/vazios
     }
   }

@@ -1,3 +1,5 @@
+import '../utils/recovery_calculator.dart';
+
 enum UserRole {
   patient,
   clinicAdmin,
@@ -36,10 +38,9 @@ class UserModel {
     this.surgeryType,
   });
 
-  /// Calcula os dias pós-operatório
+  /// Calcula os dias pós-operatório usando RecoveryCalculator (fonte única de verdade)
   int get daysPostOp {
-    final surgery = surgeryDate ?? createdAt ?? DateTime.now();
-    return DateTime.now().difference(surgery).inDays;
+    return RecoveryCalculator.getDaysSinceSurgery(surgeryDate ?? createdAt);
   }
 
   /// Retorna o primeiro nome do usuário

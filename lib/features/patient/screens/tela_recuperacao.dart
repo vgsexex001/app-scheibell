@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'tela_medicamentos.dart';
 import '../providers/recovery_provider.dart';
+import '../../../core/providers/auth_provider.dart';
+import '../../../core/utils/recovery_calculator.dart';
 
 class TelaRecuperacao extends StatefulWidget {
   const TelaRecuperacao({super.key});
@@ -2462,11 +2464,39 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   // ========== CATEGORIA TREINO ==========
 
   Widget _buildConteudoTreino() {
-    // Usar dados do Provider (API) ou fallback para dados locais
+    // Usar dados do Provider (API) ou fallback dinâmico
     final recoveryProvider = context.watch<RecoveryProvider>();
-    final semanas = recoveryProvider.semanasProtocolo.isNotEmpty
-        ? recoveryProvider.semanasProtocolo
-        : _semanasProtocolo;
+    final authProvider = context.watch<AuthProvider>();
+
+    // Se ainda não carregou da API, forçar carregamento
+    if (!recoveryProvider.hasLoadedFromApi && !recoveryProvider.isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        recoveryProvider.loadAllContent();
+      });
+    }
+
+    // Determinar semanas: API ou fallback calculado dinamicamente
+    List<Map<String, dynamic>> semanas;
+
+    if (recoveryProvider.semanasProtocolo.isNotEmpty) {
+      // Usar dados da API
+      semanas = recoveryProvider.semanasProtocolo;
+      debugPrint('[Treino] Usando dados da API: ${semanas.length} semanas');
+    } else {
+      // Fallback: calcular estados dinamicamente baseado em daysPostOp do usuário
+      final daysSince = authProvider.user?.daysPostOp ?? 0;
+      final currentWeek = RecoveryCalculator.getCurrentWeek(daysSince);
+      debugPrint('[Treino] Fallback: daysSince=$daysSince, currentWeek=$currentWeek');
+
+      semanas = _semanasProtocolo.map((s) {
+        final weekNum = s['numero'] as int;
+        final estado = RecoveryCalculator.getWeekStatus(weekNum, currentWeek);
+        return {
+          ...s,
+          'estado': estado,
+        };
+      }).toList();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
