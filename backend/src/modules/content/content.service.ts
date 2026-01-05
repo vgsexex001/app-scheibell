@@ -173,10 +173,22 @@ export class ContentService {
       category: ContentCategory;
       title: string;
       description?: string;
+      validFromDay?: number;
+      validUntilDay?: number;
       reason?: string;
     },
     createdBy: string,
   ) {
+    // Validar se o paciente existe
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { id: true },
+    });
+
+    if (!patient) {
+      throw new NotFoundException(`Paciente com ID ${patientId} nao encontrado`);
+    }
+
     return this.prisma.patientContentAdjustment.create({
       data: {
         patientId,
@@ -185,6 +197,8 @@ export class ContentService {
         category: data.category,
         title: data.title,
         description: data.description,
+        validFromDay: data.validFromDay,
+        validUntilDay: data.validUntilDay,
         reason: data.reason,
         createdBy,
       },

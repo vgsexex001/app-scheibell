@@ -8,7 +8,32 @@
       "Bash(npm run prisma:seed:*)",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjliYmE2ZS03ZTk1LTRhMWItODRkNC1hMjk3YzEzNGM3NTIiLCJlbWFpbCI6InRlc3RtdnBAdGVzdC5jb20iLCJyb2xlIjoiUEFUSUVOVCIsImNsaW5pY0lkIjoiY2xpbmljLWRlZmF1bHQtc2NoZWliZWxsIiwiaWF0IjoxNzY3MTM2NjAxLCJleHAiOjE3NjcyMjMwMDF9.WFWg36vaR9KzHBbiI4UAFtGELe43m87CGaMq9AJkWhE\")",
       "Bash(curl:*)",
-      "Bash(npx prisma db push)"
+      "Bash(npx prisma db push)",
+      "Bash(npx prisma:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZTZkMzBmYy02MDg1LTQ1NWItYWI5OS0yZjhmNmNjNWUwNTEiLCJlbWFpbCI6InBhY2llbnRlLnRlc3RlQHRlc3QuY29tIiwicm9sZSI6IlBBVElFTlQiLCJjbGluaWNJZCI6ImNsaW5pYy1kZWZhdWx0LXNjaGVpYmVsbCIsImlhdCI6MTc2NzQ3NDM1MiwiZXhwIjoxNzY3NTYwNzUyfQ.0DttHt-FrpqIBnJP-OM2o-lMbHZJZaJDtFJp87NUkb0\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZTZkMzBmYy02MDg1LTQ1NWItYWI5OS0yZjhmNmNjNWUwNTEiLCJlbWFpbCI6InBhY2llbnRlLnRlc3RlQHRlc3QuY29tIiwicm9sZSI6IlBBVElFTlQiLCJjbGluaWNJZCI6ImNsaW5pYy1kZWZhdWx0LXNjaGVpYmVsbCIsImlhdCI6MTc2NzQ3NDQ2MCwiZXhwIjoxNzY3NTYwODYwfQ.lYVFmba_2loClMu_G5FTyOrs1cjR6kifcgNu-Qkjs0k\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZTZkMzBmYy02MDg1LTQ1NWItYWI5OS0yZjhmNmNjNWUwNTEiLCJlbWFpbCI6InBhY2llbnRlLnRlc3RlQHRlc3QuY29tIiwicm9sZSI6IlBBVElFTlQiLCJjbGluaWNJZCI6ImNsaW5pYy1kZWZhdWx0LXNjaGVpYmVsbCIsImlhdCI6MTc2NzQ3NDU3NiwiZXhwIjoxNzY3NTYwOTc2fQ.urjokDsOV_YKQFcdKLZAdp7w3P0ds7z2RzQPB6jGJOo\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkNzdmYjNmNy02MTQyLTRlZTEtYjgyNi0xYzgzYmNmODM2YjUiLCJlbWFpbCI6InRlc3RlLnRyZWlub0B0ZXN0LmNvbSIsInJvbGUiOiJQQVRJRU5UIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc0NzYzMjAsImV4cCI6MTc2NzU2MjcyMH0.DPhBQo8Ykugztt8qmk4v3DzqpBLvYnvD9lYsHX93ZNU\")",
+      "Bash(flutter test:*)",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 2; cd 'c:\\\\Users\\\\danie\\\\Downloads\\\\App-Scheibell\\\\__MACOSX\\\\app-scheibell\\\\backend'; npx prisma generate\":*)",
+      "Bash(powershell -Command \"Stop-Process -Name node -Force -ErrorAction SilentlyContinue; Start-Sleep 3; cd ''c:\\\\Users\\\\danie\\\\Downloads\\\\App-Scheibell\\\\__MACOSX\\\\app-scheibell\\\\backend''; npx prisma generate\")",
+      "Bash(npm run start:dev:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc1Mzk0MDYsImV4cCI6MTc2NzYyNTgwNn0.fPhRc6gWHR9aKbWTshQA1B6MrgXWNeRaPFgbPlixtTE\")",
+      "Bash(timeout:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc1NDI4MjUsImV4cCI6MTc2NzYyOTIyNX0.4j89FOLSTE35w6ynaLLlZ7VgrmA8D-YFrdu3ZOMcOzk\")",
+      "Bash(powershell -Command \"Stop-Process -Name node -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 3; cd ''c:\\\\Users\\\\danie\\\\Downloads\\\\App-Scheibell\\\\__MACOSX\\\\app-scheibell\\\\backend''; npx prisma generate\")",
+      "Bash(flutter analyze:*)",
+      "Bash(dir:*)",
+      "Bash(flutter clean:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc2MzM2MzAsImV4cCI6MTc2NzcyMDAzMH0.Z-rPtEgRiJcJm4f0HxTsqldlVKNNkS1Fk3alNtz-fXM\")",
+      "Bash(__NEW_LINE__ echo \"=== Teste 1: POST /adjustments \\(SEM /add\\) ===\")",
+      "Bash(__NEW_LINE__ echo \"\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc2MzU2MDMsImV4cCI6MTc2NzcyMjAwM30.9DjJEN2A1ZAJimUXcXTzleqCKSSE1uUKF8QmaoN1Fy0\")"
     ]
   }
 }

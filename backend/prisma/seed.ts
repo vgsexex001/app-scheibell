@@ -1,4 +1,4 @@
-import { PrismaClient, ContentType, ContentCategory, AppointmentType, AppointmentStatus, TrainingWeekStatus, UserRole } from '@prisma/client';
+import { PrismaClient, ContentType, ContentCategory, AppointmentType, AppointmentStatus, TrainingWeekStatus, UserRole, AlertType, AlertStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -678,6 +678,153 @@ async function createTestUsers(clinicId: string) {
   console.log('   └─────────────────────────────────┴──────────┴───────────────────┘');
 }
 
+async function createTestAlerts(clinicId: string) {
+  console.log('\n🚨 Criando alertas de teste...\n');
+
+  // Buscar pacientes para associar alertas
+  const patients = await prisma.patient.findMany({
+    where: { clinicId },
+    select: { id: true },
+    take: 3,
+  });
+
+  if (patients.length === 0) {
+    console.log('   Nenhum paciente encontrado, pulando criação de alertas...');
+    return;
+  }
+
+  // Verificar se já existem alertas
+  const existingAlerts = await prisma.alert.count({
+    where: { clinicId },
+  });
+
+  if (existingAlerts > 0) {
+    console.log('   Alertas já existem, pulando criação...');
+    return;
+  }
+
+  const alerts = [
+    {
+      clinicId,
+      patientId: patients[0]?.id,
+      type: AlertType.LOW_ADHERENCE,
+      title: 'Baixa Adesão a Medicamentos',
+      description: 'Paciente com apenas 30% de adesão nos últimos 3 dias.',
+      status: AlertStatus.ACTIVE,
+      isAutomatic: true,
+    },
+    {
+      clinicId,
+      patientId: patients[1]?.id || patients[0]?.id,
+      type: AlertType.HIGH_PAIN,
+      title: 'Dor Elevada Reportada',
+      description: 'Paciente reportou dor nível 8/10 no último registro.',
+      status: AlertStatus.ACTIVE,
+      isAutomatic: false,
+    },
+    {
+      clinicId,
+      patientId: null,
+      type: AlertType.OTHER,
+      title: 'Manutenção Agendada',
+      description: 'Sistema passará por manutenção no próximo domingo.',
+      status: AlertStatus.ACTIVE,
+      isAutomatic: false,
+    },
+  ];
+
+  await prisma.alert.createMany({
+    data: alerts,
+  });
+
+  console.log(`   ✅ ${alerts.length} alertas de teste criados`);
+}
+
+async function createPendingAppointmentsForAdmin(clinicId: string) {
+  console.log('\n📅 Criando consultas pendentes de aprovação para teste...\n');
+
+  // Buscar pacientes
+  const patients = await prisma.patient.findMany({
+    where: { clinicId },
+    include: { user: { select: { name: true } } },
+  });
+
+  if (patients.length === 0) {
+    console.log('   Nenhum paciente encontrado, pulando...');
+    return;
+  }
+
+  // Verificar se já existem consultas PENDING
+  const existingPending = await prisma.appointment.count({
+    where: {
+      patient: { clinicId },
+      status: AppointmentStatus.PENDING,
+    },
+  });
+
+  if (existingPending >= 3) {
+    console.log(`   Já existem ${existingPending} consultas pendentes, pulando...`);
+    return;
+  }
+
+  const now = new Date();
+  const tomorrow = new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000);
+  const dayAfterTomorrow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const pendingAppointments = [
+    {
+      patientId: patients[0].id,
+      title: 'Retorno Pós-Operatório',
+      description: 'Avaliação de cicatrização',
+      date: tomorrow,
+      time: '09:30',
+      type: AppointmentType.RETURN_VISIT,
+      status: AppointmentStatus.PENDING,
+      location: 'Consultório 1',
+    },
+    {
+      patientId: patients[Math.min(1, patients.length - 1)].id,
+      title: 'Avaliação Pré-Operatória',
+      description: 'Exames e avaliação para nova cirurgia',
+      date: dayAfterTomorrow,
+      time: '14:00',
+      type: AppointmentType.EVALUATION,
+      status: AppointmentStatus.PENDING,
+      location: 'Consultório 2',
+    },
+    {
+      patientId: patients[Math.min(2, patients.length - 1)].id,
+      title: 'Fisioterapia',
+      description: 'Sessão de drenagem linfática',
+      date: nextWeek,
+      time: '10:00',
+      type: AppointmentType.PHYSIOTHERAPY,
+      status: AppointmentStatus.PENDING,
+      location: 'Sala de Fisioterapia',
+    },
+  ];
+
+  // Criar apenas as que não existem (evitar duplicatas)
+  let created = 0;
+  for (const apt of pendingAppointments) {
+    const existing = await prisma.appointment.findFirst({
+      where: {
+        patientId: apt.patientId,
+        title: apt.title,
+        status: AppointmentStatus.PENDING,
+      },
+    });
+
+    if (!existing) {
+      await prisma.appointment.create({ data: apt });
+      created++;
+    }
+  }
+
+  console.log(`   ✅ ${created} consultas pendentes criadas para teste do admin`);
+}
+
 async function run() {
   try {
     await main();
@@ -687,6 +834,8 @@ async function run() {
     await createDefaultTrainingProtocol(clinicId);
     await initializePatientTrainingProgress();
     await createSampleAppointments();
+    await createTestAlerts(clinicId);
+    await createPendingAppointmentsForAdmin(clinicId);
     console.log('\n🎉 Seed concluído com sucesso!\n');
   } catch (error) {
     console.error('❌ Erro no seed:', error);

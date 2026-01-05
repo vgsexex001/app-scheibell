@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../guards/role_guard.dart';
 import '../models/user_model.dart';
+import '../../features/clinic/providers/clinic_dashboard_provider.dart';
+import '../../features/clinic/providers/patients_provider.dart';
+import '../../features/clinic/providers/admin_chat_controller.dart';
 // Shared screens
 import '../../shared/screens/gate_screen.dart';
 import '../../shared/screens/tela_login.dart';
@@ -135,7 +139,10 @@ class AppRoutes {
       alterarSenha: (context) => const PatientGuard(child: TelaAlterarSenha()),
 
       // Clinic routes
-      clinicDashboard: (context) => const ClinicDashboardScreen(),
+      clinicDashboard: (context) => ChangeNotifierProvider(
+        create: (_) => ClinicDashboardProvider(),
+        child: const ClinicDashboardScreen(),
+      ),
       clinicContentManagement: (context) => const ClinicContentManagementScreen(),
       clinicSymptoms: (context) => const ClinicSymptomsScreen(),
       clinicDiet: (context) => const ClinicDietScreen(),
@@ -145,10 +152,16 @@ class AppRoutes {
       clinicExams: (context) => const ClinicExamsScreen(),
       clinicMedications: (context) => const ClinicMedicationsScreen(),
       clinicDocuments: (context) => const ClinicDocumentsScreen(),
-      clinicPatientsList: (context) => const PatientsListScreen(),
+      clinicPatientsList: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const PatientsListScreen(),
+      ),
       clinicCalendar: (context) => const CalendarScreen(),
       clinicSettings: (context) => const SettingsScreen(),
-      clinicChat: (context) => const ChatScreen(),
+      clinicChat: (context) => ChangeNotifierProvider(
+        create: (_) => AdminChatController()..addWelcomeMessage(),
+        child: const ChatScreen(),
+      ),
 
       // Third party routes
       thirdPartyHome: (context) => const ThirdPartyHomeScreen(),
@@ -173,13 +186,17 @@ class AppRoutes {
         );
       case clinicPatientDetail:
         final args = settings.arguments as Map<String, dynamic>;
+        debugPrint('[NAV] opening PatientDetails patientId=${args['patientId']} source=route');
         return MaterialPageRoute(
-          builder: (context) => PatientDetailScreen(
-            patientId: args['patientId'] as String,
-            patientName: args['patientName'] as String,
-            phone: args['phone'] as String,
-            surgeryType: args['surgeryType'] as String?,
-            surgeryDate: args['surgeryDate'] as DateTime?,
+          builder: (context) => ChangeNotifierProvider(
+            create: (_) => PatientsProvider(),
+            child: PatientDetailScreen(
+              patientId: args['patientId'] as String,
+              patientName: args['patientName'] as String,
+              phone: args['phone'] as String,
+              surgeryType: args['surgeryType'] as String?,
+              surgeryDate: args['surgeryDate'] as DateTime?,
+            ),
           ),
         );
       default:

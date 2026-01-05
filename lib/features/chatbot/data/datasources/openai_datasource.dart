@@ -150,6 +150,47 @@ Responda sempre em portugues brasileiro de forma clara e objetiva.''';
     }
   }
 
+  /// Envia mensagem com system prompt customizado (para admin/clinica)
+  /// [messages] - Lista de mensagens do historico da conversa
+  /// [customSystemPrompt] - System prompt especifico para o contexto
+  Future<ChatMessageModel> sendMessageWithCustomPrompt(
+    List<ChatMessage> messages,
+    String customSystemPrompt,
+  ) async {
+    try {
+      // Prepara as mensagens para a API (com system prompt customizado)
+      final apiMessages = <Map<String, String>>[
+        {'role': 'system', 'content': customSystemPrompt},
+        ...messages.map((m) => m.toApiMessage()),
+      ];
+
+      final response = await _dio.post(
+        _chatCompletionsEndpoint,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $_apiKey',
+          },
+        ),
+        data: {
+          'model': _model,
+          'messages': apiMessages,
+          'temperature': 0.7,
+          'max_tokens': 1000,
+        },
+      );
+
+      return ChatMessageModel.fromOpenAiResponse(response.data);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      if (e is OpenAiException) rethrow;
+      throw OpenAiException(
+        message: 'Erro inesperado: ${e.toString()}',
+        errorType: 'unknown',
+      );
+    }
+  }
+
   /// Trata erros do Dio e converte para OpenAiException
   OpenAiException _handleDioError(DioException error) {
     if (error.type == DioExceptionType.connectionTimeout ||

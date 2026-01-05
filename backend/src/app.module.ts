@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContentModule } from './modules/content/content.module';
@@ -9,6 +11,9 @@ import { MedicationsModule } from './modules/medications/medications.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ExamsModule } from './modules/exams/exams.module';
 import { TrainingModule } from './modules/training/training.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { PatientsModule } from './modules/patients/patients.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -16,6 +21,18 @@ import { TrainingModule } from './modules/training/training.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+
+    // Rate Limiting - Proteção contra DDoS
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ([
+        {
+          ttl: configService.get<number>('THROTTLE_TTL') || 60000, // 1 minuto em ms
+          limit: configService.get<number>('THROTTLE_LIMIT') || 100, // 100 requests por minuto
+        },
+      ]),
     }),
 
     // Database
@@ -30,8 +47,17 @@ import { TrainingModule } from './modules/training/training.module';
     ChatModule,
     ExamsModule,
     TrainingModule,
+    AdminModule,
+    PatientsModule,
+    NotificationsModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    // Aplicar rate limiting globalmente
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

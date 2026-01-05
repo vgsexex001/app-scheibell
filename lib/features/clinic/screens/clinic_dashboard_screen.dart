@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/clinic_dashboard_provider.dart';
+import '../models/models.dart';
 
 class ClinicDashboardScreen extends StatefulWidget {
   const ClinicDashboardScreen({super.key});
@@ -10,6 +13,15 @@ class ClinicDashboardScreen extends StatefulWidget {
 class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedNavIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Carregar dados ao iniciar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ClinicDashboardProvider>().loadDashboard();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -483,68 +495,75 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
 
   // ===== INDICADORES =====
   Widget _buildIndicadoresSection() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'INDICADORES',
-            style: TextStyle(
-              color: Color(0xFF697282),
-              fontSize: 12,
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w400,
-              height: 1.33,
-              letterSpacing: 0.30,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
+    return Consumer<ClinicDashboardProvider>(
+      builder: (context, provider, _) {
+        final summary = provider.summary;
+        final isLoading = provider.isLoadingSummary;
+
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _buildIndicadorCard(
-                  titulo: 'Consultas Hoje',
-                  valor: '12',
-                  corTitulo: const Color(0xFF008235),
-                  isDestaque: false,
+              const Text(
+                'INDICADORES',
+                style: TextStyle(
+                  color: Color(0xFF697282),
+                  fontSize: 12,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w400,
+                  height: 1.33,
+                  letterSpacing: 0.30,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildIndicadorCard(
-                  titulo: 'Pendentes',
-                  valor: '3',
-                  corTitulo: const Color(0xFFD08700),
-                  isDestaque: false,
-                ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildIndicadorCard(
+                      titulo: 'Consultas Hoje',
+                      valor: isLoading ? '-' : '${summary?.consultationsToday ?? 0}',
+                      corTitulo: const Color(0xFF008235),
+                      isDestaque: false,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildIndicadorCard(
+                      titulo: 'Pendentes',
+                      valor: isLoading ? '-' : '${summary?.pendingApprovals ?? 0}',
+                      corTitulo: const Color(0xFFD08700),
+                      isDestaque: false,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildIndicadorCard(
+                      titulo: 'Alertas Ativos',
+                      valor: isLoading ? '-' : '${summary?.activeAlerts ?? 0}',
+                      corTitulo: Colors.white,
+                      isDestaque: true,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildIndicadorCard(
+                      titulo: 'Taxa de Adesão',
+                      valor: isLoading ? '-' : '${summary?.adherenceRate ?? 0}%',
+                      corTitulo: const Color(0xFF495565),
+                      isDestaque: false,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildIndicadorCard(
-                  titulo: 'Alertas Ativos',
-                  valor: '2',
-                  corTitulo: Colors.white,
-                  isDestaque: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildIndicadorCard(
-                  titulo: 'Taxa de Adesão',
-                  valor: '87%',
-                  corTitulo: const Color(0xFF495565),
-                  isDestaque: false,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -606,227 +625,327 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
 
   // ===== CONSULTAS PENDENTES =====
   Widget _buildConsultasPendentesSection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Consultas Pendentes de Aprovação',
-            style: TextStyle(
-              color: Color(0xFF1A1A1A),
-              fontSize: 14,
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w400,
-              height: 1.43,
-            ),
+    return Consumer<ClinicDashboardProvider>(
+      builder: (context, provider, _) {
+        final appointments = provider.pendingAppointments;
+        final isLoading = provider.isLoadingPending;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Consultas Pendentes de Aprovação',
+                style: TextStyle(
+                  color: Color(0xFF1A1A1A),
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w400,
+                  height: 1.43,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (isLoading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
+                    ),
+                  ),
+                )
+              else if (appointments.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: ShapeDecoration(
+                    color: const Color(0xFFF8FAFB),
+                    shape: RoundedRectangleBorder(
+                      side: const BorderSide(width: 0.87, color: Color(0xFFE5E7EB)),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(Icons.check_circle_outline, color: Color(0xFF008235), size: 32),
+                      SizedBox(height: 8),
+                      Text(
+                        'Nenhuma consulta pendente',
+                        style: TextStyle(
+                          color: Color(0xFF697282),
+                          fontSize: 14,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...appointments.map((apt) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildConsultaCard(
+                    id: apt.id,
+                    nome: apt.patientName,
+                    procedimento: apt.procedureType,
+                    data: apt.displayDate,
+                    horario: apt.displayTime,
+                  ),
+                )),
+            ],
           ),
-          const SizedBox(height: 12),
-          _buildConsultaCard(
-            nome: 'Maria Silva',
-            procedimento: 'Rinoplastia',
-            data: '15/01/2025',
-            horario: '14:00',
-          ),
-          const SizedBox(height: 12),
-          _buildConsultaCard(
-            nome: 'João Santos',
-            procedimento: 'Blefaroplastia',
-            data: '15/01/2025',
-            horario: '15:30',
-          ),
-          const SizedBox(height: 12),
-          _buildConsultaCard(
-            nome: 'Ana Oliveira',
-            procedimento: 'Otoplastia',
-            data: '16/01/2025',
-            horario: '09:00',
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildConsultaCard({
+    required String id,
     required String nome,
     required String procedimento,
     required String data,
     required String horario,
   }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: ShapeDecoration(
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(width: 0.87, color: Color(0xFFE5E7EB)),
-          borderRadius: BorderRadius.circular(24),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    nome,
-                    style: const TextStyle(
-                      color: Color(0xFF1A1A1A),
-                      fontSize: 14,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w500,
-                      height: 1.43,
-                    ),
-                  ),
-                  Text(
-                    procedimento,
-                    style: const TextStyle(
-                      color: Color(0xFF697282),
-                      fontSize: 12,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                      height: 1.33,
-                    ),
-                  ),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    data,
-                    style: const TextStyle(
-                      color: Color(0xFF1A1A1A),
-                      fontSize: 12,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                      height: 1.33,
-                    ),
-                  ),
-                  Text(
-                    horario,
-                    style: const TextStyle(
-                      color: Color(0xFF697282),
-                      fontSize: 12,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                      height: 1.33,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+    return Consumer<ClinicDashboardProvider>(
+      builder: (context, provider, _) {
+        final isApproving = provider.isApproving;
+        final isRejecting = provider.isRejecting;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: ShapeDecoration(
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(width: 0.87, color: Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(24),
+            ),
           ),
-          const SizedBox(height: 12),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () {},
-                  child: Container(
-                    height: 40,
-                    decoration: ShapeDecoration(
-                      color: const Color(0xFF008235),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Aprovar',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        nome,
+                        style: const TextStyle(
+                          color: Color(0xFF1A1A1A),
+                          fontSize: 14,
                           fontFamily: 'Inter',
                           fontWeight: FontWeight.w500,
-                          height: 1.33,
+                          height: 1.43,
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () {},
-                  child: Container(
-                    height: 40,
-                    decoration: ShapeDecoration(
-                      shape: RoundedRectangleBorder(
-                        side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Recusar',
-                        style: TextStyle(
+                      Text(
+                        procedimento,
+                        style: const TextStyle(
                           color: Color(0xFF697282),
                           fontSize: 12,
                           fontFamily: 'Inter',
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w400,
                           height: 1.33,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        data,
+                        style: const TextStyle(
+                          color: Color(0xFF1A1A1A),
+                          fontSize: 12,
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w400,
+                          height: 1.33,
+                        ),
+                      ),
+                      Text(
+                        horario,
+                        style: const TextStyle(
+                          color: Color(0xFF697282),
+                          fontSize: 12,
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w400,
+                          height: 1.33,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: isApproving ? null : () async {
+                        final success = await provider.approveAppointment(id);
+                        if (success && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Consulta aprovada com sucesso!'),
+                              backgroundColor: Color(0xFF008235),
+                            ),
+                          );
+                        }
+                      },
+                      child: Container(
+                        height: 40,
+                        decoration: ShapeDecoration(
+                          color: const Color(0xFF008235),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Center(
+                          child: isApproving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : const Text(
+                                  'Aprovar',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.33,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: isRejecting ? null : () async {
+                        final success = await provider.rejectAppointment(id);
+                        if (success && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Consulta recusada'),
+                              backgroundColor: Color(0xFF697282),
+                            ),
+                          );
+                        }
+                      },
+                      child: Container(
+                        height: 40,
+                        decoration: ShapeDecoration(
+                          shape: RoundedRectangleBorder(
+                            side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Center(
+                          child: isRejecting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF697282)),
+                                  ),
+                                )
+                              : const Text(
+                                  'Recusar',
+                                  style: TextStyle(
+                                    color: Color(0xFF697282),
+                                    fontSize: 12,
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.33,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   // ===== PACIENTES EM RECUPERAÇÃO =====
   Widget _buildPacientesRecuperacaoSection() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Pacientes em Recuperação',
-            style: TextStyle(
-              color: Color(0xFF1A1A1A),
-              fontSize: 14,
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w400,
-              height: 1.43,
-            ),
+    return Consumer<ClinicDashboardProvider>(
+      builder: (context, provider, _) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Pacientes em Recuperação',
+                style: TextStyle(
+                  color: Color(0xFF1A1A1A),
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w400,
+                  height: 1.43,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (provider.isLoadingRecovery)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
+                    ),
+                  ),
+                )
+              else if (provider.recoveryPatients.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: ShapeDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    'Nenhum paciente em recuperação no momento',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF697282),
+                      fontSize: 14,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                )
+              else
+                ...provider.recoveryPatients.map((patient) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildPacienteRecuperacaoCard(
+                    nome: patient.patientName,
+                    procedimento: patient.procedureType,
+                    diasPos: 'Dia ${patient.dayPostOp} pós-op',
+                    proximaConsulta: patient.nextAppointmentLabel,
+                    progresso: patient.progressPercent / 100.0,
+                  ),
+                )),
+            ],
           ),
-          const SizedBox(height: 12),
-          _buildPacienteRecuperacaoCard(
-            nome: 'Carlos Ferreira',
-            procedimento: 'Rinoplastia',
-            diasPos: 'Dia 3 pós-op',
-            proximaConsulta: 'Próxima: 18/01',
-            progresso: 0.3,
-          ),
-          const SizedBox(height: 12),
-          _buildPacienteRecuperacaoCard(
-            nome: 'Lucia Mendes',
-            procedimento: 'Lipoaspiração',
-            diasPos: 'Dia 7 pós-op',
-            proximaConsulta: 'Próxima: 20/01',
-            progresso: 0.7,
-          ),
-          const SizedBox(height: 12),
-          _buildPacienteRecuperacaoCard(
-            nome: 'Roberto Lima',
-            procedimento: 'Blefaroplastia',
-            diasPos: 'Dia 14 pós-op',
-            proximaConsulta: 'Alta prevista',
-            progresso: 1.0,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -960,36 +1079,81 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
 
   // ===== ALERTAS =====
   Widget _buildAlertasSection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Alertas de Atenção',
-            style: TextStyle(
-              color: Color(0xFF1A1A1A),
-              fontSize: 14,
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w400,
-              height: 1.43,
-            ),
+    return Consumer<ClinicDashboardProvider>(
+      builder: (context, provider, _) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Alertas de Atenção',
+                style: TextStyle(
+                  color: Color(0xFF1A1A1A),
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w400,
+                  height: 1.43,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (provider.isLoadingAlerts)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
+                    ),
+                  ),
+                )
+              else if (provider.alerts.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: ShapeDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    'Nenhum alerta ativo no momento',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF697282),
+                      fontSize: 14,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                )
+              else
+                ...provider.alerts.map((alert) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildAlertaCard(
+                    titulo: alert.title,
+                    descricao: alert.description ?? '',
+                    tipo: _mapAlertTypeToTipo(alert.type),
+                  ),
+                )),
+            ],
           ),
-          const SizedBox(height: 12),
-          _buildAlertaCard(
-            titulo: 'Medicação não registrada',
-            descricao: 'Maria Silva não registrou medicação há 2 dias',
-            tipo: 'warning',
-          ),
-          const SizedBox(height: 12),
-          _buildAlertaCard(
-            titulo: 'Consulta de retorno pendente',
-            descricao: 'João Santos precisa agendar retorno',
-            tipo: 'info',
-          ),
-        ],
-      ),
+        );
+      },
     );
+  }
+
+  String _mapAlertTypeToTipo(AlertType type) {
+    switch (type) {
+      case AlertType.highPain:
+      case AlertType.fever:
+      case AlertType.urgentSymptom:
+        return 'error';
+      case AlertType.lowAdherence:
+      case AlertType.missedAppointment:
+        return 'warning';
+      case AlertType.other:
+        return 'info';
+    }
   }
 
   Widget _buildAlertaCard({

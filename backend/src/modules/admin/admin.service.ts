@@ -1,0 +1,390 @@
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AppointmentStatus, AlertStatus, NotificationType, NotificationStatus } from '@prisma/client';
+import {
+  DashboardSummaryDto,
+  PendingAppointmentDto,
+  PendingAppointmentsResponseDto,
+  RecoveryPatientDto,
+  RecoveryPatientsResponseDto,
+} from './dto';
+
+@Injectable()
+export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
+  constructor(private prisma: PrismaService) {}
+
+  /**
+   * Retorna o resumo do dashboard (indicadores)
+   */
+  async getDashboardSummary(clinicId: string): Promise<DashboardSummaryDto> {
+    this.logger.log(`[getDashboardSummary] clinicId=${clinicId}`);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // 1. Consultas hoje (CONFIRMED ou COMPLETED)
+    const consultationsToday = await this.prisma.appointment.count({
+      where: {
+        patient: { clinicId },
+        date: {
+          gte: today,
+          lt: tomorrow,
+        },
+        status: {
+          in: [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED],
+        },
+      },
+    });
+
+    // 2. Consultas pendentes de aprovação
+    const pendingApprovals = await this.prisma.appointment.count({
+      where: {
+        patient: { clinicId },
+        status: AppointmentStatus.PENDING,
+      },
+    });
+
+    // 3. Alertas ativos
+    const activeAlerts = await this.prisma.alert.count({
+      where: {
+        clinicId,
+        status: AlertStatus.ACTIVE,
+      },
+    });
+
+    // 4. Taxa de adesão combinada (50% medicações + 50% treinos)
+    const adherenceRate = await this.calculateCombinedAdherence(clinicId);
+
+    return {
+      consultationsToday,
+      pendingApprovals,
+      activeAlerts,
+      adherenceRate: Math.round(adherenceRate),
+    };
+  }
+
+  /**
+   * Calcula a taxa de adesão combinada (medicações + treinos)
+   */
+  private async calculateCombinedAdherence(clinicId: string): Promise<number> {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // Buscar pacientes da clínica com cirurgia
+    const patients = await this.prisma.patient.findMany({
+      where: {
+        clinicId,
+        surgeryDate: { not: null },
+      },
+      select: { id: true },
+    });
+
+    if (patients.length === 0) return 0;
+
+    const patientIds = patients.map((p) => p.id);
+
+    // Taxa de medicações: logs registrados / esperados
+    // Simplificação: contar logs nos últimos 7 dias / (7 dias * 3 doses/dia estimadas * pacientes)
+    const medicationLogs = await this.prisma.medicationLog.count({
+      where: {
+        patientId: { in: patientIds },
+        takenAt: { gte: sevenDaysAgo },
+      },
+    });
+
+    // Estimativa: 3 medicações/dia * 7 dias * número de pacientes
+    const expectedMedicationLogs = patients.length * 7 * 3;
+    const medicationRate = expectedMedicationLogs > 0
+      ? Math.min(100, (medicationLogs / expectedMedicationLogs) * 100)
+      : 0;
+
+    // Taxa de treinos: sessões completadas / total de sessões disponíveis
+    const sessionsCompleted = await this.prisma.patientSessionCompletion.count({
+      where: {
+        patientId: { in: patientIds },
+        completedAt: { gte: sevenDaysAgo },
+      },
+    });
+
+    // Buscar total de sessões disponíveis para os pacientes (baseado nas semanas atuais)
+    const totalSessions = await this.prisma.trainingSession.count({
+      where: {
+        week: {
+          progress: {
+            some: {
+              patientId: { in: patientIds },
+              status: { in: ['COMPLETED', 'CURRENT'] },
+            },
+          },
+        },
+      },
+    });
+
+    const trainingRate = totalSessions > 0
+      ? Math.min(100, (sessionsCompleted / totalSessions) * 100)
+      : 0;
+
+    // Combinado: 50% medicações + 50% treinos
+    return (medicationRate * 0.5) + (trainingRate * 0.5);
+  }
+
+  /**
+   * Lista consultas pendentes de aprovação
+   */
+  async getPendingAppointments(
+    clinicId: string,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<PendingAppointmentsResponseDto> {
+    this.logger.log(`[getPendingAppointments] clinicId=${clinicId}, page=${page}, limit=${limit}`);
+
+    const skip = (page - 1) * limit;
+
+    const [appointments, total] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where: {
+          patient: { clinicId },
+          status: AppointmentStatus.PENDING,
+        },
+        include: {
+          patient: {
+            include: {
+              user: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { date: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.appointment.count({
+        where: {
+          patient: { clinicId },
+          status: AppointmentStatus.PENDING,
+        },
+      }),
+    ]);
+
+    const items: PendingAppointmentDto[] = appointments.map((apt) => {
+      const date = new Date(apt.date);
+      return {
+        id: apt.id,
+        patientId: apt.patientId,
+        patientName: apt.patient.user.name,
+        procedureType: apt.patient.surgeryType || apt.title,
+        startsAt: `${date.toISOString().split('T')[0]}T${apt.time}:00-03:00`,
+        displayDate: date.toLocaleDateString('pt-BR'),
+        displayTime: apt.time,
+      };
+    });
+
+    return { items, page, limit, total };
+  }
+
+  /**
+   * Aprova uma consulta
+   */
+  async approveAppointment(
+    appointmentId: string,
+    clinicId: string,
+    userId: string,
+    notes?: string,
+  ) {
+    this.logger.log(`[approveAppointment] appointmentId=${appointmentId}, userId=${userId}`);
+
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        patient: {
+          include: { user: true },
+        },
+      },
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Consulta não encontrada');
+    }
+
+    if (appointment.patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a esta consulta');
+    }
+
+    const updated = await this.prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: AppointmentStatus.CONFIRMED,
+        notes: notes ? `${appointment.notes || ''}\n[Aprovado] ${notes}`.trim() : appointment.notes,
+      },
+    });
+
+    // Criar notificação para o paciente
+    await this.prisma.notification.create({
+      data: {
+        userId: appointment.patient.userId,
+        type: NotificationType.APPOINTMENT_APPROVED,
+        title: 'Consulta Aprovada',
+        body: `Sua consulta de ${appointment.title} foi aprovada para ${new Date(appointment.date).toLocaleDateString('pt-BR')} às ${appointment.time}.`,
+        data: { appointmentId: appointment.id },
+        status: NotificationStatus.PENDING,
+      },
+    });
+
+    return { success: true, appointment: updated };
+  }
+
+  /**
+   * Rejeita uma consulta
+   */
+  async rejectAppointment(
+    appointmentId: string,
+    clinicId: string,
+    userId: string,
+    reason?: string,
+  ) {
+    this.logger.log(`[rejectAppointment] appointmentId=${appointmentId}, userId=${userId}`);
+
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        patient: {
+          include: { user: true },
+        },
+      },
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Consulta não encontrada');
+    }
+
+    if (appointment.patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a esta consulta');
+    }
+
+    const updated = await this.prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: AppointmentStatus.CANCELLED,
+        notes: reason ? `${appointment.notes || ''}\n[Recusado] ${reason}`.trim() : appointment.notes,
+      },
+    });
+
+    // Criar notificação para o paciente
+    await this.prisma.notification.create({
+      data: {
+        userId: appointment.patient.userId,
+        type: NotificationType.APPOINTMENT_REJECTED,
+        title: 'Consulta Recusada',
+        body: reason
+          ? `Sua consulta de ${appointment.title} foi recusada. Motivo: ${reason}`
+          : `Sua consulta de ${appointment.title} foi recusada. Entre em contato com a clínica.`,
+        data: { appointmentId: appointment.id, reason },
+        status: NotificationStatus.PENDING,
+      },
+    });
+
+    return { success: true, appointment: updated };
+  }
+
+  /**
+   * Lista pacientes em recuperação
+   */
+  async getRecoveryPatients(
+    clinicId: string,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<RecoveryPatientsResponseDto> {
+    this.logger.log(`[getRecoveryPatients] clinicId=${clinicId}, page=${page}, limit=${limit}`);
+
+    const skip = (page - 1) * limit;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [patients, total] = await Promise.all([
+      this.prisma.patient.findMany({
+        where: {
+          clinicId,
+          surgeryDate: { not: null },
+        },
+        include: {
+          user: { select: { name: true } },
+          appointments: {
+            where: {
+              status: AppointmentStatus.CONFIRMED,
+              date: { gte: today },
+            },
+            orderBy: { date: 'asc' },
+            take: 1,
+          },
+          sessionCompletions: {
+            select: { id: true },
+          },
+          trainingProgress: {
+            where: { status: { in: ['COMPLETED', 'CURRENT'] } },
+            include: {
+              week: {
+                include: {
+                  sessions: { select: { id: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { surgeryDate: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.patient.count({
+        where: {
+          clinicId,
+          surgeryDate: { not: null },
+        },
+      }),
+    ]);
+
+    const items: RecoveryPatientDto[] = patients.map((patient) => {
+      // Calcular dias pós-operatório
+      const surgeryDate = new Date(patient.surgeryDate!);
+      surgeryDate.setHours(0, 0, 0, 0);
+      const dayPostOp = Math.floor(
+        (today.getTime() - surgeryDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      // Calcular progresso baseado em sessões completadas
+      let totalSessions = 0;
+      patient.trainingProgress.forEach((progress) => {
+        totalSessions += progress.week.sessions.length;
+      });
+      const completedSessions = patient.sessionCompletions.length;
+      const progressPercent = totalSessions > 0
+        ? Math.round((completedSessions / totalSessions) * 100)
+        : 0;
+
+      // Próxima consulta
+      const nextAppointment = patient.appointments[0];
+      let nextAppointmentAt: string | null = null;
+      let nextAppointmentLabel = 'Sem consultas agendadas';
+
+      if (nextAppointment) {
+        const nextDate = new Date(nextAppointment.date);
+        nextAppointmentAt = nextDate.toISOString();
+        nextAppointmentLabel = `Próxima: ${nextDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
+      }
+
+      return {
+        patientId: patient.id,
+        patientName: patient.user.name,
+        procedureType: patient.surgeryType || 'Não informado',
+        dayPostOp: Math.max(0, dayPostOp),
+        progressPercent,
+        nextAppointmentAt,
+        nextAppointmentLabel,
+      };
+    });
+
+    return { items, page, limit, total };
+  }
+}

@@ -85,27 +85,78 @@ export class MedicationsService {
     startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
 
-    // Buscar paciente para pegar clinicId
+    // Buscar paciente para pegar clinicId e data da cirurgia
     const patient = await this.prisma.patient.findUnique({
       where: { id: patientId },
       select: { clinicId: true, surgeryDate: true },
     });
 
     if (!patient) {
-      return { adherence: 0, taken: 0, expected: 0 };
+      return { adherence: 0, taken: 0, expected: 0, days, medicationsCount: 0 };
     }
 
-    // Buscar medicações ativas da clínica
-    const medications = await this.prisma.clinicContent.findMany({
+    // Calcular dia pós-operatório atual
+    const today = new Date();
+    const dayPostOp = patient.surgeryDate
+      ? Math.floor((today.getTime() - new Date(patient.surgeryDate).getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
+
+    // 1. Buscar medicações adicionadas especificamente para o paciente (PatientContentAdjustment ADD)
+    const patientAddedMeds = await this.prisma.patientContentAdjustment.findMany({
       where: {
-        clinicId: patient.clinicId,
-        type: 'MEDICATIONS',
+        patientId,
+        contentType: 'MEDICATIONS',
+        adjustmentType: 'ADD',
         isActive: true,
       },
     });
 
-    if (medications.length === 0) {
-      return { adherence: 100, taken: 0, expected: 0 };
+    // 2. Buscar medicações desabilitadas para o paciente (PatientContentAdjustment DISABLE)
+    const disabledMedIds = await this.prisma.patientContentAdjustment.findMany({
+      where: {
+        patientId,
+        adjustmentType: 'DISABLE',
+        isActive: true,
+        baseContentId: { not: null },
+      },
+      select: { baseContentId: true },
+    });
+    const disabledIds = disabledMedIds.map(d => d.baseContentId).filter(Boolean) as string[];
+
+    // 3. Buscar medicações da clínica ativas e válidas para o D+ atual
+    const clinicMedications = await this.prisma.clinicContent.findMany({
+      where: {
+        clinicId: patient.clinicId,
+        type: 'MEDICATIONS',
+        isActive: true,
+        id: { notIn: disabledIds },
+        OR: [
+          // Medicação válida para o período pós-op atual
+          {
+            AND: [
+              { validFromDay: { lte: dayPostOp } },
+              { validUntilDay: { gte: dayPostOp } },
+            ],
+          },
+          // Medicação sem período definido (sempre válida)
+          {
+            validFromDay: null,
+            validUntilDay: null,
+          },
+          // Apenas validFromDay definido
+          {
+            validFromDay: { lte: dayPostOp },
+            validUntilDay: null,
+          },
+        ],
+      },
+    });
+
+    // Total de medicações ativas para o paciente
+    const totalMedications = patientAddedMeds.length + clinicMedications.length;
+
+    if (totalMedications === 0) {
+      return { adherence: 100, taken: 0, expected: 0, days, medicationsCount: 0 };
     }
 
     // Contar logs do período
@@ -118,9 +169,9 @@ export class MedicationsService {
       },
     });
 
-    // Estimativa simples: cada medicação deve ser tomada 1x por dia
-    // (pode ser refinado com horários específicos no futuro)
-    const expected = medications.length * days;
+    // Cálculo: assumir 1 dose por dia por medicação (conservador)
+    // Para medicações com múltiplas doses, o schema precisaria de campo 'frequency'
+    const expected = totalMedications * days;
     const adherence = expected > 0 ? Math.min(100, Math.round((logs / expected) * 100)) : 100;
 
     return {
@@ -128,7 +179,12 @@ export class MedicationsService {
       taken: logs,
       expected,
       days,
-      medicationsCount: medications.length,
+      medicationsCount: totalMedications,
+      details: {
+        fromClinic: clinicMedications.length,
+        addedForPatient: patientAddedMeds.length,
+        disabled: disabledIds.length,
+      },
     };
   }
 

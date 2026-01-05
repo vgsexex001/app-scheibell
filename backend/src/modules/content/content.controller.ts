@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Put, Patch, Delete,
-  Body, Param, Query, UseGuards,
+  Body, Param, Query, UseGuards, BadRequestException,
 } from '@nestjs/common';
 import { ContentService } from './content.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -8,6 +8,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ContentType, ContentCategory } from '@prisma/client';
+import { AddPatientContentDto } from './dto/add-patient-content.dto';
 
 @Controller('content')
 @UseGuards(JwtAuthGuard)
@@ -185,20 +186,35 @@ export class ContentController {
     return this.contentService.getPatientAdjustments(patientId);
   }
 
+  // Rota POST direta (compatibilidade com Flutter que não usa /add)
+  @Post('patients/:patientId/adjustments')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async addPatientContentDirect(
+    @Param('patientId') patientId: string,
+    @CurrentUser('id') userId: string,
+    @Body() data: AddPatientContentDto,
+  ) {
+    if (data.validUntilDay !== undefined && data.validFromDay !== undefined
+        && data.validUntilDay < data.validFromDay) {
+      throw new BadRequestException('Dia final deve ser >= dia inicial');
+    }
+    return this.contentService.addPatientContent(patientId, data, userId);
+  }
+
   @Post('patients/:patientId/adjustments/add')
   @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
   @UseGuards(RolesGuard)
   async addPatientContent(
     @Param('patientId') patientId: string,
     @CurrentUser('id') userId: string,
-    @Body() data: {
-      contentType: ContentType;
-      category: ContentCategory;
-      title: string;
-      description?: string;
-      reason?: string;
-    },
+    @Body() data: AddPatientContentDto,
   ) {
+    // Validações adicionais de dias (já que @Min(0) só valida validFromDay)
+    if (data.validUntilDay !== undefined && data.validFromDay !== undefined
+        && data.validUntilDay < data.validFromDay) {
+      throw new BadRequestException('Dia final deve ser >= dia inicial');
+    }
     return this.contentService.addPatientContent(patientId, data, userId);
   }
 

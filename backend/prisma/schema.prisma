@@ -70,6 +70,40 @@ enum ExamStatus {
   VIEWED          // Visualizado pelo paciente
 }
 
+// ==================== ALERTAS ====================
+
+enum AlertType {
+  HIGH_PAIN           // Dor alta reportada
+  FEVER               // Febre
+  LOW_ADHERENCE       // Baixa adesão a medicamentos/treinos
+  MISSED_APPOINTMENT  // Consulta perdida
+  URGENT_SYMPTOM      // Sintoma urgente
+  OTHER               // Outro
+}
+
+enum AlertStatus {
+  ACTIVE              // Alerta ativo
+  RESOLVED            // Resolvido
+  DISMISSED           // Dispensado/Ignorado
+}
+
+// ==================== NOTIFICAÇÕES ====================
+
+enum NotificationType {
+  APPOINTMENT_APPROVED   // Consulta aprovada
+  APPOINTMENT_REJECTED   // Consulta rejeitada
+  ALERT_CREATED          // Alerta criado
+  REMINDER               // Lembrete
+  OTHER                  // Outro
+}
+
+enum NotificationStatus {
+  PENDING     // Aguardando envio
+  SENT        // Enviado (quando FCM estiver integrado)
+  READ        // Lido pelo usuário
+  FAILED      // Falha no envio
+}
+
 // ==================== USUÁRIOS E CLÍNICAS ====================
 
 model User {
@@ -83,6 +117,7 @@ model User {
   clinic        Clinic?   @relation(fields: [clinicId], references: [id])
 
   patient       Patient?
+  notifications Notification[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -106,6 +141,7 @@ model Clinic {
   patients      Patient[]
   contents      ClinicContent[]
   trainingProtocols TrainingProtocol[]
+  alerts        Alert[]
 
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
@@ -128,6 +164,13 @@ model Patient {
   phone         String?
   birthDate     DateTime?
 
+  // Dados médicos adicionais
+  bloodType        String?   // Tipo sanguíneo (A+, A-, B+, B-, AB+, AB-, O+, O-)
+  weightKg         Float?    // Peso em kg
+  heightCm         Float?    // Altura em cm
+  emergencyContact String?   // Nome do contato de emergência
+  emergencyPhone   String?   // Telefone do contato de emergência
+
   // Dados da cirurgia
   surgeryDate   DateTime?
   surgeryType   String?
@@ -139,6 +182,9 @@ model Patient {
   exams                Exam[]
   trainingProgress     PatientTrainingProgress[]
   sessionCompletions   PatientSessionCompletion[]
+  alerts               Alert[]
+  allergies            PatientAllergy[]
+  medicalNotes         MedicalNote[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -479,4 +525,94 @@ model ChatMessage {
 
   @@index([conversationId])
   @@map("chat_messages")
+}
+
+// ==================== ALERTAS DO PAINEL ====================
+
+model Alert {
+  id          String      @id @default(uuid())
+
+  clinicId    String
+  clinic      Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  patientId   String?
+  patient     Patient?    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  type        AlertType
+  title       String
+  description String?
+  status      AlertStatus @default(ACTIVE)
+  isAutomatic Boolean     @default(false)  // true = gerado automaticamente pelo sistema
+
+  createdAt   DateTime    @default(now())
+  resolvedAt  DateTime?
+  resolvedBy  String?     // userId de quem resolveu
+
+  @@index([clinicId])
+  @@index([clinicId, status])
+  @@index([patientId])
+  @@map("alerts")
+}
+
+// ==================== NOTIFICAÇÕES ====================
+
+model Notification {
+  id          String             @id @default(uuid())
+
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type        NotificationType
+  title       String
+  body        String
+  data        Json?              // Dados extras (appointmentId, alertId, etc)
+
+  status      NotificationStatus @default(PENDING)
+  sentAt      DateTime?
+  readAt      DateTime?
+
+  createdAt   DateTime           @default(now())
+
+  @@index([userId])
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+// ==================== ALERGIAS DO PACIENTE ====================
+
+model PatientAllergy {
+  id          String    @id @default(uuid())
+
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  name        String    // Nome da alergia (ex: "Dipirona", "Penicilina", "Látex")
+  severity    String?   // Gravidade: MILD (Leve), MODERATE (Moderada), SEVERE (Grave)
+  notes       String?   // Observações adicionais
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([patientId])
+  @@map("patient_allergies")
+}
+
+// ==================== NOTAS MÉDICAS DO PACIENTE ====================
+
+model MedicalNote {
+  id          String    @id @default(uuid())
+
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  content     String    // Conteúdo da nota médica
+  author      String?   // Nome do autor (médico/equipe)
+  authorId    String?   // ID do usuário que criou (se aplicável)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([patientId])
+  @@index([patientId, createdAt])
+  @@map("medical_notes")
 }

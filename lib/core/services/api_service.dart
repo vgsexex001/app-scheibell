@@ -124,6 +124,36 @@ class ApiService {
     debugPrint('╠══════════════════════════════════════════════════════════════');
     debugPrint('║ Status: ${response.statusCode}');
     debugPrint('║ Path: ${response.requestOptions.path}');
+
+    // Log adicional para validar dados reais
+    final data = response.data;
+    if (data is Map) {
+      if (data['items'] != null && data['items'] is List) {
+        final items = data['items'] as List;
+        debugPrint('║ Items Count: ${items.length}');
+        if (items.isNotEmpty) {
+          final firstItem = items.first;
+          if (firstItem is Map && firstItem['id'] != null) {
+            debugPrint('║ Sample ID: ${firstItem['id']}');
+          }
+          if (firstItem is Map && firstItem['name'] != null) {
+            debugPrint('║ Sample Name: ${firstItem['name']}');
+          }
+        }
+      }
+      if (data['total'] != null) {
+        debugPrint('║ Total: ${data['total']}');
+      }
+    } else if (data is List) {
+      debugPrint('║ Items Count: ${data.length}');
+      if (data.isNotEmpty && data.first is Map) {
+        final firstItem = data.first as Map;
+        if (firstItem['id'] != null) {
+          debugPrint('║ Sample ID: ${firstItem['id']}');
+        }
+      }
+    }
+
     debugPrint('║ Data: ${_truncate(response.data.toString(), 500)}');
     debugPrint('╚══════════════════════════════════════════════════════════════');
   }
@@ -824,5 +854,480 @@ class ApiService {
     } catch (e) {
       return false;
     }
+  }
+
+  // ==================== ADMIN / PAINEL CLÍNICA ====================
+
+  /// Busca resumo do dashboard (indicadores)
+  Future<Map<String, dynamic>> getAdminDashboardSummary() async {
+    final response = await get(ApiConfig.adminDashboardSummaryEndpoint);
+    return response.data;
+  }
+
+  /// Lista consultas pendentes de aprovação
+  Future<Map<String, dynamic>> getAdminPendingAppointments({
+    int page = 1,
+    int limit = 10,
+  }) async {
+    final response = await get(
+      ApiConfig.adminPendingAppointmentsEndpoint,
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    return response.data;
+  }
+
+  /// Aprova uma consulta
+  Future<Map<String, dynamic>> approveAppointment(
+    String appointmentId, {
+    String? notes,
+  }) async {
+    final response = await post(
+      '/admin/appointments/$appointmentId/approve',
+      data: notes != null ? {'notes': notes} : {},
+    );
+    return response.data;
+  }
+
+  /// Rejeita uma consulta
+  Future<Map<String, dynamic>> rejectAppointment(
+    String appointmentId, {
+    String? reason,
+  }) async {
+    final response = await post(
+      '/admin/appointments/$appointmentId/reject',
+      data: reason != null ? {'reason': reason} : {},
+    );
+    return response.data;
+  }
+
+  /// Lista pacientes em recuperação
+  Future<Map<String, dynamic>> getAdminRecoveryPatients({
+    int page = 1,
+    int limit = 10,
+  }) async {
+    final response = await get(
+      ApiConfig.adminRecoveryPatientsEndpoint,
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    return response.data;
+  }
+
+  /// Lista alertas da clínica
+  Future<Map<String, dynamic>> getAdminAlerts({
+    int page = 1,
+    int limit = 10,
+    String? status,
+  }) async {
+    final response = await get(
+      ApiConfig.adminAlertsEndpoint,
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (status != null) 'status': status,
+      },
+    );
+    return response.data;
+  }
+
+  /// Cria um alerta manual
+  Future<Map<String, dynamic>> createAlert({
+    required String type,
+    required String title,
+    String? description,
+    String? patientId,
+  }) async {
+    final response = await post(
+      ApiConfig.adminAlertsEndpoint,
+      data: {
+        'type': type,
+        'title': title,
+        if (description != null) 'description': description,
+        if (patientId != null) 'patientId': patientId,
+      },
+    );
+    return response.data;
+  }
+
+  /// Resolve um alerta
+  Future<Map<String, dynamic>> resolveAlert(String alertId) async {
+    final response = await patch('/admin/alerts/$alertId/resolve');
+    return response.data;
+  }
+
+  /// Dispensa um alerta
+  Future<Map<String, dynamic>> dismissAlert(String alertId) async {
+    final response = await patch('/admin/alerts/$alertId/dismiss');
+    return response.data;
+  }
+
+  /// Executa verificação de alertas automáticos
+  Future<Map<String, dynamic>> checkAndGenerateAlerts() async {
+    final response = await post('/admin/alerts/check');
+    return response.data;
+  }
+
+  // ==================== PACIENTES (PAINEL CLÍNICA) ====================
+
+  /// Lista pacientes da clínica
+  Future<Map<String, dynamic>> getPatients({
+    int page = 1,
+    int limit = 20,
+    String? search,
+    String? status,
+  }) async {
+    final response = await get(
+      ApiConfig.patientsEndpoint,
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (status != null) 'status': status,
+      },
+    );
+    return response.data;
+  }
+
+  /// Busca detalhes de um paciente
+  Future<Map<String, dynamic>> getPatientById(String patientId) async {
+    final fullUrl = '${ApiConfig.baseUrl}${ApiConfig.patientsEndpoint}/$patientId';
+    debugPrint('[HTTP] -> GET $fullUrl headersAuth=${_authToken != null}');
+
+    final stopwatch = Stopwatch()..start();
+    try {
+      final response = await get('${ApiConfig.patientsEndpoint}/$patientId');
+      stopwatch.stop();
+      debugPrint('[HTTP] <- status=${response.statusCode} ms=${stopwatch.elapsedMilliseconds}');
+      debugPrint('[HTTP] <- body=${_truncate(response.data.toString(), 500)}');
+      return response.data;
+    } on DioException catch (e) {
+      stopwatch.stop();
+      debugPrint('[HTTP] ERROR type=${e.type}');
+      debugPrint('[HTTP] ERROR status=${e.response?.statusCode}');
+      debugPrint('[HTTP] ERROR data=${_truncate(e.response?.data?.toString() ?? 'null', 500)}');
+      debugPrint('[HTTP] ERROR message=${e.message}');
+      rethrow;
+    } catch (e, stack) {
+      stopwatch.stop();
+      debugPrint('[HTTP] ERROR type=${e.runtimeType}');
+      debugPrint('[HTTP] ERROR message=$e');
+      debugPrint('[HTTP] STACK:');
+      debugPrintStack(stackTrace: stack, maxFrames: 5);
+      rethrow;
+    }
+  }
+
+  /// Lista consultas de um paciente
+  Future<Map<String, dynamic>> getPatientAppointments(
+    String patientId, {
+    String? status,
+    int page = 1,
+    int limit = 10,
+  }) async {
+    final response = await get(
+      '${ApiConfig.patientsEndpoint}/$patientId/appointments',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (status != null) 'status': status,
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza dados do paciente
+  Future<Map<String, dynamic>> updatePatient(
+    String patientId,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await patch(
+      '${ApiConfig.patientsEndpoint}/$patientId',
+      data: data,
+    );
+    return response.data;
+  }
+
+  /// Busca histórico completo do paciente
+  Future<Map<String, dynamic>> getPatientHistory(
+    String patientId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await get(
+      '${ApiConfig.patientsEndpoint}/$patientId/history',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    return response.data;
+  }
+
+  // ==================== ALERGIAS DO PACIENTE ====================
+
+  /// Lista alergias de um paciente
+  Future<List<dynamic>> getPatientAllergies(String patientId) async {
+    final response = await get(
+      '${ApiConfig.patientsEndpoint}/$patientId/allergies',
+    );
+    return response.data is List ? response.data : [];
+  }
+
+  /// Adiciona uma alergia ao paciente
+  Future<Map<String, dynamic>> addPatientAllergy(
+    String patientId, {
+    required String name,
+    String? severity,
+    String? notes,
+  }) async {
+    final response = await post(
+      '${ApiConfig.patientsEndpoint}/$patientId/allergies',
+      data: {
+        'name': name,
+        if (severity != null) 'severity': severity,
+        if (notes != null) 'notes': notes,
+      },
+    );
+    return response.data;
+  }
+
+  /// Remove uma alergia do paciente
+  Future<Map<String, dynamic>> removePatientAllergy(
+    String patientId,
+    String allergyId,
+  ) async {
+    final response = await delete(
+      '${ApiConfig.patientsEndpoint}/$patientId/allergies/$allergyId',
+    );
+    return response.data;
+  }
+
+  // ==================== NOTAS MÉDICAS DO PACIENTE ====================
+
+  /// Lista notas médicas de um paciente
+  Future<Map<String, dynamic>> getPatientMedicalNotes(
+    String patientId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await get(
+      '${ApiConfig.patientsEndpoint}/$patientId/medical-notes',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    return response.data;
+  }
+
+  /// Adiciona uma nota médica ao paciente
+  Future<Map<String, dynamic>> addPatientMedicalNote(
+    String patientId, {
+    required String content,
+    String? author,
+  }) async {
+    final response = await post(
+      '${ApiConfig.patientsEndpoint}/$patientId/medical-notes',
+      data: {
+        'content': content,
+        if (author != null) 'author': author,
+      },
+    );
+    return response.data;
+  }
+
+  /// Remove uma nota médica do paciente
+  Future<Map<String, dynamic>> removePatientMedicalNote(
+    String patientId,
+    String noteId,
+  ) async {
+    final response = await delete(
+      '${ApiConfig.patientsEndpoint}/$patientId/medical-notes/$noteId',
+    );
+    return response.data;
+  }
+
+  // ==================== CONSULTAS (CRIAR PARA PACIENTE) ====================
+
+  /// Cria uma consulta para um paciente específico (usado pelo admin)
+  Future<Map<String, dynamic>> createPatientAppointment(
+    String patientId, {
+    required String title,
+    required String date,
+    required String time,
+    required String type,
+    String? description,
+    String? location,
+    String? notes,
+  }) async {
+    final response = await post(
+      ApiConfig.appointmentsEndpoint,
+      data: {
+        'patientId': patientId,
+        'title': title,
+        'date': date,
+        'time': time,
+        'type': type,
+        if (description != null) 'description': description,
+        if (location != null) 'location': location,
+        if (notes != null) 'notes': notes,
+      },
+    );
+    return response.data;
+  }
+
+  // ==================== AJUSTES DE CONTEÚDO DO PACIENTE ====================
+
+  /// Busca ajustes de conteúdo de um paciente específico
+  /// Retorna dynamic pois backend pode retornar List ou Map
+  Future<dynamic> getPatientContentAdjustments(
+    String patientId, {
+    String? contentType,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await get(
+      '/content/patients/$patientId/adjustments',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (contentType != null) 'contentType': contentType,
+      },
+    );
+    return response.data;
+  }
+
+  /// Adiciona conteúdo customizado para um paciente (adjustmentType = ADD)
+  Future<Map<String, dynamic>> addPatientContent(
+    String patientId, {
+    required String contentType,
+    required String category,
+    required String title,
+    String? description,
+    int? validFromDay,
+    int? validUntilDay,
+    String? reason,
+  }) async {
+    final endpoint = '/content/patients/$patientId/adjustments/add';
+    final payload = {
+      'contentType': contentType,
+      'category': category,
+      'title': title,
+      if (description != null) 'description': description,
+      if (validFromDay != null) 'validFromDay': validFromDay,
+      if (validUntilDay != null) 'validUntilDay': validUntilDay,
+      if (reason != null) 'reason': reason,
+    };
+
+    print('[API] addPatientContent: POST $endpoint');
+    print('[API] payload: $payload');
+    print('[API] authToken present: ${_authToken != null}');
+
+    final response = await post(endpoint, data: payload);
+
+    print('[API] addPatientContent response: ${response.statusCode}');
+
+    return response.data;
+  }
+
+  /// Desabilita um conteúdo base para um paciente (adjustmentType = DISABLE)
+  Future<Map<String, dynamic>> disablePatientContent(
+    String patientId, {
+    required String baseContentId,
+    required String reason,
+  }) async {
+    final response = await post(
+      '/content/patients/$patientId/adjustments/disable',
+      data: {
+        'baseContentId': baseContentId,
+        'reason': reason,
+      },
+    );
+    return response.data;
+  }
+
+  /// Modifica um conteúdo base para um paciente (adjustmentType = MODIFY)
+  Future<Map<String, dynamic>> modifyPatientContent(
+    String patientId, {
+    required String baseContentId,
+    String? title,
+    String? description,
+    String? category,
+    String? reason,
+  }) async {
+    final response = await post(
+      '/content/patients/$patientId/adjustments/modify',
+      data: {
+        'baseContentId': baseContentId,
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (category != null) 'category': category,
+        if (reason != null) 'reason': reason,
+      },
+    );
+    return response.data;
+  }
+
+  /// Cria um ajuste de conteúdo para um paciente (método legado - redireciona para métodos específicos)
+  @Deprecated('Use addPatientContent, disablePatientContent, ou modifyPatientContent')
+  Future<Map<String, dynamic>> createPatientContentAdjustment(
+    String patientId, {
+    required String adjustmentType,
+    String? baseContentId,
+    String? contentType,
+    String? category,
+    String? title,
+    String? description,
+    int? validFromDay,
+    int? validUntilDay,
+    String? reason,
+  }) async {
+    // Redireciona para o método específico baseado no adjustmentType
+    switch (adjustmentType) {
+      case 'ADD':
+        return addPatientContent(
+          patientId,
+          contentType: contentType!,
+          category: category!,
+          title: title!,
+          description: description,
+          validFromDay: validFromDay,
+          validUntilDay: validUntilDay,
+          reason: reason,
+        );
+      case 'DISABLE':
+        return disablePatientContent(
+          patientId,
+          baseContentId: baseContentId!,
+          reason: reason!,
+        );
+      case 'MODIFY':
+        return modifyPatientContent(
+          patientId,
+          baseContentId: baseContentId!,
+          title: title,
+          description: description,
+          category: category,
+          reason: reason,
+        );
+      default:
+        throw ArgumentError('adjustmentType inválido: $adjustmentType');
+    }
+  }
+
+  /// Remove um ajuste de conteúdo de um paciente
+  Future<Map<String, dynamic>> removePatientContentAdjustment(
+    String patientId,
+    String adjustmentId,
+  ) async {
+    final response = await delete(
+      '/content/patients/$patientId/adjustments/$adjustmentId',
+    );
+    return response.data;
   }
 }

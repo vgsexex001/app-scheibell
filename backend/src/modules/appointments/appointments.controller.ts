@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -67,15 +68,27 @@ export class AppointmentsController {
   /**
    * Cria uma nova consulta
    * POST /api/appointments
+   * - PATIENT: cria para si mesmo (patientId do token)
+   * - CLINIC_ADMIN/CLINIC_STAFF: cria para qualquer paciente (patientId do body)
    */
   @Post()
-  @Roles('PATIENT')
+  @Roles('PATIENT', 'CLINIC_ADMIN', 'CLINIC_STAFF')
   @UseGuards(RolesGuard)
   async createAppointment(
-    @CurrentUser('patientId') patientId: string,
-    @Body() dto: CreateAppointmentDto,
+    @CurrentUser('patientId') tokenPatientId: string,
+    @CurrentUser('role') role: string,
+    @Body() dto: CreateAppointmentDto & { patientId?: string },
   ) {
-    return this.appointmentsService.createAppointment(patientId, dto);
+    // Se for admin/staff, usa patientId do body; se for patient, usa do token
+    const targetPatientId = (role === 'CLINIC_ADMIN' || role === 'CLINIC_STAFF')
+      ? dto.patientId
+      : tokenPatientId;
+
+    if (!targetPatientId) {
+      throw new BadRequestException('patientId é obrigatório');
+    }
+
+    return this.appointmentsService.createAppointment(targetPatientId, dto);
   }
 
   /**

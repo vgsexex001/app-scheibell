@@ -35,9 +35,11 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const port = configService.get<number>('PORT') || 3000;
-  await app.listen(port);
+  // Listen on all network interfaces (0.0.0.0) to allow external connections
+  await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Application is running on: http://localhost:${port}/api`);
+  console.log(`🌐 External access: http://<YOUR_IP>:${port}/api`);
 }
 
 bootstrap();

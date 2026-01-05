@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'patient_chat_screen.dart';
 import 'appointment_detail_screen.dart';
+import '../providers/admin_chat_controller.dart';
+import '../../chatbot/domain/entities/chat_message.dart' as domain;
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -14,28 +17,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final int _selectedNavIndex = 2; // Chat tab
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-
-  // Mensagens mock do chat IA
-  final List<ChatMessage> _messages = [
-    ChatMessage(
-      isFromUser: false,
-      text:
-          'Olá! Sou a assistente inteligente da Clínica Scheibel. Como posso ajudar você hoje?',
-      time: '10:00',
-    ),
-    ChatMessage(
-      isFromUser: true,
-      text:
-          'Preciso de ajuda para responder uma paciente sobre cuidados pós-operatórios',
-      time: '10:02',
-    ),
-    ChatMessage(
-      isFromUser: false,
-      text:
-          'Claro! Para criar uma resposta adequada, preciso de algumas informações:\n\n• Qual tipo de cirurgia foi realizada?\n• Quantos dias de pós-operatório?\n• Qual é a dúvida específica da paciente?',
-      time: '10:02',
-    ),
-  ];
 
   // Lista de pacientes com conversas (mock)
   final List<PatientConversation> _patientConversations = [
@@ -314,27 +295,87 @@ class _ChatScreenState extends State<ChatScreen> {
   /// ABA IA - CHAT COM ASSISTENTE (SEM CARD CONTEXTO)
   /// ==========================================
   Widget _buildIAChatContent() {
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(12),
-            child: Column(
+    return Consumer<AdminChatController>(
+      builder: (context, controller, child) {
+        return Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    // Banner de aviso (sem card de contexto)
+                    _buildAIWarningBanner(),
+                    const SizedBox(height: 12),
+                    ...controller.messages.map((msg) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildDomainMessageBubble(msg),
+                        )),
+                    if (controller.isLoading)
+                      _buildTypingIndicator(),
+                  ],
+                ),
+              ),
+            ),
+            _buildMessageInput(),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Converte mensagem de domínio para widget de UI
+  Widget _buildDomainMessageBubble(domain.ChatMessage message) {
+    final timeString = '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}';
+
+    // Reutiliza o widget existente convertendo para formato local
+    return _buildMessageBubble(ChatMessage(
+      isFromUser: message.isUser,
+      text: message.content,
+      time: timeString,
+    ));
+  }
+
+  /// Indicador de "digitando..." quando a IA está processando
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Banner de aviso (sem card de contexto)
-                _buildAIWarningBanner(),
-                const SizedBox(height: 12),
-                ..._messages.map((msg) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildMessageBubble(msg),
-                    )),
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4F4A34)),
+                  ),
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Digitando...',
+                  style: TextStyle(
+                    color: Color(0xFF495565),
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ],
             ),
           ),
-        ),
-        _buildMessageInput(),
-      ],
+        ],
+      ),
     );
   }
 
@@ -594,25 +635,19 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendMessage() {
     if (_messageController.text.trim().isEmpty) return;
 
-    final now = TimeOfDay.now();
-    final timeString =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final controller = context.read<AdminChatController>();
+    controller.sendMessage(_messageController.text.trim());
+    _messageController.clear();
 
-    setState(() {
-      _messages.add(ChatMessage(
-        isFromUser: true,
-        text: _messageController.text.trim(),
-        time: timeString,
-      ));
-      _messageController.clear();
-    });
-
+    // Scroll para baixo após envio
     Future.delayed(const Duration(milliseconds: 100), () {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 

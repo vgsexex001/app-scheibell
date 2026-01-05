@@ -79,4 +79,13 @@ class ApiConfig {
 
   /// Endpoints de saúde
   static const String healthEndpoint = '/health';
+
+  /// Endpoints de administração (painel clínica)
+  static const String adminDashboardSummaryEndpoint = '/admin/dashboard/summary';
+  static const String adminPendingAppointmentsEndpoint = '/admin/appointments/pending';
+  static const String adminRecoveryPatientsEndpoint = '/admin/recovery/patients';
+  static const String adminAlertsEndpoint = '/admin/alerts';
+
+  /// Endpoints de pacientes (painel clínica)
+  static const String patientsEndpoint = '/patients';
 }
