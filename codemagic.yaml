@@ -25,8 +25,8 @@ workflows:
           cp -r Runner.app Payload
           zip -r ../../../app-release-unsigned.ipa Payload
     artifacts:
-      - build/**/app-release-unsigned.ipa
-      - flutter_drive.log
+      - app-release-unsigned.ipa
+      - "**/*.ipa"
 
   android-workflow:
     name: Android Release Build
