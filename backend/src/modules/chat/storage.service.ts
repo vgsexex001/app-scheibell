@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface StorageResult {
@@ -14,15 +15,31 @@ export interface StorageResult {
 @Injectable()
 export class StorageService {
   private readonly uploadDir: string;
+  private readonly logger = new Logger(StorageService.name);
 
   constructor(private readonly configService: ConfigService) {
+    // Em produção (Render), usar /tmp que é gravável
+    // Em desenvolvimento, usar ./uploads
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+
     this.uploadDir =
       this.configService.get<string>('UPLOAD_DIR') ||
-      path.join(process.cwd(), 'uploads');
+      (isProduction
+        ? path.join(os.tmpdir(), 'app-scheibell-uploads')
+        : path.join(process.cwd(), 'uploads'));
 
     // Ensure base upload directory exists
-    if (!fs.existsSync(this.uploadDir)) {
-      fs.mkdirSync(this.uploadDir, { recursive: true });
+    try {
+      if (!fs.existsSync(this.uploadDir)) {
+        fs.mkdirSync(this.uploadDir, { recursive: true });
+      }
+      this.logger.log(`Upload directory initialized: ${this.uploadDir}`);
+    } catch (error) {
+      this.logger.warn(`Could not create upload directory: ${this.uploadDir}. Using temp dir.`);
+      this.uploadDir = path.join(os.tmpdir(), 'app-scheibell-uploads');
+      if (!fs.existsSync(this.uploadDir)) {
+        fs.mkdirSync(this.uploadDir, { recursive: true });
+      }
     }
   }
 
