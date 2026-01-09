@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/services/api_service.dart';
 
 // ========== ENUMS E MODELOS ==========
 
@@ -59,37 +60,78 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
 
   final List<String> _filtros = ['Todos', 'Exames', 'Termos', 'Encaminhamentos'];
 
-  // Dados mock
-  final List<DocumentoCompleto> _documentos = [
-    DocumentoCompleto(
-      id: '1',
-      nome: 'Hemograma completo',
-      data: DateTime(2024, 11, 5),
-      tipo: TipoDocumento.exame,
-      status: StatusDocumento.aprovado,
-    ),
-    DocumentoCompleto(
-      id: '2',
-      nome: 'Termo de consentimento',
-      data: DateTime(2024, 11, 1),
-      tipo: TipoDocumento.termo,
-      status: StatusDocumento.aprovado,
-    ),
-    DocumentoCompleto(
-      id: '3',
-      nome: 'Encaminhamento cardiologista',
-      data: DateTime(2024, 11, 3),
-      tipo: TipoDocumento.encaminhamento,
-      status: StatusDocumento.pendente,
-    ),
-    DocumentoCompleto(
-      id: '4',
-      nome: 'Ultrassom pré-operatório',
-      data: DateTime(2024, 11, 2),
-      tipo: TipoDocumento.exame,
-      status: StatusDocumento.aprovado,
-    ),
-  ];
+  // API e estado
+  final ApiService _apiService = ApiService();
+  List<DocumentoCompleto> _documentos = [];
+  bool _isLoading = true;
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarDocumentos();
+  }
+
+  Future<void> _carregarDocumentos() async {
+    setState(() {
+      _isLoading = true;
+      _erro = null;
+    });
+
+    try {
+      final data = await _apiService.getPatientExams();
+      final documentosApi = data.map((item) => _mapearDocumentoApi(item)).toList();
+
+      setState(() {
+        _documentos = documentosApi;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Erro ao carregar documentos: $e');
+      setState(() {
+        _documentos = [];
+        _isLoading = false;
+        _erro = 'Não foi possível carregar os documentos.';
+      });
+    }
+  }
+
+  DocumentoCompleto _mapearDocumentoApi(Map<String, dynamic> item) {
+    // Mapear tipo da API para enum local
+    TipoDocumento tipo;
+    final tipoApi = item['type'] as String? ?? 'EXAM';
+    switch (tipoApi) {
+      case 'CONSENT':
+        tipo = TipoDocumento.termo;
+        break;
+      case 'REFERRAL':
+        tipo = TipoDocumento.encaminhamento;
+        break;
+      default:
+        tipo = TipoDocumento.exame;
+    }
+
+    // Mapear status da API para enum local
+    StatusDocumento status;
+    final statusApi = item['status'] as String? ?? 'PENDING';
+    switch (statusApi) {
+      case 'APPROVED':
+      case 'COMPLETED':
+        status = StatusDocumento.aprovado;
+        break;
+      default:
+        status = StatusDocumento.pendente;
+    }
+
+    return DocumentoCompleto(
+      id: item['id'] as String,
+      nome: item['name'] as String? ?? item['title'] as String? ?? 'Documento',
+      data: DateTime.tryParse(item['date'] as String? ?? '') ?? DateTime.now(),
+      tipo: tipo,
+      status: status,
+      arquivoUrl: item['fileUrl'] as String?,
+    );
+  }
 
   // Filtra documentos baseado no filtro selecionado
   List<DocumentoCompleto> get _documentosFiltrados {
@@ -128,16 +170,73 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
 
           // Lista de documentos
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(24),
-              itemCount: _documentosFiltrados.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _buildCardDocumento(_documentosFiltrados[index]),
-                );
-              },
-            ),
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF4F4A34),
+                    ),
+                  )
+                : _erro != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              size: 48,
+                              color: Color(0xFFA49E86),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _erro!,
+                              style: const TextStyle(
+                                color: _corTextoSecundario,
+                                fontSize: 14,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _carregarDocumentos,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF4F4A34),
+                              ),
+                              child: const Text('Tentar novamente'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _documentosFiltrados.isEmpty
+                        ? const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.folder_open_outlined,
+                                  size: 48,
+                                  color: Color(0xFFA49E86),
+                                ),
+                                SizedBox(height: 16),
+                                Text(
+                                  'Nenhum documento encontrado',
+                                  style: TextStyle(
+                                    color: _corTextoSecundario,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(24),
+                            itemCount: _documentosFiltrados.length,
+                            itemBuilder: (context, index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _buildCardDocumento(_documentosFiltrados[index]),
+                              );
+                            },
+                          ),
           ),
         ],
       ),

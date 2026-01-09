@@ -48,30 +48,48 @@ enum AppointmentStatus {
 }
 
 /// Tipo de agendamento
+/// Backend enum: CONSULTATION, RETURN_VISIT, EVALUATION, PHYSIOTHERAPY, EXAM, OTHER
 enum AppointmentType {
   consultation,
-  external;
+  returnVisit,
+  evaluation,
+  physiotherapy,
+  exam,
+  other;
 
   String get apiValue {
     switch (this) {
       case AppointmentType.consultation:
         return 'CONSULTATION';
-      case AppointmentType.external:
-        return 'EXTERNAL';
+      case AppointmentType.returnVisit:
+        return 'RETURN_VISIT';
+      case AppointmentType.evaluation:
+        return 'EVALUATION';
+      case AppointmentType.physiotherapy:
+        return 'PHYSIOTHERAPY';
+      case AppointmentType.exam:
+        return 'EXAM';
+      case AppointmentType.other:
+        return 'OTHER';
     }
   }
 
   static AppointmentType fromApi(String value) {
     switch (value.toUpperCase()) {
       case 'CONSULTATION':
-      case 'RETURN':
-      case 'FOLLOW_UP':
         return AppointmentType.consultation;
-      case 'EXTERNAL':
+      case 'RETURN_VISIT':
+        return AppointmentType.returnVisit;
+      case 'EVALUATION':
+        return AppointmentType.evaluation;
       case 'PHYSIOTHERAPY':
-        return AppointmentType.external;
+        return AppointmentType.physiotherapy;
+      case 'EXAM':
+        return AppointmentType.exam;
+      case 'OTHER':
+        return AppointmentType.other;
       default:
-        return AppointmentType.consultation;
+        return AppointmentType.other;
     }
   }
 
@@ -79,8 +97,16 @@ enum AppointmentType {
     switch (this) {
       case AppointmentType.consultation:
         return 'Consulta';
-      case AppointmentType.external:
-        return 'Evento Externo';
+      case AppointmentType.returnVisit:
+        return 'Retorno';
+      case AppointmentType.evaluation:
+        return 'Avaliação';
+      case AppointmentType.physiotherapy:
+        return 'Fisioterapia';
+      case AppointmentType.exam:
+        return 'Exame';
+      case AppointmentType.other:
+        return 'Outro';
     }
   }
 }
@@ -151,8 +177,10 @@ class Appointment {
     required this.updatedAt,
   });
 
-  bool get isConsultation => type == AppointmentType.consultation;
-  bool get isExternal => type == AppointmentType.external;
+  bool get isReturnVisit => type == AppointmentType.returnVisit;
+  bool get isEvaluation => type == AppointmentType.evaluation;
+  bool get isPhysiotherapy => type == AppointmentType.physiotherapy;
+  bool get isExam => type == AppointmentType.exam;
   bool get isPending => status == AppointmentStatus.pending;
   bool get isConfirmed => status == AppointmentStatus.confirmed;
   bool get isCancelled => status == AppointmentStatus.cancelled;

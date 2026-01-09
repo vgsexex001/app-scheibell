@@ -400,4 +400,99 @@ class AgendaController extends ChangeNotifier {
   Future<void> refresh() async {
     await loadEventsForMonth();
   }
+
+  // ==================== HISTORY ====================
+
+  /// Carrega histórico completo de agendamentos
+  Future<void> loadHistory() async {
+    _status = AgendaStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final appointments = await _repository.getAppointmentHistory();
+      _allEvents = appointments.map((a) => AppointmentItem(a)).toList();
+      _buildEventsByDay();
+
+      if (_allEvents.isEmpty) {
+        _status = AgendaStatus.empty;
+      } else {
+        _status = AgendaStatus.success;
+      }
+    } on AgendaApiException catch (e) {
+      _status = AgendaStatus.error;
+      _errorMessage = e.userFriendlyMessage;
+    } catch (e) {
+      _status = AgendaStatus.error;
+      _errorMessage = 'Erro ao carregar histórico.';
+    }
+
+    notifyListeners();
+  }
+
+  // ==================== ADMIN ACTIONS ====================
+
+  /// Aprova um agendamento (admin)
+  Future<bool> approveAppointment(String id, {String? notes}) async {
+    try {
+      await _repository.approveAppointment(id, notes: notes);
+      await loadEventsForMonth();
+      return true;
+    } on AgendaApiException catch (e) {
+      _errorMessage = e.userFriendlyMessage;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Erro ao aprovar agendamento.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Rejeita um agendamento (admin)
+  Future<bool> rejectAppointment(String id, {String? reason}) async {
+    try {
+      await _repository.rejectAppointment(id, reason: reason);
+      await loadEventsForMonth();
+      return true;
+    } on AgendaApiException catch (e) {
+      _errorMessage = e.userFriendlyMessage;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Erro ao rejeitar agendamento.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Carrega agendamentos da equipe (admin/staff)
+  Future<void> loadTeamAppointments({String? startDate, String? endDate}) async {
+    _status = AgendaStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final appointments = await _repository.getTeamAppointments(
+        startDate: startDate,
+        endDate: endDate,
+      );
+      _allEvents = appointments.map((a) => AppointmentItem(a)).toList();
+      _buildEventsByDay();
+
+      if (_allEvents.isEmpty) {
+        _status = AgendaStatus.empty;
+      } else {
+        _status = AgendaStatus.success;
+      }
+    } on AgendaApiException catch (e) {
+      _status = AgendaStatus.error;
+      _errorMessage = e.userFriendlyMessage;
+    } catch (e) {
+      _status = AgendaStatus.error;
+      _errorMessage = 'Erro ao carregar agendamentos da equipe.';
+    }
+
+    notifyListeners();
+  }
 }

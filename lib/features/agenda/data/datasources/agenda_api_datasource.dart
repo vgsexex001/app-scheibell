@@ -23,6 +23,10 @@ class AgendaApiException implements Exception {
       'AgendaApiException: $message (status: $statusCode, type: $errorType)';
 
   String get userFriendlyMessage {
+    if (statusCode == 400) {
+      // Retorna mensagem detalhada do backend para erros de validação
+      return message.isNotEmpty ? message : 'Dados inválidos. Verifique os campos.';
+    }
     if (statusCode == 401 || statusCode == 403) {
       return 'Sessão expirada. Por favor, faça login novamente.';
     }
@@ -122,19 +126,34 @@ class AgendaApiDatasource implements AgendaDatasource {
     String? notes,
   }) async {
     try {
+      final payload = {
+        'title': title,
+        'date': date.toIso8601String().split('T')[0],
+        'time': time,
+        'location': location,
+        'type': type.apiValue,
+        'description': notes,
+      };
+
+      _log('createAppointment: Iniciando...');
+      _log('  endpoint: ${ApiConfig.appointmentsEndpoint}');
+      _log('  payload: $payload');
+
       final response = await _apiService.post(
         ApiConfig.appointmentsEndpoint,
-        data: {
-          'title': title,
-          'date': date.toIso8601String().split('T')[0],
-          'time': time,
-          'location': location,
-          'type': type.apiValue,
-          'description': notes,
-        },
+        data: payload,
       );
+
+      _log('createAppointment: SUCCESS status=${response.statusCode}');
+      _log('  response: ${response.data}');
+
       return AppointmentModel.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
+      _log('createAppointment: ERROR');
+      _log('  dioType: ${e.type}');
+      _log('  statusCode: ${e.response?.statusCode}');
+      _log('  responseData: ${e.response?.data}');
+      _log('  message: ${e.message}');
       throw _handleDioError(e);
     }
   }
@@ -174,6 +193,74 @@ class AgendaApiDatasource implements AgendaDatasource {
         '${ApiConfig.appointmentsEndpoint}/$id/cancel',
       );
       return AppointmentModel.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  // ==================== HISTORY (PACIENTE) ====================
+
+  /// Busca histórico completo de agendamentos do paciente
+  Future<List<AppointmentModel>> getAppointmentHistory() async {
+    try {
+      final response = await _apiService.get(
+        '${ApiConfig.appointmentsEndpoint}/history',
+      );
+
+      final data = response.data as List<dynamic>;
+      return data
+          .map((item) => AppointmentModel.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  // ==================== ADMIN ACTIONS ====================
+
+  /// Aprova um agendamento (admin)
+  Future<void> approveAppointment(String id, {String? notes}) async {
+    try {
+      await _apiService.post(
+        '/admin/appointments/$id/approve',
+        data: notes != null ? {'notes': notes} : null,
+      );
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// Rejeita um agendamento (admin)
+  Future<void> rejectAppointment(String id, {String? reason}) async {
+    try {
+      await _apiService.post(
+        '/admin/appointments/$id/reject',
+        data: reason != null ? {'reason': reason} : null,
+      );
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// Lista agendamentos da equipe (admin/staff)
+  Future<List<AppointmentModel>> getTeamAppointments({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (startDate != null) queryParams['startDate'] = startDate;
+      if (endDate != null) queryParams['endDate'] = endDate;
+
+      final response = await _apiService.get(
+        '${ApiConfig.appointmentsEndpoint}/team',
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      );
+
+      final data = response.data as List<dynamic>;
+      return data
+          .map((item) => AppointmentModel.fromJson(item as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw _handleDioError(e);
     }

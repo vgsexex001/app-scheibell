@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../../core/config/api_config.dart';
+import '../../../core/services/api_service.dart';
 import '../../chatbot/presentation/controller/chat_controller.dart';
 import '../../chatbot/domain/entities/chat_message.dart';
 
@@ -8,7 +12,7 @@ class TelaChatbot extends StatefulWidget {
   const TelaChatbot({super.key});
 
   @override
-  State<TelaChatbot> createState() => _TelaChatbotState();
+  State<TelaChatbot> createState() => _TelaChatbotState();              
 }
 
 class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin {
@@ -26,9 +30,11 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
   static const _borderChip = Color(0xFFE0E0E0);
   static const _inputBackground = Color(0xFFF5F5F5);
   static const _errorColor = Color(0xFFE57373);
+  static const _humanModeColor = Color(0xFF3B82F6); // Azul para modo humano
 
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ImagePicker _imagePicker = ImagePicker();
   late AnimationController _animationController;
   bool _mostrarTooltipSuporte = true;
 
@@ -49,6 +55,14 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
 
     _textController.addListener(() {
       setState(() {});
+    });
+
+    // Carrega o historico do chat do backend ao iniciar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final chatController = context.read<ChatController>();
+      if (!chatController.historyLoaded) {
+        chatController.loadHistory();
+      }
     });
   }
 
@@ -92,6 +106,30 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
     _scrollParaFim();
   }
 
+  Future<void> _pickImage() async {
+    final XFile? image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 85,
+    );
+
+    if (image != null && mounted) {
+      final chatController = context.read<ChatController>();
+      final file = File(image.path);
+
+      // Valida e faz upload + analise
+      final isValid = await chatController.setImageToSend(file);
+      if (isValid) {
+        await chatController.sendMessageWithImage(
+          text: _textController.text.isNotEmpty ? _textController.text : null,
+        );
+        _textController.clear();
+        _scrollParaFim();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -114,14 +152,18 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
   Widget _buildHeader() {
     return Consumer<ChatController>(
       builder: (context, chatController, _) {
+        final isHumanMode = chatController.isHumanMode;
+
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [_gradientStart, _gradientEnd],
+              colors: isHumanMode
+                  ? [_humanModeColor.withOpacity(0.8), _humanModeColor.withOpacity(0.6)]
+                  : [_gradientStart, _gradientEnd],
             ),
           ),
           child: Row(
@@ -133,10 +175,10 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                   color: Colors.white.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.smart_toy_outlined,
+                child: Icon(
+                  isHumanMode ? Icons.support_agent : Icons.smart_toy_outlined,
                   size: 24,
-                  color: _primaryDark,
+                  color: isHumanMode ? Colors.white : _primaryDark,
                 ),
               ),
               const SizedBox(width: 12),
@@ -144,10 +186,10 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Assistente Inteligente',
+                    Text(
+                      isHumanMode ? 'Equipe de Suporte' : 'Assistente Inteligente',
                       style: TextStyle(
-                        color: _primaryDark,
+                        color: isHumanMode ? Colors.white : _primaryDark,
                         fontSize: 16,
                         fontFamily: 'Inter',
                         fontWeight: FontWeight.w600,
@@ -160,17 +202,23 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: chatController.isLoading
+                            color: chatController.isLoading || chatController.isLoadingHistory
                                 ? Colors.orange
-                                : _statusOnline,
+                                : (isHumanMode ? Colors.white : _statusOnline),
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          chatController.isLoading ? 'Pensando...' : 'Online',
+                          chatController.isLoadingHistory
+                              ? 'Carregando...'
+                              : chatController.isLoading
+                                  ? 'Pensando...'
+                                  : (isHumanMode ? 'Atendimento Humano' : 'Online'),
                           style: TextStyle(
-                            color: _primaryDark.withOpacity(0.7),
+                            color: isHumanMode
+                                ? Colors.white.withOpacity(0.9)
+                                : _primaryDark.withOpacity(0.7),
                             fontSize: 12,
                             fontFamily: 'Inter',
                             fontWeight: FontWeight.w400,
@@ -182,10 +230,10 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                 ),
               ),
               PopupMenuButton<String>(
-                icon: const Icon(
+                icon: Icon(
                   Icons.more_vert,
                   size: 24,
-                  color: _primaryDark,
+                  color: isHumanMode ? Colors.white : _primaryDark,
                 ),
                 onSelected: (value) {
                   if (value == 'limpar') {
@@ -215,6 +263,29 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
   Widget _buildMessagesArea() {
     return Consumer<ChatController>(
       builder: (context, chatController, _) {
+        // Se esta carregando historico, mostra loading
+        if (chatController.isLoadingHistory) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(_primaryDark),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Carregando historico...',
+                  style: TextStyle(
+                    color: _textSecondary,
+                    fontSize: 14,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
         // Scroll para o fim quando novas mensagens chegam
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollParaFim());
 
@@ -239,6 +310,13 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
 
   Widget _buildMessageBubble(ChatMessage message) {
     final isBot = message.isAssistant;
+    final isSystem = message.isSystem;
+    final isFromStaff = message.isFromStaff;
+
+    // Mensagens de sistema (handoff, etc)
+    if (isSystem) {
+      return _buildSystemMessage(message);
+    }
 
     return Column(
       crossAxisAlignment: isBot ? CrossAxisAlignment.start : CrossAxisAlignment.end,
@@ -252,20 +330,28 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                 decoration: BoxDecoration(
                   color: message.isError
                       ? _errorColor.withOpacity(0.2)
-                      : const Color(0xFFE8E8E8),
+                      : (isFromStaff ? _humanModeColor.withOpacity(0.2) : const Color(0xFFE8E8E8)),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Icon(
-                  message.isError ? Icons.error_outline : Icons.smart_toy_outlined,
+                  message.isError
+                      ? Icons.error_outline
+                      : (isFromStaff ? Icons.support_agent : Icons.smart_toy_outlined),
                   size: 12,
-                  color: message.isError ? _errorColor : _textSecondary,
+                  color: message.isError
+                      ? _errorColor
+                      : (isFromStaff ? _humanModeColor : _textSecondary),
                 ),
               ),
               const SizedBox(width: 6),
               Text(
-                message.isError ? 'Erro' : 'Assistente IA',
+                message.isError
+                    ? 'Erro'
+                    : (isFromStaff ? (message.senderName ?? 'Equipe') : 'Assistente IA'),
                 style: TextStyle(
-                  color: message.isError ? _errorColor : _textSecondary,
+                  color: message.isError
+                      ? _errorColor
+                      : (isFromStaff ? _humanModeColor : _textSecondary),
                   fontSize: 12,
                   fontFamily: 'Inter',
                   fontWeight: FontWeight.w400,
@@ -309,16 +395,24 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      color: message.isError ? _errorColor : _textPrimary,
-                      fontSize: 14,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                      height: 1.4,
+                  // Renderizar imagens se existirem attachments
+                  if (message.hasAttachments) ...[
+                    for (final attachment in message.attachments)
+                      if (attachment.mimeType.startsWith('image/'))
+                        _buildAttachmentImage(attachment),
+                  ],
+                  // So renderizar texto se nao for fallback de imagem
+                  if (!_isImageFallbackText(message))
+                    Text(
+                      message.content,
+                      style: TextStyle(
+                        color: message.isError ? _errorColor : _textPrimary,
+                        fontSize: 14,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w400,
+                        height: 1.4,
+                      ),
                     ),
-                  ),
                   if (message.isError) ...[
                     const SizedBox(height: 8),
                     GestureDetector(
@@ -378,6 +472,171 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
             : (isBot ? _bubbleBot : _bubbleUser),
       ),
     );
+  }
+
+  Widget _buildAttachmentImage(ChatAttachment attachment) {
+    // Usa path local se disponivel, senao usa URL do backend
+    final imageUrl = attachment.localPath ??
+        '${ApiConfig.baseUrl}/chat/attachments/${attachment.id}/file';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: GestureDetector(
+          onTap: () => _showImageDialog(imageUrl, attachment.localPath),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 200,
+              maxHeight: 200,
+            ),
+            child: attachment.localPath != null
+                ? Image.file(
+                    File(attachment.localPath!),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildImageErrorWidget();
+                    },
+                  )
+                : Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    headers: {
+                      'Authorization': 'Bearer ${ApiService().currentToken}',
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        width: 200,
+                        height: 150,
+                        color: _inputBackground,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(_primaryDark),
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildImageErrorWidget();
+                    },
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageErrorWidget() {
+    return Container(
+      width: 200,
+      height: 100,
+      color: _inputBackground,
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.broken_image, color: _textTertiary),
+          SizedBox(height: 4),
+          Text(
+            'Nao foi possivel carregar',
+            style: TextStyle(fontSize: 11, color: _textTertiary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showImageDialog(String imageUrl, String? localPath) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(
+            child: localPath != null
+                ? Image.file(
+                    File(localPath),
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildImageErrorWidget();
+                    },
+                  )
+                : Image.network(
+                    imageUrl,
+                    headers: {'Authorization': 'Bearer ${ApiService().currentToken}'},
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildImageErrorWidget();
+                    },
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Widget para mensagens de sistema (handoff, etc)
+  Widget _buildSystemMessage(ChatMessage message) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: _humanModeColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: _humanModeColor.withOpacity(0.2),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.info_outline,
+              size: 16,
+              color: _humanModeColor,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                message.content,
+                style: const TextStyle(
+                  color: _humanModeColor,
+                  fontSize: 13,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Verifica se o texto da mensagem e apenas um fallback de imagem
+  /// e deve ser ocultado quando a imagem for renderizada
+  bool _isImageFallbackText(ChatMessage message) {
+    // Se nao tem attachments de imagem, mostrar texto normalmente
+    final hasImageAttachment = message.attachments.any(
+      (a) => a.mimeType.startsWith('image/'),
+    );
+    if (!hasImageAttachment) return false;
+
+    // Verificar se content e fallback
+    final content = message.content.trim();
+
+    // Padroes de fallback a ocultar
+    if (content.startsWith('[Imagem enviada:') && content.endsWith(']')) {
+      return true;
+    }
+
+    // Se content esta vazio, nao precisa renderizar
+    if (content.isEmpty) return true;
+
+    // Caso contrario, e caption real - mostrar
+    return false;
   }
 
   Widget _buildDigitando() {
@@ -478,122 +737,212 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
   }
 
   Widget _buildFloatingSupportSection() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (_mostrarTooltipSuporte)
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _mostrarTooltipSuporte = false;
-                });
-              },
-              child: Container(
-                margin: const EdgeInsets.only(right: 12),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.12),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Nao encontrou o que queria?',
-                                style: TextStyle(
-                                  color: _textPrimary,
-                                  fontSize: 12,
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Fale com nossa equipe',
-                                style: TextStyle(
-                                  color: _textSecondary,
-                                  fontSize: 11,
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w400,
-                                ),
+    return Consumer<ChatController>(
+      builder: (context, chatController, _) {
+        // Ocultar botao se ja esta em modo humano
+        if (chatController.isHumanMode) {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (_mostrarTooltipSuporte)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _mostrarTooltipSuporte = false;
+                    });
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.12),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
                               ),
                             ],
                           ),
-                          SizedBox(width: 8),
-                          Icon(
-                            Icons.close,
-                            size: 14,
-                            color: _textTertiary,
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Nao encontrou o que queria?',
+                                    style: TextStyle(
+                                      color: _textPrimary,
+                                      fontSize: 12,
+                                      fontFamily: 'Inter',
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Fale com nossa equipe',
+                                    style: TextStyle(
+                                      color: _textSecondary,
+                                      fontSize: 11,
+                                      fontFamily: 'Inter',
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(width: 8),
+                              Icon(
+                                Icons.close,
+                                size: 14,
+                                color: _textTertiary,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      right: -6,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: CustomPaint(
-                          size: const Size(8, 12),
-                          painter: TooltipArrowRightPainter(),
                         ),
-                      ),
+                        Positioned(
+                          right: -6,
+                          top: 0,
+                          bottom: 0,
+                          child: Center(
+                            child: CustomPaint(
+                              size: const Size(8, 12),
+                              painter: TooltipArrowRightPainter(),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _mostrarTooltipSuporte = false;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Conectando com equipe...'),
-                  backgroundColor: _statusOnline,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              );
-            },
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: _statusOnline,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: _statusOnline.withOpacity(0.4),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
                   ),
-                ],
+                ),
+              GestureDetector(
+                onTap: chatController.isRequestingHandoff
+                    ? null
+                    : () async {
+                        setState(() {
+                          _mostrarTooltipSuporte = false;
+                        });
+
+                        // Mostrar dialog de confirmacao
+                        final confirm = await _showHandoffConfirmDialog();
+                        if (confirm == true && mounted) {
+                          final success = await chatController.requestHandoff();
+                          if (success && mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text('Conectado com a equipe!'),
+                                backgroundColor: _humanModeColor,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            );
+                            _scrollParaFim();
+                          } else if (!success && mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  chatController.errorMessage ??
+                                      'Erro ao conectar com a equipe',
+                                ),
+                                backgroundColor: _errorColor,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: _statusOnline,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _statusOnline.withOpacity(0.4),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: chatController.isRequestingHandoff
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.support_agent,
+                          size: 24,
+                          color: Colors.white,
+                        ),
+                ),
               ),
-              child: const Icon(
-                Icons.support_agent,
-                size: 24,
-                color: Colors.white,
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Dialog de confirmacao para handoff
+  Future<bool?> _showHandoffConfirmDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.support_agent, color: _humanModeColor),
+            SizedBox(width: 8),
+            Text(
+              'Falar com a equipe',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Voce sera transferido para nossa equipe de atendimento.\n\n'
+          'O assistente virtual nao respondera mais nesta conversa ate que o atendimento seja encerrado.\n\n'
+          'Deseja continuar?',
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: _textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _humanModeColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
             ),
+            child: const Text('Transferir'),
           ),
         ],
       ),
@@ -682,6 +1031,34 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
               const SizedBox(height: 12),
               Row(
                 children: [
+                  // Botao de anexo de imagem
+                  GestureDetector(
+                    onTap: (isLoading || chatController.isUploading || chatController.isAnalyzing)
+                        ? null
+                        : _pickImage,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: _inputBackground,
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: (chatController.isUploading || chatController.isAnalyzing)
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(_primaryDark),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_outlined,
+                              size: 20,
+                              color: _textTertiary,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Container(
                       height: 44,

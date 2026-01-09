@@ -7,6 +7,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto } from './dto';
 import { UserRole } from '@prisma/client';
@@ -18,8 +20,10 @@ export interface AuthResponse {
     email: string;
     role: UserRole;
     clinicId?: string;
+    patientId?: string;
   };
   accessToken: string;
+  refreshToken: string;
   expiresIn: number;
 }
 
@@ -47,33 +51,18 @@ export class AuthService {
     const defaultClinicId = 'clinic-default-scheibell';
     const clinicId = dto.clinicId || (role === UserRole.PATIENT ? defaultClinicId : null);
 
-    // Usar transação para criar usuário e paciente atomicamente
-    const result = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          name: dto.name,
-          email: dto.email,
-          passwordHash: hashedPassword,
-          role: role,
-          clinicId: clinicId,
-        },
-      });
-
-      // Se for paciente, criar registro de Patient
-      if (role === UserRole.PATIENT && clinicId) {
-        await tx.patient.create({
-          data: {
-            userId: user.id,
-            clinicId: clinicId,
-            surgeryDate: new Date(), // Data de cirurgia padrão = hoje (pode ser alterada depois)
-          },
-        });
-      }
-
-      return user;
+    // Criar apenas o usuário (Patient será vinculado via código de conexão ou criado pelo admin)
+    const result = await this.prisma.user.create({
+      data: {
+        name: dto.name,
+        email: dto.email,
+        passwordHash: hashedPassword,
+        role: role,
+        clinicId: clinicId,
+      },
     });
 
-    return this.generateAuthResponse(result);
+    return await this.generateAuthResponse(result);
   }
 
   async login(dto: LoginDto): Promise<AuthResponse> {
@@ -91,7 +80,7 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    return this.generateAuthResponse(user);
+    return await this.generateAuthResponse(user);
   }
 
   async validateUser(userId: string) {
@@ -242,24 +231,125 @@ export class AuthService {
     return { message: 'Senha alterada com sucesso' };
   }
 
-  private generateAuthResponse(user: {
+  /**
+   * Renova tokens usando refresh token
+   */
+  async refreshTokens(refreshToken: string): Promise<AuthResponse> {
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(refreshToken)
+      .digest('hex');
+
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { token: tokenHash },
+      include: { user: true },
+    });
+
+    if (!storedToken) {
+      throw new UnauthorizedException('Refresh token inválido');
+    }
+
+    if (storedToken.revokedAt) {
+      throw new UnauthorizedException('Refresh token foi revogado');
+    }
+
+    if (new Date() > storedToken.expiresAt) {
+      throw new UnauthorizedException('Refresh token expirou');
+    }
+
+    // Rotação: revoga token atual
+    await this.prisma.refreshToken.update({
+      where: { id: storedToken.id },
+      data: { revokedAt: new Date() },
+    });
+
+    // Gera novo par de tokens
+    const user = storedToken.user;
+    return await this.generateAuthResponse({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      clinicId: user.clinicId,
+    });
+  }
+
+  /**
+   * Revoga todos os refresh tokens de um usuário (logout)
+   */
+  async revokeAllRefreshTokens(userId: string): Promise<{ success: boolean }> {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Limpa tokens expirados (pode ser chamado por cron job)
+   */
+  async cleanupExpiredTokens(): Promise<{ deleted: number }> {
+    const result = await this.prisma.refreshToken.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: new Date() } },
+          { revokedAt: { not: null } },
+        ],
+      },
+    });
+
+    return { deleted: result.count };
+  }
+
+  private async generateAuthResponse(user: {
     id: string;
     name: string;
     email: string;
     role: UserRole;
     clinicId: string | null;
-  }): AuthResponse {
+  }, deviceInfo?: string): Promise<AuthResponse> {
+    // Busca patientId se existir
+    const patient = await this.prisma.patient.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
       clinicId: user.clinicId,
+      patientId: patient?.id,
     };
 
-    const expiresIn = this.configService.get<string>('JWT_EXPIRATION') || '24h';
-    const expiresInSeconds = this.parseExpirationToSeconds(expiresIn);
+    // Access token: 15 minutos
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+    const expiresInSeconds = 900; // 15 minutos
 
-    const accessToken = this.jwtService.sign(payload);
+    // Gera refresh token
+    const refreshTokenValue = uuidv4();
+    const refreshTokenHash = crypto
+      .createHash('sha256')
+      .update(refreshTokenValue)
+      .digest('hex');
+
+    // Refresh token expira em 7 dias
+    const refreshExpiresAt = new Date();
+    refreshExpiresAt.setDate(refreshExpiresAt.getDate() + 7);
+
+    // Salva refresh token no banco
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: refreshTokenHash,
+        deviceInfo: deviceInfo || null,
+        expiresAt: refreshExpiresAt,
+      },
+    });
 
     return {
       user: {
@@ -268,8 +358,10 @@ export class AuthService {
         email: user.email,
         role: user.role,
         clinicId: user.clinicId || undefined,
+        patientId: patient?.id,
       },
       accessToken,
+      refreshToken: refreshTokenValue,
       expiresIn: expiresInSeconds,
     };
   }

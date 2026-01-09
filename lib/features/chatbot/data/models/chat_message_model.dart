@@ -8,6 +8,10 @@ class ChatMessageModel extends ChatMessage {
     required super.role,
     required super.timestamp,
     super.isError,
+    super.attachments,
+    super.senderId,
+    super.senderType,
+    super.senderName,
   });
 
   /// Cria modelo a partir de resposta da OpenAI API
@@ -36,6 +40,32 @@ class ChatMessageModel extends ChatMessage {
     );
   }
 
+  /// Cria modelo a partir da resposta do backend (formato diferente da OpenAI)
+  factory ChatMessageModel.fromBackendJson(Map<String, dynamic> json) {
+    // Parse attachments if present
+    List<ChatAttachment> attachments = [];
+    if (json['attachments'] != null && json['attachments'] is List) {
+      attachments = (json['attachments'] as List)
+          .map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+          .toList();
+    }
+
+    return ChatMessageModel(
+      id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      content: json['content'] ?? '',
+      role: _parseRole(json['role'] ?? 'assistant'),
+      timestamp: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : DateTime.now(),
+      isError: false,
+      attachments: attachments,
+      // Human Handoff fields
+      senderId: json['senderId'] as String?,
+      senderType: json['senderType'] as String?,
+      senderName: json['senderName'] as String?,
+    );
+  }
+
   /// Converte para Map
   Map<String, dynamic> toJson() {
     return {
@@ -55,6 +85,10 @@ class ChatMessageModel extends ChatMessage {
       role: entity.role,
       timestamp: entity.timestamp,
       isError: entity.isError,
+      attachments: entity.attachments,
+      senderId: entity.senderId,
+      senderType: entity.senderType,
+      senderName: entity.senderName,
     );
   }
 
@@ -66,6 +100,10 @@ class ChatMessageModel extends ChatMessage {
       role: role,
       timestamp: timestamp,
       isError: isError,
+      attachments: attachments,
+      senderId: senderId,
+      senderType: senderType,
+      senderName: senderName,
     );
   }
 

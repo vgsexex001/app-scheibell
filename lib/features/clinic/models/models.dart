@@ -4,3 +4,7 @@ export 'recovery_patient.dart';
 export 'clinic_alert.dart';
 export 'patient_list_item.dart';
 export 'patient_detail.dart';
+export 'clinic_content.dart';
+export 'content_stats.dart';
+export 'content_template.dart';
+export 'patient_content_override.dart';

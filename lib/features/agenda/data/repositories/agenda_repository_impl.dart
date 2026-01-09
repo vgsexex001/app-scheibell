@@ -302,4 +302,48 @@ class AgendaRepositoryImpl implements AgendaRepository {
       await _datasource.deleteExternalEvent(id);
     });
   }
+
+  // ==================== HISTORY ====================
+
+  /// Busca histórico completo de agendamentos do paciente
+  Future<List<Appointment>> getAppointmentHistory() async {
+    return _executeWithFallback(() async {
+      final apiDs = _apiDatasource as AgendaApiDatasource;
+      final models = await apiDs.getAppointmentHistory();
+      return models.map((m) => m.toEntity()).toList();
+    });
+  }
+
+  // ==================== ADMIN ACTIONS ====================
+
+  /// Aprova um agendamento (admin)
+  Future<void> approveAppointment(String id, {String? notes}) async {
+    return _executeWithFallback(() async {
+      final apiDs = _apiDatasource as AgendaApiDatasource;
+      await apiDs.approveAppointment(id, notes: notes);
+    });
+  }
+
+  /// Rejeita um agendamento (admin)
+  Future<void> rejectAppointment(String id, {String? reason}) async {
+    return _executeWithFallback(() async {
+      final apiDs = _apiDatasource as AgendaApiDatasource;
+      await apiDs.rejectAppointment(id, reason: reason);
+    });
+  }
+
+  /// Lista agendamentos da equipe (admin/staff)
+  Future<List<Appointment>> getTeamAppointments({
+    String? startDate,
+    String? endDate,
+  }) async {
+    return _executeWithFallback(() async {
+      final apiDs = _apiDatasource as AgendaApiDatasource;
+      final models = await apiDs.getTeamAppointments(
+        startDate: startDate,
+        endDate: endDate,
+      );
+      return models.map((m) => m.toEntity()).toList();
+    });
+  }
 }

@@ -9,7 +9,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthService, AuthResponse } from './auth.service';
-import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto } from './dto';
+import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto, RefreshTokenDto } from './dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 
@@ -62,5 +62,26 @@ export class AuthController {
       valid: true,
       user: await this.authService.validateUser(user.sub),
     };
+  }
+
+  /**
+   * Renova access token usando refresh token
+   * POST /api/auth/refresh
+   */
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  async refreshTokens(@Body() dto: RefreshTokenDto): Promise<AuthResponse> {
+    return this.authService.refreshTokens(dto.refreshToken);
+  }
+
+  /**
+   * Logout - revoga todos os refresh tokens do usuário
+   * POST /api/auth/logout
+   */
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(@CurrentUser() user: JwtPayload) {
+    return this.authService.revokeAllRefreshTokens(user.sub);
   }
 }

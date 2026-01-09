@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'secure_storage_service.dart';
 
 /// Tipos de erro de rede para mapeamento preciso
 enum NetworkErrorType {
@@ -53,13 +55,20 @@ class ApiService {
   late final Dio _dio;
   String? _authToken;
 
+  // Secure Storage para tokens
+  final SecureStorageService _secureStorage = SecureStorageService();
+
+  // Controle de refresh token
+  bool _isRefreshing = false;
+  final List<Completer<String>> _refreshQueue = [];
+
   ApiService._internal() {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConfig.baseUrl,
         connectTimeout: Duration(seconds: ApiConfig.connectTimeout),
         receiveTimeout: Duration(seconds: ApiConfig.receiveTimeout),
-        sendTimeout: const Duration(seconds: 30),
+        sendTimeout: Duration(seconds: ApiConfig.sendTimeout),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -67,10 +76,15 @@ class ApiService {
       ),
     );
 
-    // Interceptor para adicionar token e logging detalhado
+    // Interceptor para adicionar token, logging e auto-refresh
     _dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) {
+        onRequest: (options, handler) async {
+          // Carrega token do SecureStorage se não estiver em memória
+          if (_authToken == null) {
+            _authToken = await _secureStorage.getAccessToken();
+          }
+
           if (_authToken != null) {
             options.headers['Authorization'] = 'Bearer $_authToken';
           }
@@ -84,12 +98,97 @@ class ApiService {
           _logResponse(response);
           return handler.next(response);
         },
-        onError: (error, handler) {
+        onError: (error, handler) async {
           _logError(error);
+
+          // Se for 401 e não é uma requisição de refresh, tenta refresh
+          if (error.response?.statusCode == 401 &&
+              !error.requestOptions.path.contains('/auth/refresh') &&
+              !error.requestOptions.path.contains('/auth/login')) {
+            try {
+              final newToken = await _handleTokenRefresh();
+              if (newToken != null) {
+                // Refaz a requisição original com o novo token
+                final opts = error.requestOptions;
+                opts.headers['Authorization'] = 'Bearer $newToken';
+                final response = await _dio.fetch(opts);
+                return handler.resolve(response);
+              }
+            } catch (e) {
+              // Refresh falhou - limpa tokens
+              debugPrint('🔴 Refresh token failed: $e');
+              await clearAllTokens();
+            }
+          }
+
           return handler.next(error);
         },
       ),
     );
+  }
+
+  /// Tenta fazer refresh do token com controle de concorrência
+  Future<String?> _handleTokenRefresh() async {
+    // Se já está fazendo refresh, aguarda na fila
+    if (_isRefreshing) {
+      final completer = Completer<String>();
+      _refreshQueue.add(completer);
+      return completer.future;
+    }
+
+    _isRefreshing = true;
+
+    try {
+      final refreshToken = await _secureStorage.getRefreshToken();
+      if (refreshToken == null) {
+        return null;
+      }
+
+      debugPrint('🔄 Attempting token refresh...');
+
+      // Faz a requisição de refresh (sem passar pelo interceptor normal)
+      final response = await _dio.post(
+        '/auth/refresh',
+        data: {'refreshToken': refreshToken},
+        options: Options(headers: {}), // Sem Authorization header
+      );
+
+      final data = response.data;
+      final newAccessToken = data['accessToken'] as String;
+      final newRefreshToken = data['refreshToken'] as String;
+      final expiresIn = data['expiresIn'] as int;
+
+      // Salva novos tokens
+      await _secureStorage.saveTokenPair(
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        expiresIn: expiresIn,
+      );
+
+      _authToken = newAccessToken;
+
+      debugPrint('✅ Token refresh successful');
+
+      // Notifica todos na fila
+      for (final completer in _refreshQueue) {
+        completer.complete(newAccessToken);
+      }
+      _refreshQueue.clear();
+
+      return newAccessToken;
+    } catch (e) {
+      debugPrint('❌ Token refresh failed: $e');
+
+      // Notifica erro para todos na fila
+      for (final completer in _refreshQueue) {
+        completer.completeError(e);
+      }
+      _refreshQueue.clear();
+
+      return null;
+    } finally {
+      _isRefreshing = false;
+    }
   }
 
   /// Log de request (apenas em debug)
@@ -388,26 +487,76 @@ class ApiService {
     _authToken = null;
   }
 
-  /// Carrega o token salvo do SharedPreferences
+  /// Carrega o token salvo (primeiro tenta SecureStorage, depois SharedPreferences para migração)
   Future<String?> loadSavedToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    _authToken = prefs.getString('auth_token');
+    // Primeiro tenta SecureStorage
+    _authToken = await _secureStorage.getAccessToken();
+
+    // Se não encontrou, tenta migrar do SharedPreferences antigo
+    if (_authToken == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final oldToken = prefs.getString('auth_token');
+      if (oldToken != null && oldToken.isNotEmpty) {
+        // Migra para SecureStorage
+        await _secureStorage.saveAccessToken(oldToken);
+        // Remove do SharedPreferences antigo
+        await prefs.remove('auth_token');
+        _authToken = oldToken;
+        debugPrint('🔄 Migrated token from SharedPreferences to SecureStorage');
+      }
+    }
+
     return _authToken;
   }
 
-  /// Salva o token no SharedPreferences
-  Future<void> saveToken(String token) async {
-    _authToken = token;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', token);
+  /// Salva o par de tokens no SecureStorage
+  Future<void> saveTokenPair({
+    required String accessToken,
+    required String refreshToken,
+    required int expiresIn,
+    String? userId,
+    String? patientId,
+  }) async {
+    _authToken = accessToken;
+    await _secureStorage.saveTokenPair(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      expiresIn: expiresIn,
+      userId: userId,
+      patientId: patientId,
+    );
   }
 
-  /// Remove o token salvo
+  /// Salva apenas o access token (legado - para compatibilidade)
+  Future<void> saveToken(String token) async {
+    _authToken = token;
+    await _secureStorage.saveAccessToken(token);
+  }
+
+  /// Remove todos os tokens salvos
   Future<void> removeToken() async {
     _authToken = null;
+    await _secureStorage.clearAll();
+    // Também limpa o SharedPreferences antigo por segurança
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
   }
+
+  /// Limpa todos os tokens (alias para removeToken)
+  Future<void> clearAllTokens() async {
+    await removeToken();
+  }
+
+  /// Verifica se o token está expirado
+  Future<bool> isTokenExpired() async {
+    return await _secureStorage.isTokenExpired();
+  }
+
+  /// Retorna o SecureStorageService para uso externo
+  SecureStorageService get secureStorage => _secureStorage;
+
+  /// Retorna o token atual em memória (pode ser null)
+  String? get currentToken => _authToken;
 
   // ==================== MÉTODOS HTTP ====================
 
@@ -459,14 +608,21 @@ class ApiService {
 
   /// Login do usuário
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await post(
-      ApiConfig.loginEndpoint,
-      data: {
-        'email': email,
-        'password': password,
-      },
-    );
-    return response.data;
+    debugPrint('[API] login() - URL: ${ApiConfig.baseUrl}${ApiConfig.loginEndpoint}');
+    try {
+      final response = await post(
+        ApiConfig.loginEndpoint,
+        data: {
+          'email': email,
+          'password': password,
+        },
+      );
+      debugPrint('[API] login() - Status: ${response.statusCode}');
+      return response.data;
+    } catch (e) {
+      debugPrint('[API] login() - Erro: $e');
+      rethrow;
+    }
   }
 
   /// Registro de novo usuário
@@ -564,6 +720,77 @@ class ApiService {
       queryParameters: {'type': type},
     );
     return response.data is List ? response.data : [];
+  }
+
+  /// Busca estatísticas de conteúdo por tipo (contagem para grid principal)
+  Future<Map<String, dynamic>> getContentStats() async {
+    final response = await get(ApiConfig.contentClinicStatsEndpoint);
+    return response.data is Map ? response.data as Map<String, dynamic> : {};
+  }
+
+  /// Cria conteúdo da clínica
+  Future<Map<String, dynamic>> createClinicContent({
+    required String type,
+    required String category,
+    required String title,
+    String? description,
+    int? validFromDay,
+    int? validUntilDay,
+  }) async {
+    final response = await post(
+      ApiConfig.contentClinicEndpoint,
+      data: {
+        'type': type,
+        'category': category,
+        'title': title,
+        if (description != null) 'description': description,
+        if (validFromDay != null) 'validFromDay': validFromDay,
+        if (validUntilDay != null) 'validUntilDay': validUntilDay,
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza conteúdo da clínica
+  Future<Map<String, dynamic>> updateClinicContent(
+    String contentId, {
+    String? title,
+    String? description,
+    String? category,
+    int? validFromDay,
+    int? validUntilDay,
+  }) async {
+    final response = await put(
+      '${ApiConfig.contentClinicEndpoint}/$contentId',
+      data: {
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (category != null) 'category': category,
+        if (validFromDay != null) 'validFromDay': validFromDay,
+        if (validUntilDay != null) 'validUntilDay': validUntilDay,
+      },
+    );
+    return response.data;
+  }
+
+  /// Toggle ativo/inativo de conteúdo
+  Future<Map<String, dynamic>> toggleClinicContent(String contentId) async {
+    final response =
+        await patch('${ApiConfig.contentClinicEndpoint}/$contentId/toggle');
+    return response.data;
+  }
+
+  /// Deleta conteúdo da clínica
+  Future<void> deleteClinicContent(String contentId) async {
+    await delete('${ApiConfig.contentClinicEndpoint}/$contentId');
+  }
+
+  /// Reordena conteúdos da clínica
+  Future<void> reorderClinicContents(List<String> contentIds) async {
+    await post(
+      '${ApiConfig.contentClinicEndpoint}/reorder',
+      data: {'contentIds': contentIds},
+    );
   }
 
   /// Busca conteúdo da clínica do paciente por tipo (para pacientes)
@@ -1327,6 +1554,302 @@ class ApiService {
   ) async {
     final response = await delete(
       '/content/patients/$patientId/adjustments/$adjustmentId',
+    );
+    return response.data;
+  }
+
+  // ==================== CONEXÃO DE PACIENTE ====================
+
+  /// Conecta paciente usando código de pareamento
+  Future<Map<String, dynamic>> connectWithCode(String code) async {
+    final response = await post(
+      '/patient/connect',
+      data: {'connectionCode': code.toUpperCase().trim()},
+    );
+    return response.data;
+  }
+
+  /// Admin gera código de conexão para um paciente
+  Future<Map<String, dynamic>> generateConnectionCode(String patientId) async {
+    final response = await post(
+      '/admin/patients/$patientId/connection-code',
+    );
+    return response.data;
+  }
+
+  /// Admin lista conexões de um paciente
+  Future<List<dynamic>> getPatientConnections(String patientId) async {
+    final response = await get(
+      '/admin/patients/$patientId/connections',
+    );
+    return response.data is List ? response.data : [];
+  }
+
+  /// Admin revoga um código de conexão
+  Future<Map<String, dynamic>> revokeConnectionCode(String connectionId) async {
+    final response = await delete(
+      '/admin/connections/$connectionId',
+    );
+    return response.data;
+  }
+
+  // ==================== REFRESH TOKEN ====================
+
+  /// Faz refresh do token manualmente
+  Future<Map<String, dynamic>> refreshTokens(String refreshToken) async {
+    final response = await post(
+      '/auth/refresh',
+      data: {'refreshToken': refreshToken},
+    );
+    return response.data;
+  }
+
+  /// Logout - revoga todos os refresh tokens
+  Future<Map<String, dynamic>> logout() async {
+    final response = await post('/auth/logout');
+    return response.data;
+  }
+
+  // ==================== HUMAN HANDOFF (ADMIN) ====================
+
+  /// Lista conversas em modo HUMAN para atendimento
+  /// status: 'HUMAN' | 'CLOSED' (opcional)
+  Future<Map<String, dynamic>> getHumanConversations({
+    int page = 1,
+    int limit = 10,
+    String? status,
+  }) async {
+    final response = await get(
+      '/chat/admin/conversations',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (status != null) 'status': status,
+      },
+    );
+    return response.data;
+  }
+
+  /// Busca detalhes de uma conversa específica para admin
+  Future<Map<String, dynamic>> getConversationForAdmin(String conversationId) async {
+    final response = await get('/chat/admin/conversations/$conversationId');
+    return response.data;
+  }
+
+  /// Envia mensagem como staff/admin em uma conversa em modo HUMAN
+  Future<Map<String, dynamic>> sendHumanMessage(
+    String conversationId,
+    String message,
+  ) async {
+    final response = await post(
+      '/chat/admin/conversations/$conversationId/message',
+      data: {'message': message},
+    );
+    return response.data;
+  }
+
+  /// Fecha uma conversa em modo HUMAN
+  /// returnToAi: true para voltar ao modo IA, false para fechar permanentemente
+  Future<Map<String, dynamic>> closeHumanConversation(
+    String conversationId, {
+    bool returnToAi = true,
+  }) async {
+    final response = await post(
+      '/chat/admin/conversations/$conversationId/close',
+      data: {'returnToAi': returnToAi},
+    );
+    return response.data;
+  }
+
+  // ==================== CONTENT TEMPLATES (NOVO) ====================
+
+  /// Lista templates de conteúdo da clínica
+  Future<List<dynamic>> getContentTemplates({String? type}) async {
+    final response = await get(
+      '/content/templates',
+      queryParameters: type != null ? {'type': type} : null,
+    );
+    return response.data is List ? response.data : [];
+  }
+
+  /// Busca um template específico
+  Future<Map<String, dynamic>> getContentTemplateById(String id) async {
+    final response = await get('/content/templates/$id');
+    return response.data;
+  }
+
+  /// Cria um novo template de conteúdo
+  Future<Map<String, dynamic>> createContentTemplate({
+    required String type,
+    required String category,
+    required String title,
+    String? description,
+    int? validFromDay,
+    int? validUntilDay,
+    int? sortOrder,
+  }) async {
+    final response = await post(
+      '/content/templates',
+      data: {
+        'type': type,
+        'category': category,
+        'title': title,
+        if (description != null) 'description': description,
+        if (validFromDay != null) 'validFromDay': validFromDay,
+        if (validUntilDay != null) 'validUntilDay': validUntilDay,
+        if (sortOrder != null) 'sortOrder': sortOrder,
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza um template de conteúdo
+  Future<Map<String, dynamic>> updateContentTemplate(
+    String id, {
+    String? type,
+    String? category,
+    String? title,
+    String? description,
+    int? validFromDay,
+    int? validUntilDay,
+    bool? isActive,
+  }) async {
+    final response = await put(
+      '/content/templates/$id',
+      data: {
+        if (type != null) 'type': type,
+        if (category != null) 'category': category,
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (validFromDay != null) 'validFromDay': validFromDay,
+        if (validUntilDay != null) 'validUntilDay': validUntilDay,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
+    return response.data;
+  }
+
+  /// Toggle ativo/inativo de um template
+  Future<Map<String, dynamic>> toggleContentTemplate(String id) async {
+    final response = await patch('/content/templates/$id/toggle');
+    return response.data;
+  }
+
+  /// Deleta um template de conteúdo
+  Future<void> deleteContentTemplate(String id) async {
+    await delete('/content/templates/$id');
+  }
+
+  /// Reordena templates
+  Future<void> reorderContentTemplates(List<String> templateIds) async {
+    await post(
+      '/content/templates/reorder',
+      data: {'templateIds': templateIds},
+    );
+  }
+
+  // ==================== PATIENT CONTENT OVERRIDES (NOVO) ====================
+
+  /// Lista overrides de conteúdo de um paciente
+  Future<List<dynamic>> getPatientContentOverrides(String patientId) async {
+    final response = await get('/content/patients/$patientId/overrides');
+    return response.data is List ? response.data : [];
+  }
+
+  /// Cria um override de conteúdo para um paciente
+  /// action: 'ADD' | 'DISABLE' | 'MODIFY'
+  Future<Map<String, dynamic>> createPatientContentOverride({
+    required String patientId,
+    String? templateId,
+    required String action,
+    String? type,
+    String? category,
+    String? title,
+    String? description,
+    int? validFromDay,
+    int? validUntilDay,
+    String? reason,
+  }) async {
+    final response = await post(
+      '/content/patients/$patientId/overrides',
+      data: {
+        if (templateId != null) 'templateId': templateId,
+        'action': action,
+        if (type != null) 'type': type,
+        if (category != null) 'category': category,
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (validFromDay != null) 'validFromDay': validFromDay,
+        if (validUntilDay != null) 'validUntilDay': validUntilDay,
+        if (reason != null) 'reason': reason,
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza um override de conteúdo
+  Future<Map<String, dynamic>> updatePatientContentOverride(
+    String patientId,
+    String overrideId, {
+    String? category,
+    String? title,
+    String? description,
+    int? validFromDay,
+    int? validUntilDay,
+    String? reason,
+    bool? isActive,
+  }) async {
+    final response = await put(
+      '/content/patients/$patientId/overrides/$overrideId',
+      data: {
+        if (category != null) 'category': category,
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (validFromDay != null) 'validFromDay': validFromDay,
+        if (validUntilDay != null) 'validUntilDay': validUntilDay,
+        if (reason != null) 'reason': reason,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
+    return response.data;
+  }
+
+  /// Deleta um override de conteúdo
+  Future<void> deletePatientContentOverride(
+    String patientId,
+    String overrideId,
+  ) async {
+    await delete('/content/patients/$patientId/overrides/$overrideId');
+  }
+
+  /// Preview do conteúdo final de um paciente (como admin)
+  Future<Map<String, dynamic>> getPatientContentPreview(
+    String patientId, {
+    String? type,
+  }) async {
+    final response = await get(
+      '/content/patients/$patientId/preview',
+      queryParameters: type != null ? {'type': type} : null,
+    );
+    return response.data;
+  }
+
+  // ==================== PATIENT CONTENT FROM TEMPLATES ====================
+
+  /// Busca conteúdo do paciente a partir dos templates (com overrides aplicados)
+  Future<Map<String, dynamic>> getMyContentFromTemplates({String? type}) async {
+    final endpoint = type != null
+        ? '/content/patient/me/templates/type/$type'
+        : '/content/patient/me/templates';
+    final response = await get(endpoint);
+    return response.data;
+  }
+
+  /// Verifica se há atualizações de conteúdo (polling)
+  Future<Map<String, dynamic>> checkContentSync(int clientVersion) async {
+    final response = await get(
+      '/content/patient/me/sync',
+      queryParameters: {'version': clientVersion.toString()},
     );
     return response.data;
   }

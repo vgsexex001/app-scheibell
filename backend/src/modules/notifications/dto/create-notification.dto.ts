@@ -1,6 +1,7 @@
 import { IsString, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
 
 export enum NotificationType {
+  NEW_APPOINTMENT = 'NEW_APPOINTMENT',
   APPOINTMENT_APPROVED = 'APPOINTMENT_APPROVED',
   APPOINTMENT_REJECTED = 'APPOINTMENT_REJECTED',
   ALERT_CREATED = 'ALERT_CREATED',

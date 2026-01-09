@@ -1,6 +1,7 @@
 import {
   Controller, Get, Post, Put, Patch, Delete,
   Body, Param, Query, UseGuards, BadRequestException,
+  DefaultValuePipe, ParseIntPipe,
 } from '@nestjs/common';
 import { ContentService } from './content.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -9,6 +10,10 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ContentType, ContentCategory } from '@prisma/client';
 import { AddPatientContentDto } from './dto/add-patient-content.dto';
+import { CreateTemplateDto } from './dto/create-template.dto';
+import { UpdateTemplateDto } from './dto/update-template.dto';
+import { CreateOverrideDto } from './dto/create-override.dto';
+import { UpdateOverrideDto } from './dto/update-override.dto';
 
 @Controller('content')
 @UseGuards(JwtAuthGuard)
@@ -255,5 +260,169 @@ export class ContentController {
   @UseGuards(RolesGuard)
   async removeAdjustment(@Param('adjustmentId') adjustmentId: string) {
     return this.contentService.removePatientAdjustment(adjustmentId);
+  }
+
+  // ========== CONTENT TEMPLATES (NOVO) ==========
+
+  @Get('templates')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async getTemplates(
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('type') type?: ContentType,
+  ) {
+    return this.contentService.getTemplates(clinicId, type);
+  }
+
+  @Get('templates/:id')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async getTemplateById(
+    @Param('id') id: string,
+    @CurrentUser('clinicId') clinicId: string,
+  ) {
+    return this.contentService.getTemplateById(id, clinicId);
+  }
+
+  @Post('templates')
+  @Roles('CLINIC_ADMIN')
+  @UseGuards(RolesGuard)
+  async createTemplate(
+    @CurrentUser('clinicId') clinicId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateTemplateDto,
+  ) {
+    return this.contentService.createTemplate(clinicId, dto, userId);
+  }
+
+  @Put('templates/:id')
+  @Roles('CLINIC_ADMIN')
+  @UseGuards(RolesGuard)
+  async updateTemplate(
+    @Param('id') id: string,
+    @CurrentUser('clinicId') clinicId: string,
+    @Body() dto: UpdateTemplateDto,
+  ) {
+    return this.contentService.updateTemplate(id, clinicId, dto);
+  }
+
+  @Patch('templates/:id/toggle')
+  @Roles('CLINIC_ADMIN')
+  @UseGuards(RolesGuard)
+  async toggleTemplate(
+    @Param('id') id: string,
+    @CurrentUser('clinicId') clinicId: string,
+  ) {
+    return this.contentService.toggleTemplate(id, clinicId);
+  }
+
+  @Delete('templates/:id')
+  @Roles('CLINIC_ADMIN')
+  @UseGuards(RolesGuard)
+  async deleteTemplate(
+    @Param('id') id: string,
+    @CurrentUser('clinicId') clinicId: string,
+  ) {
+    return this.contentService.deleteTemplate(id, clinicId);
+  }
+
+  @Post('templates/reorder')
+  @Roles('CLINIC_ADMIN')
+  @UseGuards(RolesGuard)
+  async reorderTemplates(
+    @CurrentUser('clinicId') clinicId: string,
+    @Body('templateIds') templateIds: string[],
+  ) {
+    return this.contentService.reorderTemplates(clinicId, templateIds);
+  }
+
+  // ========== PATIENT CONTENT OVERRIDES (NOVO) ==========
+
+  @Get('patients/:patientId/overrides')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async getPatientOverrides(
+    @Param('patientId') patientId: string,
+    @CurrentUser('clinicId') clinicId: string,
+  ) {
+    return this.contentService.getPatientOverrides(patientId, clinicId);
+  }
+
+  @Post('patients/:patientId/overrides')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async createOverride(
+    @Param('patientId') patientId: string,
+    @CurrentUser('clinicId') clinicId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateOverrideDto,
+  ) {
+    return this.contentService.createOverride(patientId, clinicId, dto, userId);
+  }
+
+  @Put('patients/:patientId/overrides/:overrideId')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async updateOverride(
+    @Param('patientId') patientId: string,
+    @Param('overrideId') overrideId: string,
+    @CurrentUser('clinicId') clinicId: string,
+    @Body() dto: UpdateOverrideDto,
+  ) {
+    return this.contentService.updateOverride(overrideId, patientId, clinicId, dto);
+  }
+
+  @Delete('patients/:patientId/overrides/:overrideId')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async deleteOverride(
+    @Param('patientId') patientId: string,
+    @Param('overrideId') overrideId: string,
+    @CurrentUser('clinicId') clinicId: string,
+  ) {
+    return this.contentService.deleteOverride(overrideId, patientId, clinicId);
+  }
+
+  @Get('patients/:patientId/preview')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async getPatientContentPreview(
+    @Param('patientId') patientId: string,
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('type') type?: ContentType,
+  ) {
+    return this.contentService.getPatientContentPreview(patientId, clinicId, type);
+  }
+
+  // ========== PATIENT CONTENT FROM TEMPLATES (NOVO) ==========
+
+  @Get('patient/me/templates')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async getMyContentFromTemplates(
+    @CurrentUser('patientId') patientId: string,
+    @Query('type') type?: ContentType,
+  ) {
+    return this.contentService.getPatientContentFromTemplates(patientId, type);
+  }
+
+  @Get('patient/me/templates/type/:type')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async getMyContentFromTemplatesByType(
+    @CurrentUser('patientId') patientId: string,
+    @Param('type') type: ContentType,
+  ) {
+    return this.contentService.getPatientContentFromTemplates(patientId, type);
+  }
+
+  @Get('patient/me/sync')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async checkSync(
+    @CurrentUser('patientId') patientId: string,
+    @Query('version', new DefaultValuePipe(0), ParseIntPipe) clientVersion: number,
+  ) {
+    return this.contentService.checkSync(patientId, clientVersion);
   }
 }

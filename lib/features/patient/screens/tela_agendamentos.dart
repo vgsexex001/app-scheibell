@@ -46,60 +46,7 @@ class Consulta {
   });
 }
 
-// Dados mock
-final List<Consulta> consultasMock = [
-  Consulta(
-    id: '1',
-    titulo: 'Retorno pós-operatório',
-    medico: 'Dr. João Silva',
-    data: DateTime(2024, 11, 16),
-    horario: '14:00',
-    local: 'Clínica São Paulo - Sala 302',
-    status: StatusConsulta.confirmado,
-    tipo: TipoAgendamento.consulta,
-    notificacoes: [
-      NotificacaoTempo('1 semana antes'),
-      NotificacaoTempo('1 dia antes'),
-      NotificacaoTempo('1 hora antes'),
-    ],
-  ),
-  Consulta(
-    id: '2',
-    titulo: 'Avaliação 1 mês',
-    medico: 'Dr. João Silva',
-    data: DateTime(2024, 12, 9),
-    horario: '10:00',
-    local: 'Clínica São Paulo - Sala 302',
-    status: StatusConsulta.pendente,
-    tipo: TipoAgendamento.consulta,
-    notificacoes: [
-      NotificacaoTempo('1 semana antes'),
-    ],
-  ),
-  Consulta(
-    id: '3',
-    titulo: 'Avaliação 3 meses',
-    medico: 'Dr. João Silva',
-    data: DateTime(2025, 2, 7),
-    horario: '15:00',
-    local: 'Clínica São Paulo - Sala 302',
-    status: StatusConsulta.pendente,
-    tipo: TipoAgendamento.consulta,
-    notificacoes: [],
-  ),
-  Consulta(
-    id: '4',
-    titulo: 'Fisioterapia',
-    medico: null,
-    data: DateTime(2024, 11, 20),
-    horario: '16:00',
-    local: 'Clínica X',
-    status: StatusConsulta.pendente,
-    tipo: TipoAgendamento.externo,
-    notificacoes: [],
-    observacoes: 'Levar toalha e roupas confortáveis',
-  ),
-];
+// Mock removido - dados vêm da API
 
 class TelaAgendamentos extends StatefulWidget {
   const TelaAgendamentos({super.key});
@@ -141,10 +88,9 @@ class _TelaAgendamentosState extends State<TelaAgendamentos> {
     } catch (e) {
       print('Erro ao carregar consultas: $e');
       setState(() {
-        // Fallback para dados mock em caso de erro
-        _consultas = consultasMock;
+        _consultas = []; // Lista vazia em caso de erro
         _isLoading = false;
-        _erro = 'Não foi possível carregar as consultas. Usando dados locais.';
+        _erro = 'Não foi possível carregar as consultas. Tente novamente.';
       });
     }
   }

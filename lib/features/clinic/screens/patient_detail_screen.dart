@@ -250,7 +250,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     final locationController = TextEditingController();
     DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
     TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
-    String selectedType = 'RETURN_VISIT';
+    String selectedType = 'CONSULTATION';
 
     showDialog(
       context: context,
@@ -270,6 +270,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   decoration: const InputDecoration(labelText: 'Tipo'),
                   value: selectedType,
                   items: const [
+                    DropdownMenuItem(value: 'CONSULTATION', child: Text('Consulta')),
                     DropdownMenuItem(value: 'RETURN_VISIT', child: Text('Retorno')),
                     DropdownMenuItem(value: 'EVALUATION', child: Text('Avaliacao')),
                     DropdownMenuItem(value: 'PHYSIOTHERAPY', child: Text('Fisioterapia')),

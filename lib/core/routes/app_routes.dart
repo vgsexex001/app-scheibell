@@ -144,14 +144,38 @@ class AppRoutes {
         child: const ClinicDashboardScreen(),
       ),
       clinicContentManagement: (context) => const ClinicContentManagementScreen(),
-      clinicSymptoms: (context) => const ClinicSymptomsScreen(),
-      clinicDiet: (context) => const ClinicDietScreen(),
-      clinicActivities: (context) => const ClinicActivitiesScreen(),
-      clinicCare: (context) => const ClinicCareScreen(),
-      clinicTraining: (context) => const ClinicTrainingScreen(),
-      clinicExams: (context) => const ClinicExamsScreen(),
-      clinicMedications: (context) => const ClinicMedicationsScreen(),
-      clinicDocuments: (context) => const ClinicDocumentsScreen(),
+      clinicSymptoms: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicSymptomsScreen(),
+      ),
+      clinicDiet: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicDietScreen(),
+      ),
+      clinicActivities: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicActivitiesScreen(),
+      ),
+      clinicCare: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicCareScreen(),
+      ),
+      clinicTraining: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicTrainingScreen(),
+      ),
+      clinicExams: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicExamsScreen(),
+      ),
+      clinicMedications: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicMedicationsScreen(),
+      ),
+      clinicDocuments: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicDocumentsScreen(),
+      ),
       clinicPatientsList: (context) => ChangeNotifierProvider(
         create: (_) => PatientsProvider(),
         child: const PatientsListScreen(),

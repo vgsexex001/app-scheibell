@@ -1,30 +1,69 @@
 import '../../domain/entities/chat_message.dart';
 import '../../domain/repositories/chat_repository.dart';
-import '../datasources/openai_datasource.dart';
+import '../datasources/chat_api_datasource.dart';
 
-/// Implementacao do ChatRepository usando OpenAI diretamente
+/// Implementacao do ChatRepository usando o backend
 class ChatRepositoryImpl implements ChatRepository {
-  final OpenAiDatasource _datasource;
+  final ChatApiDatasource _datasource;
 
-  ChatRepositoryImpl({OpenAiDatasource? datasource})
-      : _datasource = datasource ?? OpenAiDatasource();
+  ChatRepositoryImpl({ChatApiDatasource? datasource})
+      : _datasource = datasource ?? ChatApiDatasource();
 
   @override
-  Future<ChatMessage> sendMessage(List<ChatMessage> messages) async {
+  Future<SendMessageResult> sendMessage(
+    String message, {
+    String? conversationId,
+  }) async {
     try {
-      final response = await _datasource.sendMessage(messages);
-      return response.toEntity();
-    } on OpenAiException catch (e) {
+      final response = await _datasource.sendMessage(
+        message,
+        conversationId: conversationId,
+      );
+
+      return SendMessageResult(
+        message: response.message.toEntity(),
+        conversationId: response.conversationId,
+      );
+    } on ChatApiException catch (e) {
       // Retorna mensagem de erro amigavel
-      return ChatMessage.fromAssistant(
-        e.userFriendlyMessage,
-        isError: true,
+      return SendMessageResult(
+        message: ChatMessage.fromAssistant(
+          e.userFriendlyMessage,
+          isError: true,
+        ),
+        conversationId: conversationId ?? '',
       );
     } catch (e) {
-      return ChatMessage.fromAssistant(
-        'Ocorreu um erro inesperado. Por favor, tente novamente.',
-        isError: true,
+      return SendMessageResult(
+        message: ChatMessage.fromAssistant(
+          'Ocorreu um erro inesperado. Por favor, tente novamente.',
+          isError: true,
+        ),
+        conversationId: conversationId ?? '',
       );
+    }
+  }
+
+  @override
+  Future<ChatHistoryResult?> getHistory({String? conversationId}) async {
+    try {
+      final conversation = await _datasource.getHistory(
+        conversationId: conversationId,
+      );
+
+      if (conversation == null) {
+        return null;
+      }
+
+      return ChatHistoryResult(
+        conversationId: conversation.id,
+        messages: conversation.messages.map((m) => m.toEntity()).toList(),
+      );
+    } on ChatApiException {
+      // Em caso de erro, retorna null (sem historico)
+      return null;
+    } catch (e) {
+      return null;
     }
   }
 }

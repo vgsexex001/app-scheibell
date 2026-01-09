@@ -1,7 +1,11 @@
+import 'dart:math';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:dio/dio.dart';
 import '../../config/theme/app_colors.dart';
+import '../../core/config/api_config.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/models/user_model.dart';
 
@@ -23,6 +27,23 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
     super.initState();
     _emailController.addListener(_validateForm);
     _passwordController.addListener(_validateForm);
+
+    // Debug: testar conectividade com backend
+    _checkBackendConnection();
+  }
+
+  Future<void> _checkBackendConnection() async {
+    if (!kDebugMode) return;
+    debugPrint('[CONN] Testando conexao com backend...');
+    debugPrint('[CONN] URL: ${ApiConfig.baseUrl}/health');
+    try {
+      final dio = Dio();
+      dio.options.connectTimeout = const Duration(seconds: 5);
+      final response = await dio.get('${ApiConfig.baseUrl}/health');
+      debugPrint('[CONN] Backend acessivel: ${response.statusCode} ${response.data}');
+    } catch (e) {
+      debugPrint('[CONN] Backend NAO acessivel: $e');
+    }
   }
 
   void _validateForm() {
@@ -38,8 +59,13 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
   Future<void> _handleLogin() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final emailPreview = email.substring(0, min(3, email.length));
+
+    debugPrint('[LOGIN] _handleLogin() iniciando');
+    debugPrint('[LOGIN] Email: $emailPreview***');
 
     if (email.isEmpty || password.isEmpty) {
+      debugPrint('[LOGIN] Validacao falhou: campos vazios');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Preencha todos os campos')),
       );
@@ -47,6 +73,7 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
     }
 
     if (!email.contains('@')) {
+      debugPrint('[LOGIN] Validacao falhou: email invalido');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Digite um email válido')),
       );
@@ -54,6 +81,7 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
     }
 
     if (password.length < 6) {
+      debugPrint('[LOGIN] Validacao falhou: senha curta');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('A senha deve ter pelo menos 6 caracteres')),
       );
@@ -61,10 +89,15 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
     }
 
     // Login com AuthProvider
+    debugPrint('[LOGIN] Chamando authProvider.login()...');
     final authProvider = context.read<AuthProvider>();
     final success = await authProvider.login(email: email, password: password);
+    debugPrint('[LOGIN] Resultado: success=$success');
 
-    if (!mounted) return;
+    if (!mounted) {
+      debugPrint('[LOGIN] Widget desmontado apos login');
+      return;
+    }
 
     if (success) {
       // Redirecionar baseado no role do usuário
@@ -81,12 +114,14 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
           break;
         case UserRole.patient:
         default:
-          route = '/onboarding';
+          route = '/home';
           break;
       }
 
+      debugPrint('[LOGIN] Navegando para: $route');
       Navigator.pushReplacementNamed(context, route);
     } else {
+      debugPrint('[LOGIN] Falha: ${authProvider.errorMessage}');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(authProvider.errorMessage ?? 'Erro ao fazer login')),
       );

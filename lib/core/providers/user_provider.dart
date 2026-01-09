@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
+import '../services/api_service.dart';
 
 class UserProvider extends ChangeNotifier {
+  final ApiService _apiService = ApiService();
   UserModel? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
@@ -32,12 +34,16 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // TODO: Implement actual profile update with backend
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Chama a API real para atualizar o perfil
+      final response = await _apiService.updateProfile(
+        name: name,
+        phone: phone,
+      );
 
+      // Atualiza o modelo local com a resposta do backend
       _currentUser = _currentUser!.copyWith(
-        name: name ?? _currentUser!.name,
-        phone: phone ?? _currentUser!.phone,
+        name: response['name'] as String? ?? _currentUser!.name,
+        phone: response['phone'] as String? ?? _currentUser!.phone,
         avatarUrl: avatarUrl ?? _currentUser!.avatarUrl,
         updatedAt: DateTime.now(),
       );
@@ -58,11 +64,14 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // TODO: Implement actual user data refresh from backend
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Busca dados atualizados do perfil via API
+      final response = await _apiService.getProfile();
 
-      // For now, just update the timestamp
+      // Atualiza o modelo local com os dados do backend
       _currentUser = _currentUser!.copyWith(
+        name: response['name'] as String? ?? _currentUser!.name,
+        email: response['email'] as String? ?? _currentUser!.email,
+        phone: response['patient']?['phone'] as String? ?? _currentUser!.phone,
         updatedAt: DateTime.now(),
       );
 

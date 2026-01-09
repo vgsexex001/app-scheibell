@@ -33,7 +33,10 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc2MzM2MzAsImV4cCI6MTc2NzcyMDAzMH0.Z-rPtEgRiJcJm4f0HxTsqldlVKNNkS1Fk3alNtz-fXM\")",
       "Bash(__NEW_LINE__ echo \"=== Teste 1: POST /adjustments \\(SEM /add\\) ===\")",
       "Bash(__NEW_LINE__ echo \"\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc2MzU2MDMsImV4cCI6MTc2NzcyMjAwM30.9DjJEN2A1ZAJimUXcXTzleqCKSSE1uUKF8QmaoN1Fy0\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc2MzU2MDMsImV4cCI6MTc2NzcyMjAwM30.9DjJEN2A1ZAJimUXcXTzleqCKSSE1uUKF8QmaoN1Fy0\")",
+      "Bash(powershell:*)",
+      "Bash(npm install:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWFkbWluIiwiZW1haWwiOiJhZG1pbkB0ZXN0ZS5jb20iLCJyb2xlIjoiQ0xJTklDX0FETUlOIiwiY2xpbmljSWQiOiJjbGluaWMtZGVmYXVsdC1zY2hlaWJlbGwiLCJpYXQiOjE3Njc4OTI2OTYsImV4cCI6MTc2Nzg5MzU5Nn0.etQPJEst5Xf5mPXk-k9EUgT181kh4G2vNjrcDCLMVUg\")"
     ]
   }
 }

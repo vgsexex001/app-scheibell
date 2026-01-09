@@ -57,59 +57,12 @@ class AdesaoDia {
   });
 }
 
-// Dados mock
-final adesaoMock = AdesaoDia(
-  porcentagem: 75,
-  dosesTomadas: 3,
-  dosesTotal: 4,
+// Adesão padrão quando API não retorna dados (estado inicial/erro)
+final _adesaoVazia = AdesaoDia(
+  porcentagem: 0,
+  dosesTomadas: 0,
+  dosesTotal: 0,
 );
-
-final List<Medicacao> medicacoesMock = [
-  Medicacao(
-    id: '1',
-    nome: 'Ibuprofeno',
-    dosagem: '600mg',
-    forma: '1 comprimido',
-    frequencia: '3x ao dia',
-    horarios: [
-      HorarioDose(horario: '08:00', status: StatusDose.tomado),
-      HorarioDose(horario: '14:00', status: StatusDose.proxima),
-      HorarioDose(horario: '20:00', status: StatusDose.pendente),
-    ],
-    proximaDose: '14:00',
-    dica: 'Tomar após refeição',
-    tomadoHoje: true,
-  ),
-  Medicacao(
-    id: '2',
-    nome: 'Amoxicilina',
-    dosagem: '500mg',
-    forma: '1 cápsula',
-    frequencia: '2x ao dia',
-    horarios: [
-      HorarioDose(horario: '09:00', status: StatusDose.tomado),
-      HorarioDose(horario: '21:00', status: StatusDose.pendente),
-    ],
-    proximaDose: '21:00',
-    dica: 'Com um copo cheio de água',
-    tomadoHoje: false,
-  ),
-  Medicacao(
-    id: '3',
-    nome: 'Vitamina C',
-    dosagem: '1g',
-    forma: '1 comprimido',
-    frequencia: '1x ao dia',
-    horarios: [
-      HorarioDose(horario: '08:00', status: StatusDose.tomado),
-    ],
-    proximaDose: 'Amanhã 08:00',
-    dica: 'Antes de dormir',
-    tomadoHoje: false,
-  ),
-];
-
-// Map dinâmico será calculado no state
 
 class TelaMedicamentos extends StatefulWidget {
   const TelaMedicamentos({super.key});
@@ -186,7 +139,7 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
         dosesTotal: _adesaoData['expected'] ?? 0,
       );
     }
-    return adesaoMock;
+    return _adesaoVazia;
   }
 
   /// Calcula a timeline baseada nas medicações e logs
@@ -243,7 +196,7 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
   /// Converte ContentItem da API para modelo Medicacao local
   List<Medicacao> _getMedicacoes() {
     if (_medicacoesApi.isEmpty) {
-      return medicacoesMock; // Fallback para dados mock
+      return []; // Retorna lista vazia - dados vêm da API
     }
 
     return _medicacoesApi.map((item) {

@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../../data/datasources/recovery_mock_datasource.dart';
+import '../../data/datasources/recovery_api_datasource.dart';
 import '../../domain/entities/recovery_summary.dart';
 import '../../domain/entities/resource.dart';
 import '../../domain/entities/timeline_event.dart';
@@ -23,9 +23,9 @@ enum LoadingState {
 /// - Protocolo de treino
 /// - Exames e documentos
 class RecoveryController extends ChangeNotifier {
-  /// Troque para RecoveryApiDatasource() quando o backend tiver
-  /// todos os endpoints implementados
-  final RecoveryRepository _repository = RecoveryMockDatasource();
+  /// Usando RecoveryApiDatasource para dados reais do backend
+  /// Métodos sem endpoint retornam vazio (graceful degradation)
+  final RecoveryRepository _repository = RecoveryApiDatasource();
 
   // Estados de carregamento por seção
   LoadingState _summaryState = LoadingState.initial;

@@ -4,6 +4,7 @@ import 'patient_chat_screen.dart';
 import 'appointment_detail_screen.dart';
 import '../providers/admin_chat_controller.dart';
 import '../../chatbot/domain/entities/chat_message.dart' as domain;
+import '../../../core/services/api_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -13,130 +14,179 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  int _selectedTabIndex = 0; // 0 = IA, 1 = Clínico, 2 = Agendamentos
+  int _selectedTabIndex = 0; // 0 = IA, 1 = Clínico, 2 = Atendimento, 3 = Agendamentos
   final int _selectedNavIndex = 2; // Chat tab
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  // Lista de pacientes com conversas (mock)
-  final List<PatientConversation> _patientConversations = [
-    PatientConversation(
-      id: '1',
-      name: 'Maria Silva',
-      procedure: 'Rinoplastia',
-      daysPostOp: 7,
-      lastMessage: 'Estou com um inchaço no nariz, é normal?',
-      lastMessageTime: '10:45',
-      unreadCount: 2,
-      status: PatientStatus.attention,
-    ),
-    PatientConversation(
-      id: '2',
-      name: 'João Santos',
-      procedure: 'Blefaroplastia',
-      daysPostOp: 3,
-      lastMessage: 'Obrigado pela orientação, doutor!',
-      lastMessageTime: '09:30',
-      unreadCount: 0,
-      status: PatientStatus.normal,
-    ),
-    PatientConversation(
-      id: '3',
-      name: 'Ana Oliveira',
-      procedure: 'Lifting Facial',
-      daysPostOp: 14,
-      lastMessage: 'Posso começar a usar maquiagem?',
-      lastMessageTime: 'Ontem',
-      unreadCount: 1,
-      status: PatientStatus.normal,
-    ),
-    PatientConversation(
-      id: '4',
-      name: 'Carlos Mendes',
-      procedure: 'Otoplastia',
-      daysPostOp: 5,
-      lastMessage: 'A faixa está incomodando muito',
-      lastMessageTime: 'Ontem',
-      unreadCount: 3,
-      status: PatientStatus.urgent,
-    ),
-  ];
+  // API Service
+  final ApiService _apiService = ApiService();
 
-  // Lista de agendamentos (mock)
-  final List<Appointment> _appointments = [
-    Appointment(
-      id: '1',
-      patientName: 'Fernanda Lima',
-      patientInitials: 'FL',
-      procedure: 'Consulta Pré-Operatória',
-      procedureType: AppointmentType.consultation,
-      date: DateTime.now(),
-      time: '09:00',
-      duration: '30 min',
-      status: AppointmentStatus.confirmed,
-      notes: 'Primeira consulta - Rinoplastia',
-    ),
-    Appointment(
-      id: '2',
-      patientName: 'Ricardo Alves',
-      patientInitials: 'RA',
-      procedure: 'Retorno Pós-Operatório',
-      procedureType: AppointmentType.followUp,
-      date: DateTime.now(),
-      time: '10:00',
-      duration: '20 min',
-      status: AppointmentStatus.confirmed,
-      notes: 'Blefaroplastia - 7 dias pós-op',
-    ),
-    Appointment(
-      id: '3',
-      patientName: 'Juliana Costa',
-      patientInitials: 'JC',
-      procedure: 'Rinoplastia',
-      procedureType: AppointmentType.surgery,
-      date: DateTime.now(),
-      time: '14:00',
-      duration: '3h',
-      status: AppointmentStatus.confirmed,
-      notes: 'Cirurgia agendada - Centro Cirúrgico 2',
-    ),
-    Appointment(
-      id: '4',
-      patientName: 'Pedro Machado',
-      patientInitials: 'PM',
-      procedure: 'Consulta Pré-Operatória',
-      procedureType: AppointmentType.consultation,
-      date: DateTime.now().add(const Duration(days: 1)),
-      time: '08:30',
-      duration: '30 min',
-      status: AppointmentStatus.pending,
-      notes: 'Aguardando confirmação do paciente',
-    ),
-    Appointment(
-      id: '5',
-      patientName: 'Mariana Souza',
-      patientInitials: 'MS',
-      procedure: 'Avaliação de Fotos',
-      procedureType: AppointmentType.evaluation,
-      date: DateTime.now().add(const Duration(days: 1)),
-      time: '11:00',
-      duration: '15 min',
-      status: AppointmentStatus.confirmed,
-      notes: 'Revisão de resultado - Lifting',
-    ),
-    Appointment(
-      id: '6',
-      patientName: 'Lucas Ferreira',
-      patientInitials: 'LF',
-      procedure: 'Otoplastia',
-      procedureType: AppointmentType.surgery,
-      date: DateTime.now().add(const Duration(days: 2)),
-      time: '09:00',
-      duration: '2h',
-      status: AppointmentStatus.confirmed,
-      notes: 'Cirurgia bilateral',
-    ),
-  ];
+  // Estado para conversas de pacientes
+  List<PatientConversation> _patientConversations = [];
+  bool _isLoadingConversations = true;
+
+  // Estado para agendamentos
+  List<Appointment> _appointments = [];
+  bool _isLoadingAppointments = true;
+
+  // Estado para conversas em modo HUMAN (atendimento)
+  List<HumanHandoffConversation> _humanConversations = [];
+  bool _isLoadingHumanConversations = true;
+  int _humanConversationsCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await Future.wait([
+      _loadPatientConversations(),
+      _loadAppointments(),
+      _loadHumanConversations(),
+    ]);
+  }
+
+  Future<void> _loadHumanConversations() async {
+    setState(() => _isLoadingHumanConversations = true);
+    try {
+      final data = await _apiService.getHumanConversations(status: 'HUMAN');
+      final items = data['items'] as List? ?? [];
+      final conversations = items.map((item) {
+        return HumanHandoffConversation(
+          id: item['id'] ?? '',
+          patientName: item['patientName'] ?? 'Paciente',
+          patientId: item['patientId'] ?? '',
+          lastMessage: item['lastMessage'] ?? '',
+          lastMessageTime: item['lastMessageTime'] ?? '',
+          handoffAt: item['handoffAt'] != null
+              ? DateTime.tryParse(item['handoffAt'])
+              : null,
+          unreadCount: item['unreadFromPatient'] ?? 0,
+        );
+      }).toList();
+      setState(() {
+        _humanConversations = conversations;
+        _humanConversationsCount = conversations.length;
+        _isLoadingHumanConversations = false;
+      });
+    } catch (e) {
+      print('Erro ao carregar conversas humanas: $e');
+      setState(() {
+        _humanConversations = [];
+        _humanConversationsCount = 0;
+        _isLoadingHumanConversations = false;
+      });
+    }
+  }
+
+  Future<void> _loadPatientConversations() async {
+    setState(() => _isLoadingConversations = true);
+    try {
+      final data = await _apiService.getChatConversations();
+      final conversations = data.map((item) {
+        return PatientConversation(
+          id: item['id'] ?? '',
+          name: item['patientName'] ?? item['name'] ?? 'Paciente',
+          procedure: item['procedure'] ?? 'Consulta',
+          daysPostOp: item['daysPostOp'] ?? 0,
+          lastMessage: item['lastMessage'] ?? '',
+          lastMessageTime: item['lastMessageTime'] ?? '',
+          unreadCount: item['unreadCount'] ?? 0,
+          status: _mapPatientStatus(item['status']),
+        );
+      }).toList();
+      setState(() {
+        _patientConversations = conversations;
+        _isLoadingConversations = false;
+      });
+    } catch (e) {
+      print('Erro ao carregar conversas: $e');
+      setState(() {
+        _patientConversations = [];
+        _isLoadingConversations = false;
+      });
+    }
+  }
+
+  PatientStatus _mapPatientStatus(String? status) {
+    switch (status) {
+      case 'URGENT':
+        return PatientStatus.urgent;
+      case 'ATTENTION':
+        return PatientStatus.attention;
+      default:
+        return PatientStatus.normal;
+    }
+  }
+
+  Future<void> _loadAppointments() async {
+    setState(() => _isLoadingAppointments = true);
+    try {
+      final data = await _apiService.getAppointments();
+      final appointments = data.map((item) => _mapAppointment(item)).toList();
+      setState(() {
+        _appointments = appointments;
+        _isLoadingAppointments = false;
+      });
+    } catch (e) {
+      print('Erro ao carregar agendamentos: $e');
+      setState(() {
+        _appointments = [];
+        _isLoadingAppointments = false;
+      });
+    }
+  }
+
+  Appointment _mapAppointment(Map<String, dynamic> item) {
+    final patientName = item['patientName'] ?? item['patient']?['name'] ?? 'Paciente';
+    final initials = _getInitials(patientName);
+
+    AppointmentType procedureType;
+    switch (item['type']) {
+      case 'RETURN_VISIT':
+        procedureType = AppointmentType.returnVisit;
+        break;
+      case 'EVALUATION':
+        procedureType = AppointmentType.evaluation;
+        break;
+      case 'PHYSIOTHERAPY':
+        procedureType = AppointmentType.physiotherapy;
+        break;
+      case 'EXAM':
+        procedureType = AppointmentType.exam;
+        break;
+      default:
+        procedureType = AppointmentType.other;
+    }
+
+    AppointmentStatus status;
+    switch (item['status']) {
+      case 'CONFIRMED':
+        status = AppointmentStatus.confirmed;
+        break;
+      case 'CANCELLED':
+        status = AppointmentStatus.cancelled;
+        break;
+      default:
+        status = AppointmentStatus.pending;
+    }
+
+    return Appointment(
+      id: item['id'] ?? '',
+      patientName: patientName,
+      patientInitials: initials,
+      procedure: item['title'] ?? item['procedure'] ?? 'Consulta',
+      procedureType: procedureType,
+      date: DateTime.tryParse(item['date'] ?? '') ?? DateTime.now(),
+      time: item['time'] ?? '00:00',
+      duration: item['duration'] ?? '30 min',
+      status: status,
+      notes: item['description'] ?? item['notes'] ?? '',
+    );
+  }
 
   @override
   void dispose() {
@@ -170,13 +220,15 @@ class _ChatScreenState extends State<ChatScreen> {
       case 1:
         return _buildClinicoPatientsContent();
       case 2:
+        return _buildAtendimentoContent();
+      case 3:
         return _buildAgendamentosContent();
       default:
         return _buildIAChatContent();
     }
   }
 
-  /// Tab Bar com 3 abas
+  /// Tab Bar com 4 abas
   Widget _buildTabBar() {
     return Container(
       width: double.infinity,
@@ -200,7 +252,7 @@ class _ChatScreenState extends State<ChatScreen> {
               isActive: _selectedTabIndex == 0,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: _buildTab(
               index: 1,
@@ -209,13 +261,23 @@ class _ChatScreenState extends State<ChatScreen> {
               isActive: _selectedTabIndex == 1,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: _buildTab(
               index: 2,
+              icon: Icons.support_agent,
+              label: 'Atendimento',
+              isActive: _selectedTabIndex == 2,
+              badgeCount: _humanConversationsCount,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _buildTab(
+              index: 3,
               icon: Icons.calendar_today_outlined,
               label: 'Agenda',
-              isActive: _selectedTabIndex == 2,
+              isActive: _selectedTabIndex == 3,
             ),
           ),
         ],
@@ -228,6 +290,7 @@ class _ChatScreenState extends State<ChatScreen> {
     required IconData icon,
     required String label,
     required bool isActive,
+    int badgeCount = 0,
   }) {
     return GestureDetector(
       onTap: () => setState(() => _selectedTabIndex = index),
@@ -262,29 +325,60 @@ class _ChatScreenState extends State<ChatScreen> {
                 ]
               : null,
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isActive ? Colors.white : const Color(0xFF495565),
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: isActive ? Colors.white : const Color(0xFF495565),
-                  fontSize: 12,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w500,
-                  height: 1.33,
-                ),
+            Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 16,
+                    color: isActive ? Colors.white : const Color(0xFF495565),
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isActive ? Colors.white : const Color(0xFF495565),
+                        fontSize: 11,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w500,
+                        height: 1.33,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (badgeCount > 0)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 14),
+                  child: Text(
+                    badgeCount > 9 ? '9+' : '$badgeCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -659,13 +753,40 @@ class _ChatScreenState extends State<ChatScreen> {
       children: [
         _buildClinicoHeader(),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: _patientConversations.length,
-            itemBuilder: (context, index) {
-              return _buildPatientConversationCard(_patientConversations[index]);
-            },
-          ),
+          child: _isLoadingConversations
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF4F4A34),
+                  ),
+                )
+              : _patientConversations.isEmpty
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 48,
+                            color: Color(0xFFA49E86),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'Nenhuma conversa encontrada',
+                            style: TextStyle(
+                              color: Color(0xFF495565),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      itemCount: _patientConversations.length,
+                      itemBuilder: (context, index) {
+                        return _buildPatientConversationCard(_patientConversations[index]);
+                      },
+                    ),
         ),
       ],
     );
@@ -937,9 +1058,363 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// ==========================================
+  /// ABA ATENDIMENTO - HUMAN HANDOFF
+  /// ==========================================
+  Widget _buildAtendimentoContent() {
+    return Column(
+      children: [
+        _buildAtendimentoHeader(),
+        Expanded(
+          child: _isLoadingHumanConversations
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF3B82F6),
+                  ),
+                )
+              : _humanConversations.isEmpty
+                  ? _buildEmptyAtendimento()
+                  : RefreshIndicator(
+                      onRefresh: _loadHumanConversations,
+                      color: const Color(0xFF3B82F6),
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        itemCount: _humanConversations.length,
+                        itemBuilder: (context, index) {
+                          return _buildHumanConversationCard(
+                              _humanConversations[index]);
+                        },
+                      ),
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAtendimentoHeader() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(
+                    Icons.support_agent,
+                    size: 20,
+                    color: Color(0xFF3B82F6),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Atendimento Humano',
+                    style: TextStyle(
+                      color: Color(0xFF212621),
+                      fontSize: 16,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              if (_humanConversationsCount > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B82F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$_humanConversationsCount aguardando',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF3B82F6).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: Color(0xFF3B82F6),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Pacientes que solicitaram falar com a equipe',
+                    style: TextStyle(
+                      color: Color(0xFF3B82F6),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyAtendimento() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: const Color(0xFF3B82F6).withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.check_circle_outline,
+              size: 40,
+              color: Color(0xFF3B82F6),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Nenhum atendimento pendente',
+            style: TextStyle(
+              color: Color(0xFF212621),
+              fontSize: 16,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Todos os pacientes estão sendo\natendidos pelo assistente IA',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF495565),
+              fontSize: 13,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHumanConversationCard(HumanHandoffConversation conversation) {
+    final waitingTime = conversation.handoffAt != null
+        ? DateTime.now().difference(conversation.handoffAt!)
+        : null;
+
+    String waitingLabel = '';
+    if (waitingTime != null) {
+      if (waitingTime.inMinutes < 60) {
+        waitingLabel = '${waitingTime.inMinutes}min';
+      } else if (waitingTime.inHours < 24) {
+        waitingLabel = '${waitingTime.inHours}h';
+      } else {
+        waitingLabel = '${waitingTime.inDays}d';
+      }
+    }
+
+    return GestureDetector(
+      onTap: () => _openHumanConversation(conversation),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: ShapeDecoration(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            side: BorderSide(
+              width: 1,
+              color: conversation.unreadCount > 0
+                  ? const Color(0xFF3B82F6).withOpacity(0.3)
+                  : const Color(0xFFE5E7EB),
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: Row(
+          children: [
+            Stack(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: ShapeDecoration(
+                    color: const Color(0xFF3B82F6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _getInitials(conversation.patientName),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                if (conversation.unreadCount > 0)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        conversation.patientName,
+                        style: const TextStyle(
+                          color: Color(0xFF212621),
+                          fontSize: 14,
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (waitingLabel.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.schedule,
+                                size: 10,
+                                color: Color(0xFFF59E0B),
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                waitingLabel,
+                                style: const TextStyle(
+                                  color: Color(0xFFF59E0B),
+                                  fontSize: 10,
+                                  fontFamily: 'Inter',
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.support_agent,
+                        size: 12,
+                        color: Color(0xFF3B82F6),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Aguardando atendimento',
+                        style: TextStyle(
+                          color: Color(0xFF3B82F6),
+                          fontSize: 12,
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    conversation.lastMessage,
+                    style: TextStyle(
+                      color: conversation.unreadCount > 0
+                          ? const Color(0xFF212621)
+                          : const Color(0xFF9CA3AF),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: conversation.unreadCount > 0
+                          ? FontWeight.w500
+                          : FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: Color(0xFF9CA3AF),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openHumanConversation(HumanHandoffConversation conversation) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HumanChatScreen(conversation: conversation),
+      ),
+    ).then((_) {
+      // Recarrega as conversas ao voltar
+      _loadHumanConversations();
+    });
+  }
+
+  /// ==========================================
   /// ABA AGENDAMENTOS - LISTA DE CONSULTAS
   /// ==========================================
   Widget _buildAgendamentosContent() {
+    if (_isLoadingAppointments) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFF4F4A34),
+        ),
+      );
+    }
+
     final today = DateTime.now();
     final todayAppointments = _appointments
         .where((a) =>
@@ -958,6 +1433,36 @@ class _ChatScreenState extends State<ChatScreen> {
     final laterAppointments = _appointments
         .where((a) => a.date.isAfter(today.add(const Duration(days: 1))))
         .toList();
+
+    if (_appointments.isEmpty) {
+      return Column(
+        children: [
+          _buildAgendamentosHeader(),
+          const Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 48,
+                    color: Color(0xFFA49E86),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Nenhum agendamento encontrado',
+                    style: TextStyle(
+                      color: Color(0xFF495565),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Column(
       children: [
@@ -1135,7 +1640,7 @@ class _ChatScreenState extends State<ChatScreen> {
           shape: RoundedRectangleBorder(
             side: BorderSide(
               width: 1,
-              color: appointment.procedureType == AppointmentType.surgery
+              color: appointment.procedureType == AppointmentType.exam
                   ? const Color(0xFF7C75B7).withOpacity(0.3)
                   : const Color(0xFFE5E7EB),
             ),
@@ -1318,27 +1823,31 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Color _getAppointmentTypeColor(AppointmentType type) {
     switch (type) {
-      case AppointmentType.consultation:
-        return const Color(0xFF4F4A34);
-      case AppointmentType.surgery:
-        return const Color(0xFF7C75B7);
-      case AppointmentType.followUp:
+      case AppointmentType.returnVisit:
         return const Color(0xFF22C55E);
       case AppointmentType.evaluation:
         return const Color(0xFF3B82F6);
+      case AppointmentType.physiotherapy:
+        return const Color(0xFF7C75B7);
+      case AppointmentType.exam:
+        return const Color(0xFFF59E0B);
+      case AppointmentType.other:
+        return const Color(0xFF4F4A34);
     }
   }
 
   IconData _getAppointmentTypeIcon(AppointmentType type) {
     switch (type) {
-      case AppointmentType.consultation:
-        return Icons.event_note_outlined;
-      case AppointmentType.surgery:
-        return Icons.medical_services_outlined;
-      case AppointmentType.followUp:
+      case AppointmentType.returnVisit:
         return Icons.refresh;
       case AppointmentType.evaluation:
         return Icons.camera_alt_outlined;
+      case AppointmentType.physiotherapy:
+        return Icons.fitness_center_outlined;
+      case AppointmentType.exam:
+        return Icons.medical_services_outlined;
+      case AppointmentType.other:
+        return Icons.event_note_outlined;
     }
   }
 
@@ -1515,7 +2024,7 @@ class PatientConversation {
   });
 }
 
-enum AppointmentType { consultation, surgery, followUp, evaluation }
+enum AppointmentType { returnVisit, evaluation, physiotherapy, exam, other }
 
 enum AppointmentStatus { confirmed, pending, cancelled }
 
@@ -1543,4 +2052,464 @@ class Appointment {
     required this.status,
     required this.notes,
   });
+}
+
+/// Modelo para conversas em modo HUMAN (atendimento humano)
+class HumanHandoffConversation {
+  final String id;
+  final String patientName;
+  final String patientId;
+  final String lastMessage;
+  final String lastMessageTime;
+  final DateTime? handoffAt;
+  final int unreadCount;
+
+  HumanHandoffConversation({
+    required this.id,
+    required this.patientName,
+    required this.patientId,
+    required this.lastMessage,
+    required this.lastMessageTime,
+    this.handoffAt,
+    this.unreadCount = 0,
+  });
+}
+
+/// ==========================================
+/// TELA DE CHAT HUMANO (STAFF -> PACIENTE)
+/// ==========================================
+class HumanChatScreen extends StatefulWidget {
+  final HumanHandoffConversation conversation;
+
+  const HumanChatScreen({super.key, required this.conversation});
+
+  @override
+  State<HumanChatScreen> createState() => _HumanChatScreenState();
+}
+
+class _HumanChatScreenState extends State<HumanChatScreen> {
+  final ApiService _apiService = ApiService();
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  List<Map<String, dynamic>> _messages = [];
+  bool _isLoading = true;
+  bool _isSending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConversation();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadConversation() async {
+    setState(() => _isLoading = true);
+    try {
+      final data =
+          await _apiService.getConversationForAdmin(widget.conversation.id);
+      setState(() {
+        _messages = List<Map<String, dynamic>>.from(data['messages'] ?? []);
+        _isLoading = false;
+      });
+      _scrollToBottom();
+    } catch (e) {
+      print('Erro ao carregar conversa: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _isSending) return;
+
+    setState(() => _isSending = true);
+    _messageController.clear();
+
+    try {
+      final response = await _apiService.sendHumanMessage(
+        widget.conversation.id,
+        text,
+      );
+
+      // Adiciona mensagem à lista
+      setState(() {
+        _messages.add({
+          'id': response['id'],
+          'content': text,
+          'role': 'assistant',
+          'senderType': 'staff',
+          'createdAt': DateTime.now().toIso8601String(),
+        });
+        _isSending = false;
+      });
+      _scrollToBottom();
+    } catch (e) {
+      print('Erro ao enviar mensagem: $e');
+      setState(() => _isSending = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erro ao enviar mensagem'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _closeConversation({bool returnToAi = true}) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(returnToAi ? 'Devolver para IA' : 'Encerrar atendimento'),
+        content: Text(
+          returnToAi
+              ? 'O paciente voltará a ser atendido pelo assistente IA. Deseja continuar?'
+              : 'A conversa será encerrada. Deseja continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor:
+                  returnToAi ? const Color(0xFF3B82F6) : const Color(0xFFEF4444),
+            ),
+            child: Text(returnToAi ? 'Devolver' : 'Encerrar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _apiService.closeHumanConversation(
+          widget.conversation.id,
+          returnToAi: returnToAi,
+        );
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                returnToAi
+                    ? 'Conversa devolvida para IA'
+                    : 'Atendimento encerrado',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        print('Erro ao fechar conversa: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Erro ao fechar conversa'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F3EF),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF3B82F6),
+        foregroundColor: Colors.white,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.conversation.patientName,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Text(
+              'Atendimento humano',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'return_ai') {
+                _closeConversation(returnToAi: true);
+              } else if (value == 'close') {
+                _closeConversation(returnToAi: false);
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'return_ai',
+                child: Row(
+                  children: [
+                    Icon(Icons.smart_toy_outlined, size: 20),
+                    SizedBox(width: 8),
+                    Text('Devolver para IA'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'close',
+                child: Row(
+                  children: [
+                    Icon(Icons.close, size: 20, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Encerrar atendimento',
+                        style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Banner informativo
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: const Color(0xFF3B82F6).withOpacity(0.1),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Color(0xFF3B82F6)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Você está respondendo como equipe da clínica',
+                    style: TextStyle(
+                      color: Color(0xFF3B82F6),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Mensagens
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF3B82F6),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      return _buildMessageBubble(_messages[index]);
+                    },
+                  ),
+          ),
+          // Input
+          _buildMessageInput(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(Map<String, dynamic> message) {
+    final role = message['role'] as String?;
+    final senderType = message['senderType'] as String?;
+    final content = message['content'] as String? ?? '';
+
+    final isFromPatient = role == 'user' || senderType == 'patient';
+    final isFromStaff = senderType == 'staff';
+    final isFromAi = senderType == 'ai' || (role == 'assistant' && senderType == null);
+    final isSystem = role == 'system' || senderType == 'system';
+
+    if (isSystem) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5E7EB),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              content,
+              style: const TextStyle(
+                color: Color(0xFF495565),
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Align(
+        alignment: isFromPatient ? Alignment.centerLeft : Alignment.centerRight,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.8,
+          ),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isFromPatient
+                ? Colors.white
+                : isFromStaff
+                    ? const Color(0xFF3B82F6)
+                    : const Color(0xFF4F4A34),
+            borderRadius: BorderRadius.circular(16),
+            border: isFromPatient
+                ? Border.all(color: const Color(0xFFE5E7EB))
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!isFromPatient)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isFromStaff ? Icons.support_agent : Icons.smart_toy,
+                        size: 12,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isFromStaff ? 'Equipe' : 'IA',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Text(
+                content,
+                style: TextStyle(
+                  color: isFromPatient ? const Color(0xFF212621) : Colors.white,
+                  fontSize: 13,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageInput() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              decoration: const InputDecoration(
+                hintText: 'Digite sua mensagem...',
+                hintStyle: TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 14,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderSide: BorderSide(color: Color(0xFFE5E7EB)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderSide: BorderSide(color: Color(0xFFE5E7EB)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderSide: BorderSide(color: Color(0xFF3B82F6)),
+                ),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              onSubmitted: (_) => _sendMessage(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _sendMessage,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: _isSending
+                    ? const Color(0xFF3B82F6).withOpacity(0.5)
+                    : const Color(0xFF3B82F6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: _isSending
+                  ? const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.send,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

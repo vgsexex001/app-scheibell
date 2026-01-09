@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'chat_screen.dart' show Appointment, AppointmentType, AppointmentStatus;
+import '../../../core/providers/auth_provider.dart';
+import '../../agenda/presentation/controller/agenda_controller.dart';
 
-class AppointmentDetailScreen extends StatelessWidget {
+class AppointmentDetailScreen extends StatefulWidget {
   final Appointment appointment;
 
   const AppointmentDetailScreen({
     super.key,
     required this.appointment,
   });
+
+  @override
+  State<AppointmentDetailScreen> createState() => _AppointmentDetailScreenState();
+}
+
+class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +142,7 @@ class AppointmentDetailScreen extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                appointment.patientInitials,
+                widget.appointment.patientInitials,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -148,7 +158,7 @@ class AppointmentDetailScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  appointment.patientName,
+                  widget.appointment.patientName,
                   style: const TextStyle(
                     color: Color(0xFF212621),
                     fontSize: 16,
@@ -158,7 +168,7 @@ class AppointmentDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  appointment.procedure,
+                  widget.appointment.procedure,
                   style: const TextStyle(
                     color: Color(0xFF495565),
                     fontSize: 14,
@@ -216,17 +226,17 @@ class AppointmentDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _buildInfoRow(
-              Icons.calendar_today_outlined, 'Data', _formatDate(appointment.date)),
+              Icons.calendar_today_outlined, 'Data', _formatDate(widget.appointment.date)),
           const SizedBox(height: 12),
           _buildInfoRow(Icons.access_time, 'Horário',
-              '${appointment.time} (${appointment.duration})'),
+              '${widget.appointment.time} (${widget.appointment.duration})'),
           const SizedBox(height: 12),
           _buildInfoRow(Icons.medical_services_outlined, 'Tipo',
-              _getAppointmentTypeName(appointment.procedureType)),
+              _getAppointmentTypeName(widget.appointment.procedureType)),
           const SizedBox(height: 12),
           _buildInfoRow(Icons.check_circle_outline, 'Status',
-              _getStatusName(appointment.status),
-              statusColor: _getStatusColor(appointment.status)),
+              _getStatusName(widget.appointment.status),
+              statusColor: _getStatusColor(widget.appointment.status)),
         ],
       ),
     );
@@ -304,8 +314,8 @@ class AppointmentDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            appointment.notes.isNotEmpty
-                ? appointment.notes
+            widget.appointment.notes.isNotEmpty
+                ? widget.appointment.notes
                 : 'Nenhuma observação registrada.',
             style: const TextStyle(
               color: Color(0xFF495565),
@@ -321,6 +331,10 @@ class AppointmentDetailScreen extends StatelessWidget {
   }
 
   Widget _buildActionsCard(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final isAdmin = authProvider.isClinicAdmin || authProvider.isClinicStaff;
+    final isPending = widget.appointment.status == AppointmentStatus.pending;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -343,6 +357,23 @@ class AppointmentDetailScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          // Botões de aprovar/rejeitar apenas para admin e status PENDING
+          if (isAdmin && isPending) ...[
+            _buildActionButton(
+              icon: Icons.check_circle_outline,
+              label: 'Aprovar agendamento',
+              isSuccess: true,
+              onTap: _isLoading ? () {} : () => _approveAppointment(),
+            ),
+            const SizedBox(height: 8),
+            _buildActionButton(
+              icon: Icons.cancel_outlined,
+              label: 'Recusar agendamento',
+              isDestructive: true,
+              onTap: _isLoading ? () {} : () => _showRejectDialog(context),
+            ),
+            const SizedBox(height: 8),
+          ],
           // Enviar mensagem
           _buildActionButton(
             icon: Icons.chat_bubble_outline,
@@ -372,9 +403,7 @@ class AppointmentDetailScreen extends StatelessWidget {
             icon: Icons.cancel_outlined,
             label: 'Cancelar agendamento',
             isDestructive: true,
-            onTap: () {
-              _showCancelDialog(context);
-            },
+            onTap: _isLoading ? () {} : () => _showCancelDialog(context),
           ),
         ],
       ),
@@ -386,16 +415,37 @@ class AppointmentDetailScreen extends StatelessWidget {
     required String label,
     required VoidCallback onTap,
     bool isDestructive = false,
+    bool isSuccess = false,
   }) {
+    Color bgColor;
+    Color iconColor;
+    Color textColor;
+    Color chevronColor;
+
+    if (isSuccess) {
+      bgColor = const Color(0xFF22C55E).withOpacity(0.1);
+      iconColor = const Color(0xFF22C55E);
+      textColor = const Color(0xFF22C55E);
+      chevronColor = const Color(0xFF22C55E).withOpacity(0.5);
+    } else if (isDestructive) {
+      bgColor = const Color(0xFFEF4444).withOpacity(0.05);
+      iconColor = const Color(0xFFEF4444);
+      textColor = const Color(0xFFEF4444);
+      chevronColor = const Color(0xFFEF4444).withOpacity(0.5);
+    } else {
+      bgColor = const Color(0xFFF5F3EF);
+      iconColor = const Color(0xFF4F4A34);
+      textColor = const Color(0xFF212621);
+      chevronColor = const Color(0xFF9CA3AF);
+    }
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: ShapeDecoration(
-          color: isDestructive
-              ? const Color(0xFFEF4444).withOpacity(0.05)
-              : const Color(0xFFF5F3EF),
+          color: bgColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -405,18 +455,14 @@ class AppointmentDetailScreen extends StatelessWidget {
             Icon(
               icon,
               size: 20,
-              color: isDestructive
-                  ? const Color(0xFFEF4444)
-                  : const Color(0xFF4F4A34),
+              color: iconColor,
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 label,
                 style: TextStyle(
-                  color: isDestructive
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF212621),
+                  color: textColor,
                   fontSize: 13,
                   fontFamily: 'Inter',
                   fontWeight: FontWeight.w500,
@@ -426,9 +472,7 @@ class AppointmentDetailScreen extends StatelessWidget {
             Icon(
               Icons.chevron_right,
               size: 20,
-              color: isDestructive
-                  ? const Color(0xFFEF4444).withOpacity(0.5)
-                  : const Color(0xFF9CA3AF),
+              color: chevronColor,
             ),
           ],
         ),
@@ -439,7 +483,7 @@ class AppointmentDetailScreen extends StatelessWidget {
   void _showCancelDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -458,7 +502,7 @@ class AppointmentDetailScreen extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text(
               'Voltar',
               style: TextStyle(
@@ -468,12 +512,9 @@ class AppointmentDetailScreen extends StatelessWidget {
             ),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Agendamento cancelado')),
-              );
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _cancelAppointment();
             },
             child: const Text(
               'Cancelar',
@@ -487,6 +528,164 @@ class AppointmentDetailScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _cancelAppointment() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final controller = Provider.of<AgendaController>(context, listen: false);
+      final success = await controller.cancelAppointment(widget.appointment.id);
+
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Agendamento cancelado com sucesso')),
+          );
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(controller.errorMessage ?? 'Erro ao cancelar')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _approveAppointment() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final controller = Provider.of<AgendaController>(context, listen: false);
+      final success = await controller.approveAppointment(widget.appointment.id);
+
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Agendamento aprovado!')),
+          );
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(controller.errorMessage ?? 'Erro ao aprovar')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showRejectDialog(BuildContext context) {
+    final reasonController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text(
+          'Recusar Agendamento',
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: TextField(
+          controller: reasonController,
+          decoration: const InputDecoration(
+            labelText: 'Motivo (opcional)',
+            hintText: 'Informe o motivo da recusa',
+          ),
+          maxLines: 2,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text(
+              'Voltar',
+              style: TextStyle(
+                color: Color(0xFF495565),
+                fontFamily: 'Inter',
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _rejectAppointment(reasonController.text);
+            },
+            child: const Text(
+              'Confirmar',
+              style: TextStyle(
+                color: Color(0xFFEF4444),
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _rejectAppointment(String reason) async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final controller = Provider.of<AgendaController>(context, listen: false);
+      final success = await controller.rejectAppointment(
+        widget.appointment.id,
+        reason: reason.isNotEmpty ? reason : null,
+      );
+
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Agendamento recusado')),
+          );
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(controller.errorMessage ?? 'Erro ao recusar')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -510,14 +709,16 @@ class AppointmentDetailScreen extends StatelessWidget {
 
   String _getAppointmentTypeName(AppointmentType type) {
     switch (type) {
-      case AppointmentType.consultation:
-        return 'Consulta';
-      case AppointmentType.surgery:
-        return 'Cirurgia';
-      case AppointmentType.followUp:
+      case AppointmentType.returnVisit:
         return 'Retorno';
       case AppointmentType.evaluation:
         return 'Avaliação';
+      case AppointmentType.physiotherapy:
+        return 'Fisioterapia';
+      case AppointmentType.exam:
+        return 'Exame';
+      case AppointmentType.other:
+        return 'Outro';
     }
   }
 

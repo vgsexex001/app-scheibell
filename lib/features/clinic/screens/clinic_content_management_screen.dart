@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/clinic_content_provider.dart';
 
 class ClinicContentManagementScreen extends StatefulWidget {
   const ClinicContentManagementScreen({super.key});
@@ -11,6 +13,15 @@ class ClinicContentManagementScreen extends StatefulWidget {
 class _ClinicContentManagementScreenState
     extends State<ClinicContentManagementScreen> {
   final int _selectedNavIndex = 3; // Conteúdos tab
+
+  @override
+  void initState() {
+    super.initState();
+    // Carregar estatísticas ao abrir a tela
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ClinicContentProvider>().loadStats();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,81 +119,105 @@ class _ClinicContentManagementScreenState
   }
 
   Widget _buildContentGrid() {
+    final provider = context.watch<ClinicContentProvider>();
+    final stats = provider.stats;
+
     final modules = [
       {
         'icon': Icons.thermostat_outlined,
         'title': 'Sintomas',
         'description': 'Monitoramento de sintomas pós-operatórios',
-        'count': 12,
+        'count': stats?.getCount('SYMPTOMS') ?? 0,
         'color': const Color(0xFFE53935),
         'route': '/clinic-symptoms',
+        'type': 'SYMPTOMS',
       },
       {
         'icon': Icons.restaurant_outlined,
         'title': 'Dieta',
         'description': 'Orientações nutricionais e alimentares',
-        'count': 8,
+        'count': stats?.getCount('DIET') ?? 0,
         'color': const Color(0xFF4CAF50),
         'route': '/clinic-diet',
+        'type': 'DIET',
       },
       {
         'icon': Icons.directions_run_outlined,
         'title': 'Atividades',
         'description': 'Restrições e permissões de atividades',
-        'count': 15,
+        'count': stats?.getCount('ACTIVITIES') ?? 0,
         'color': const Color(0xFF2196F3),
         'route': '/clinic-activities',
+        'type': 'ACTIVITIES',
       },
       {
         'icon': Icons.medical_services_outlined,
         'title': 'Cuidados',
         'description': 'Cuidados com curativos e higiene',
-        'count': 10,
+        'count': stats?.getCount('CARE') ?? 0,
         'color': const Color(0xFF9C27B0),
         'route': '/clinic-care',
+        'type': 'CARE',
       },
       {
         'icon': Icons.fitness_center_outlined,
         'title': 'Treino',
         'description': 'Exercícios de reabilitação',
-        'count': 6,
+        'count': stats?.getCount('TRAINING') ?? 0,
         'color': const Color(0xFFFF9800),
         'route': '/clinic-training',
+        'type': 'TRAINING',
       },
       {
         'icon': Icons.science_outlined,
         'title': 'Exames',
         'description': 'Exames necessários no pós-operatório',
-        'count': 4,
+        'count': stats?.getCount('EXAMS') ?? 0,
         'color': const Color(0xFF00BCD4),
         'route': '/clinic-exams',
+        'type': 'EXAMS',
       },
       {
         'icon': Icons.folder_outlined,
         'title': 'Documentos',
         'description': 'Termos e documentos importantes',
-        'count': 7,
+        'count': stats?.getCount('DOCUMENTS') ?? 0,
         'color': const Color(0xFF795548),
         'route': '/clinic-documents',
+        'type': 'DOCUMENTS',
       },
       {
         'icon': Icons.medication_outlined,
         'title': 'Medicações',
         'description': 'Protocolos de medicação',
-        'count': 9,
+        'count': stats?.getCount('MEDICATIONS') ?? 0,
         'color': const Color(0xFFE91E63),
         'route': '/clinic-medications',
+        'type': 'MEDICATIONS',
       },
       {
         'icon': Icons.book_outlined,
         'title': 'Diário',
         'description': 'Em breve',
-        'count': 0,
+        'count': stats?.getCount('DIARY') ?? 0,
         'color': const Color(0xFF9CA3AF),
         'route': null,
         'comingSoon': true,
+        'type': 'DIARY',
       },
     ];
+
+    // Mostrar indicador de loading enquanto carrega stats
+    if (provider.isLoadingStats) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: CircularProgressIndicator(
+            color: Color(0xFFA49E86),
+          ),
+        ),
+      );
+    }
 
     return Wrap(
       spacing: 12,

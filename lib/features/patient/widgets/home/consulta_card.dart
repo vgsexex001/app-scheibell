@@ -41,6 +41,7 @@ class ConsultaCard extends StatelessWidget {
   /// Traduz tipo de consulta do backend
   static String traduzirTipo(String type) {
     const tipos = {
+      'CONSULTATION': 'Consulta',
       'RETURN_VISIT': 'Retorno',
       'EVALUATION': 'Avaliação',
       'PHYSIOTHERAPY': 'Fisioterapia',

@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/clinic_content_provider.dart';
+import '../providers/patients_provider.dart';
+import '../models/models.dart';
 
 class ClinicDietScreen extends StatefulWidget {
   const ClinicDietScreen({super.key});
@@ -8,42 +12,38 @@ class ClinicDietScreen extends StatefulWidget {
 }
 
 class _ClinicDietScreenState extends State<ClinicDietScreen> {
+  final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  // Mock data - será substituído por chamadas de API
-  final List<_PatientItem> _patients = [
-    _PatientItem(
-      'PAC-2024-0157',
-      'Maria Silva',
-      'MS',
-      'Abdominoplastia',
-      '28 Nov 2024',
-      'Em Recuperação',
-    ),
-    _PatientItem(
-      'PAC-2024-0143',
-      'João Santos',
-      'JS',
-      'Rinoplastia',
-      '15 Nov 2024',
-      'Em Recuperação',
-    ),
-    _PatientItem(
-      'PAC-2024-0138',
-      'Ana Costa',
-      'AC',
-      'Lipoaspiração',
-      '10 Nov 2024',
-      'Alta',
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<PatientsProvider>().loadPatients(refresh: true);
+      context.read<ClinicContentProvider>().loadContentsByType('DIET');
+    });
+  }
 
-  List<_PatientItem> get _filteredPatients {
-    if (_searchQuery.isEmpty) return _patients;
-    return _patients.where((p) =>
-      p.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-      p.id.toLowerCase().contains(_searchQuery.toLowerCase())
-    ).toList();
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.toLowerCase();
+    });
+  }
+
+  void _navigateToPatientDetail(PatientListItem patient) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _PatientDietDetailScreen(patient: patient),
+      ),
+    );
   }
 
   @override
@@ -70,6 +70,138 @@ class _ClinicDietScreenState extends State<ClinicDietScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 16,
+        left: 16,
+        right: 16,
+        bottom: 16,
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 38,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD7D1C5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFA49E86)),
+              ),
+              child: const Icon(Icons.arrow_back, color: Color(0xFF4F4A34), size: 16),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Dieta',
+            style: TextStyle(
+              color: Color(0xFF4F4A34),
+              fontSize: 24,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPatientSelector() {
+    return Consumer<PatientsProvider>(
+      builder: (context, provider, _) {
+        final filteredPatients = _searchQuery.isEmpty
+            ? provider.patients
+            : provider.patients.where((p) =>
+                p.name.toLowerCase().contains(_searchQuery) ||
+                (p.phone?.toLowerCase().contains(_searchQuery) ?? false)).toList();
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFF4F4A34), width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Selecione um Paciente',
+                style: TextStyle(
+                  color: Color(0xFF212621),
+                  fontSize: 16,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F3EF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(
+                    hintText: 'Buscar paciente...',
+                    hintStyle: TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 14,
+                      fontFamily: 'Inter',
+                    ),
+                    prefixIcon: Icon(Icons.search, color: Color(0xFF697282), size: 20),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: provider.isLoadingList
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: CircularProgressIndicator(color: Color(0xFFA49E86)),
+                        ),
+                      )
+                    : filteredPatients.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(
+                              child: Text(
+                                'Nenhum paciente encontrado',
+                                style: TextStyle(
+                                  color: Color(0xFF697282),
+                                  fontSize: 14,
+                                  fontFamily: 'Inter',
+                                ),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: filteredPatients.length,
+                            separatorBuilder: (context, index) => const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final patient = filteredPatients[index];
+                              return _PatientCard(
+                                patient: patient,
+                                onTap: () => _navigateToPatientDetail(patient),
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -101,12 +233,11 @@ class _ClinicDietScreenState extends State<ClinicDietScreen> {
           const SizedBox(height: 20),
           const Text(
             'Selecione um paciente',
-            textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFF495565),
+              color: Color(0xFF212621),
               fontSize: 16,
               fontFamily: 'Inter',
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
@@ -115,165 +246,103 @@ class _ClinicDietScreenState extends State<ClinicDietScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Color(0xFF697282),
-              fontSize: 13,
+              fontSize: 14,
               fontFamily: 'Inter',
               fontWeight: FontWeight.w400,
-              height: 1.4,
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 16,
-        left: 16,
-        right: 16,
-        bottom: 16,
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+// ==================== PATIENT CARD ====================
+
+class _PatientCard extends StatelessWidget {
+  final PatientListItem patient;
+  final VoidCallback onTap;
+
+  const _PatientCard({required this.patient, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F3EF),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFFD7D1C5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFA49E86)),
+                color: const Color(0xFF4F4A34),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
+              child: Center(
+                child: Text(
+                  patient.name.isNotEmpty ? patient.name.substring(0, 1).toUpperCase() : '?',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.arrow_back, color: Color(0xFF4F4A34), size: 16),
-                  SizedBox(width: 8),
                   Text(
-                    'Voltar',
-                    style: TextStyle(
-                      color: Color(0xFF4F4A34),
+                    patient.name,
+                    style: const TextStyle(
+                      color: Color(0xFF212621),
                       fontSize: 14,
                       fontFamily: 'Inter',
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPatientSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: const Color(0xFF4F4A34),
-          width: 2,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.person_search_outlined, color: Color(0xFF212621), size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Selecione um Paciente',
-                style: TextStyle(
-                  color: Color(0xFF212621),
-                  fontSize: 14,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Search field
-          Container(
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F3EF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search, color: Color(0xFF697282), size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    decoration: const InputDecoration(
-                      hintText: 'Buscar paciente...',
-                      hintStyle: TextStyle(
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 14,
-                        fontFamily: 'Inter',
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 10),
-                      isDense: true,
-                    ),
+                  const SizedBox(height: 2),
+                  Text(
+                    (patient.phone?.isNotEmpty ?? false) ? patient.phone! : 'Sem telefone',
                     style: const TextStyle(
-                      color: Color(0xFF212621),
-                      fontSize: 14,
+                      color: Color(0xFF697282),
+                      fontSize: 12,
                       fontFamily: 'Inter',
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          // Patient list with scroll
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 280),
-            child: _filteredPatients.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                      child: Text(
-                        'Nenhum paciente encontrado',
-                        style: TextStyle(
-                          color: Color(0xFF697282),
-                          fontSize: 14,
-                          fontFamily: 'Inter',
-                        ),
-                      ),
-                    ),
-                  )
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: _filteredPatients.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final patient = _filteredPatients[index];
-                      return _PatientCard(
-                        patient: patient,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => _PatientDietDetailScreen(patient: patient),
-                            ),
-                          );
-                        },
-                      );
-                    },
+            if (patient.dayPostOp != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFA49E86).withAlpha(26),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'D+${patient.dayPostOp}',
+                  style: const TextStyle(
+                    color: Color(0xFF4F4A34),
+                    fontSize: 11,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
                   ),
-          ),
-        ],
+                ),
+              ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: Color(0xFF697282), size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -282,7 +351,7 @@ class _ClinicDietScreenState extends State<ClinicDietScreen> {
 // ==================== PATIENT DIET DETAIL SCREEN ====================
 
 class _PatientDietDetailScreen extends StatefulWidget {
-  final _PatientItem patient;
+  final PatientListItem patient;
 
   const _PatientDietDetailScreen({required this.patient});
 
@@ -295,39 +364,27 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
   late TabController _tabController;
 
   final List<_Category> _categories = [
-    _Category('TODO', 'Fazer', const Color(0xFF00A63E), const Color(0xFF008235), Icons.check_circle_outline),
-    _Category('OPTIONAL', 'Opcional', const Color(0xFFF0B100), const Color(0xFFD08700), Icons.help_outline),
-    _Category('NOT_REQUIRED', 'Não necessário', const Color(0xFF697282), const Color(0xFF495565), Icons.remove_circle_outline),
-  ];
-
-  // Mock data - será substituído por chamadas de API
-  final List<_DietItem> _items = [
-    _DietItem('1', 'Verduras', 'Alface, Rúcula, Espinafre, Couve', '+0', 'TODO', true),
-    _DietItem('2', 'Proteínas Magras', 'Frango, Peixe, Ovos', '+0', 'TODO', true),
-    _DietItem('3', 'Frutas', 'Maçã, Banana, Mamão, Melão', '+3', 'TODO', true),
-    _DietItem('4', 'Grãos Integrais', 'Arroz integral, Aveia, Quinoa', '+7', 'TODO', true),
-    _DietItem('5', 'Suplementos', 'Vitaminas, Minerais conforme prescrição', '+0', 'OPTIONAL', true),
-    _DietItem('6', 'Chás naturais', 'Camomila, Erva-doce, Hortelã', '+0', 'OPTIONAL', true),
-    _DietItem('7', 'Lanches leves', 'Frutas secas, Castanhas com moderação', '+7', 'OPTIONAL', true),
-    _DietItem('8', 'Bebidas Alcoólicas', 'Cerveja, Vinho, Destilados', '+30', 'NOT_REQUIRED', true),
-    _DietItem('9', 'Alimentos Ultraprocessados', 'Fast food, Salgadinhos, Doces industriais', '+0', 'NOT_REQUIRED', true),
-    _DietItem('10', 'Refrigerantes', 'Refrigerantes, Sucos artificiais', '+0', 'NOT_REQUIRED', true),
+    _Category('ALLOWED', 'Permitido', const Color(0xFF00A63E), const Color(0xFF008235), Icons.check_circle_outline),
+    _Category('RESTRICTED', 'Restrito', const Color(0xFFF0B100), const Color(0xFFD08700), Icons.warning_amber_outlined),
+    _Category('PROHIBITED', 'Proibido', const Color(0xFFE7000B), const Color(0xFFE7000B), Icons.block_outlined),
   ];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _categories.length, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<ClinicContentProvider>();
+      if (provider.currentType != 'DIET') {
+        provider.loadContentsByType('DIET');
+      }
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
-  }
-
-  List<_DietItem> _filterByCategory(String categoryId) {
-    return _items.where((i) => i.category == categoryId).toList();
   }
 
   @override
@@ -343,9 +400,18 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
             _buildTabBar(),
             _buildAddButton(),
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: _categories.map((cat) => _buildList(cat)).toList(),
+              child: Consumer<ClinicContentProvider>(
+                builder: (context, provider, _) {
+                  if (provider.isLoadingContents) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: Color(0xFFA49E86)),
+                    );
+                  }
+                  return TabBarView(
+                    controller: _tabController,
+                    children: _categories.map((cat) => _buildList(cat, provider)).toList(),
+                  );
+                },
               ),
             ),
           ],
@@ -367,28 +433,24 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              width: 38,
+              height: 32,
               decoration: BoxDecoration(
                 color: const Color(0xFFD7D1C5),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFA49E86)),
               ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.arrow_back, color: Color(0xFF4F4A34), size: 16),
-                  SizedBox(width: 8),
-                  Text(
-                    'Voltar',
-                    style: TextStyle(
-                      color: Color(0xFF4F4A34),
-                      fontSize: 14,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
+              child: const Icon(Icons.arrow_back, color: Color(0xFF4F4A34), size: 16),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Dieta',
+            style: TextStyle(
+              color: Color(0xFF4F4A34),
+              fontSize: 24,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -397,17 +459,16 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
   }
 
   Widget _buildPatientInfo() {
-    final patient = widget.patient;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: [Color(0xFF4F4A34), Color(0xFF212621)],
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
@@ -415,21 +476,19 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.20),
+              color: Colors.white.withAlpha(26),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.30),
-                width: 2,
-              ),
             ),
             child: Center(
               child: Text(
-                patient.initials,
+                widget.patient.name.isNotEmpty
+                    ? widget.patient.name.substring(0, 1).toUpperCase()
+                    : '?',
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 14,
+                  fontSize: 20,
                   fontFamily: 'Inter',
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -440,23 +499,23 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  patient.name,
+                  widget.patient.name,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontFamily: 'Inter',
                     fontWeight: FontWeight.w600,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  patient.id,
+                  widget.patient.dayPostOp != null
+                      ? 'D+${widget.patient.dayPostOp} pós-operatório'
+                      : (widget.patient.phone ?? 'Sem telefone'),
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.80),
-                    fontSize: 12,
+                    color: Colors.white.withAlpha(179),
+                    fontSize: 13,
                     fontFamily: 'Inter',
-                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ],
@@ -469,7 +528,7 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
 
   Widget _buildTabBar() {
     return Container(
-      margin: const EdgeInsets.only(left: 16, right: 16, top: 16),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.only(left: 8),
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -568,8 +627,8 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
     );
   }
 
-  Widget _buildList(_Category category) {
-    final items = _filterByCategory(category.id);
+  Widget _buildList(_Category category, ClinicContentProvider provider) {
+    final items = provider.getByCategory(category.id);
 
     if (items.isEmpty) {
       return Center(
@@ -595,21 +654,23 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
     return ReorderableListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: items.length,
-      onReorder: (oldIndex, newIndex) {
-        setState(() {
-          if (newIndex > oldIndex) newIndex--;
-          final item = items.removeAt(oldIndex);
-          items.insert(newIndex, item);
-        });
+      onReorder: (oldIndex, newIndex) async {
+        if (newIndex > oldIndex) newIndex--;
+        final itemsCopy = List<ClinicContent>.from(items);
+        final item = itemsCopy.removeAt(oldIndex);
+        itemsCopy.insert(newIndex, item);
+        final ids = itemsCopy.map((c) => c.id).toList();
+        await provider.reorderContents(ids);
       },
       itemBuilder: (context, index) {
         final item = items[index];
         return Padding(
           key: ValueKey(item.id),
           padding: const EdgeInsets.only(bottom: 12),
-          child: _DietCard(
+          child: _ContentCard(
             item: item,
             category: category,
+            onToggle: () => _toggleItem(item.id),
             onDelete: () => _deleteItem(item.id),
             onEdit: () => _showEditModal(item),
           ),
@@ -618,25 +679,31 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
     );
   }
 
+  Future<void> _toggleItem(String id) async {
+    await context.read<ClinicContentProvider>().toggleContent(id);
+  }
+
   void _deleteItem(String id) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Excluir item?'),
-        content: const Text('Este item será removido da dieta do paciente.'),
+        content: const Text('Esta ação não pode ser desfeita.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() => _items.removeWhere((i) => i.id == id));
+            onPressed: () async {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Item excluído')),
-              );
+              final success = await context.read<ClinicContentProvider>().deleteContent(id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(success ? 'Item excluído' : 'Erro ao excluir')),
+                );
+              }
             },
             style: TextButton.styleFrom(foregroundColor: const Color(0xFFE7000B)),
             child: const Text('Excluir'),
@@ -652,50 +719,48 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _DietFormModal(
+      builder: (ctx) => _ContentFormModal(
         category: category,
-        onSave: (categoryName, items, period) {
-          setState(() {
-            _items.add(_DietItem(
-              DateTime.now().millisecondsSinceEpoch.toString(),
-              categoryName,
-              items,
-              period,
-              category.id,
-              true,
-            ));
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Alimento adicionado')),
+        onSave: (title, description) async {
+          final success = await context.read<ClinicContentProvider>().createContent(
+            type: 'DIET',
+            category: category.id,
+            title: title,
+            description: description.isNotEmpty ? description : null,
           );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(success ? 'Item adicionado' : 'Erro ao adicionar')),
+            );
+            if (success) {
+              context.read<ClinicContentProvider>().loadStats();
+            }
+          }
         },
       ),
     );
   }
 
-  void _showEditModal(_DietItem item) {
+  void _showEditModal(ClinicContent item) {
     final category = _categories.firstWhere((c) => c.id == item.category);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _DietFormModal(
+      builder: (ctx) => _ContentFormModal(
         category: category,
         item: item,
-        onSave: (categoryName, items, period) {
-          setState(() {
-            final idx = _items.indexWhere((i) => i.id == item.id);
-            if (idx != -1) {
-              _items[idx] = item.copyWith(
-                categoryName: categoryName,
-                items: items,
-                period: period,
-              );
-            }
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Alimento atualizado')),
+        onSave: (title, description) async {
+          final success = await context.read<ClinicContentProvider>().updateContent(
+            item.id,
+            title: title,
+            description: description.isNotEmpty ? description : null,
           );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(success ? 'Item atualizado' : 'Erro ao atualizar')),
+            );
+          }
         },
       ),
     );
@@ -704,12 +769,6 @@ class _PatientDietDetailScreenState extends State<_PatientDietDetailScreen>
 
 // ==================== MODELS ====================
 
-class _PatientItem {
-  final String id, name, initials, procedure, date, status;
-
-  _PatientItem(this.id, this.name, this.initials, this.procedure, this.date, this.status);
-}
-
 class _Category {
   final String id, name;
   final Color color, textColor;
@@ -717,154 +776,17 @@ class _Category {
   _Category(this.id, this.name, this.color, this.textColor, this.icon);
 }
 
-class _DietItem {
-  final String id, categoryName, items, period, category;
-  final bool isActive;
+// ==================== CARD ====================
 
-  _DietItem(this.id, this.categoryName, this.items, this.period, this.category, this.isActive);
-
-  _DietItem copyWith({String? categoryName, String? items, String? period, bool? isActive}) {
-    return _DietItem(
-      id,
-      categoryName ?? this.categoryName,
-      items ?? this.items,
-      period ?? this.period,
-      category,
-      isActive ?? this.isActive,
-    );
-  }
-}
-
-// ==================== PATIENT CARD ====================
-
-class _PatientCard extends StatelessWidget {
-  final _PatientItem patient;
-  final VoidCallback onTap;
-
-  const _PatientCard({
-    required this.patient,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFE5E7EB),
-            width: 2,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0x4CA49E86),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0x334E4A33)),
-              ),
-              child: Center(
-                child: Text(
-                  patient.initials,
-                  style: const TextStyle(
-                    color: Color(0xFF212621),
-                    fontSize: 12,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          patient.name,
-                          style: const TextStyle(
-                            color: Color(0xFF212621),
-                            fontSize: 14,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: patient.status == 'Em Recuperação'
-                              ? const Color(0xFFDCFCE7)
-                              : const Color(0xFFE5E7EB),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          patient.status,
-                          style: TextStyle(
-                            color: patient.status == 'Em Recuperação'
-                                ? const Color(0xFF008235)
-                                : const Color(0xFF697282),
-                            fontSize: 12,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'ID: ${patient.id}',
-                    style: const TextStyle(
-                      color: Color(0xFF495565),
-                      fontSize: 12,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  Text(
-                    '${patient.procedure} • ${patient.date}',
-                    style: const TextStyle(
-                      color: Color(0xFF697282),
-                      fontSize: 12,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: Color(0xFF697282), size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ==================== DIET CARD ====================
-
-class _DietCard extends StatelessWidget {
-  final _DietItem item;
+class _ContentCard extends StatelessWidget {
+  final ClinicContent item;
   final _Category category;
-  final VoidCallback onDelete, onEdit;
+  final VoidCallback onToggle, onDelete, onEdit;
 
-  const _DietCard({
+  const _ContentCard({
     required this.item,
     required this.category,
+    required this.onToggle,
     required this.onDelete,
     required this.onEdit,
   });
@@ -901,7 +823,7 @@ class _DietCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          item.categoryName,
+                          item.title,
                           style: const TextStyle(
                             color: Color(0xFF212621),
                             fontSize: 14,
@@ -910,51 +832,26 @@ class _DietCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F3EF),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          item.items,
-                          style: const TextStyle(
-                            color: Color(0xFF212621),
-                            fontSize: 14,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w400,
+                      if (item.description != null && item.description!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F3EF),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            item.description!,
+                            style: const TextStyle(
+                              color: Color(0xFF212621),
+                              fontSize: 14,
+                              fontFamily: 'Inter',
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F3EF),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF697282)),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Período: ${item.period}',
-                                style: const TextStyle(
-                                  color: Color(0xFF212621),
-                                  fontSize: 14,
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w400,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -965,16 +862,62 @@ class _DietCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 GestureDetector(
+                  onTap: onToggle,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: item.isActive
+                          ? const Color(0xFF00A63E).withAlpha(26)
+                          : const Color(0xFF697282).withAlpha(26),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          item.isActive ? Icons.visibility : Icons.visibility_off,
+                          color: item.isActive ? const Color(0xFF00A63E) : const Color(0xFF697282),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          item.isActive ? 'Ativo' : 'Inativo',
+                          style: TextStyle(
+                            color: item.isActive ? const Color(0xFF00A63E) : const Color(0xFF697282),
+                            fontSize: 12,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
                   onTap: onDelete,
                   child: Container(
-                    width: 38,
-                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE7000B),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFC8C2B4)),
+                      color: const Color(0xFFE7000B).withAlpha(26),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 16),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.delete_outline, color: Color(0xFFE7000B), size: 16),
+                        SizedBox(width: 4),
+                        Text(
+                          'Excluir',
+                          style: TextStyle(
+                            color: Color(0xFFE7000B),
+                            fontSize: 12,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -988,62 +931,51 @@ class _DietCard extends StatelessWidget {
 
 // ==================== FORM MODAL ====================
 
-class _DietFormModal extends StatefulWidget {
+class _ContentFormModal extends StatefulWidget {
   final _Category category;
-  final _DietItem? item;
-  final void Function(String categoryName, String items, String period) onSave;
+  final ClinicContent? item;
+  final void Function(String title, String description) onSave;
 
-  const _DietFormModal({
+  const _ContentFormModal({
     required this.category,
     this.item,
     required this.onSave,
   });
 
   @override
-  State<_DietFormModal> createState() => _DietFormModalState();
+  State<_ContentFormModal> createState() => _ContentFormModalState();
 }
 
-class _DietFormModalState extends State<_DietFormModal> {
-  late TextEditingController _categoryController;
-  late TextEditingController _itemsController;
-  late TextEditingController _periodController;
+class _ContentFormModalState extends State<_ContentFormModal> {
+  late TextEditingController _titleController;
+  late TextEditingController _descriptionController;
 
   @override
   void initState() {
     super.initState();
-    _categoryController = TextEditingController(text: widget.item?.categoryName ?? '');
-    _itemsController = TextEditingController(text: widget.item?.items ?? '');
-    _periodController = TextEditingController(text: widget.item?.period ?? '+0');
+    _titleController = TextEditingController(text: widget.item?.title ?? '');
+    _descriptionController = TextEditingController(text: widget.item?.description ?? '');
   }
 
   @override
   void dispose() {
-    _categoryController.dispose();
-    _itemsController.dispose();
-    _periodController.dispose();
+    _titleController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
   void _handleSave() {
-    final categoryName = _categoryController.text.trim();
-    final items = _itemsController.text.trim();
-    final period = _periodController.text.trim();
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
 
-    if (categoryName.isEmpty) {
+    if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe a categoria')),
+        const SnackBar(content: Text('Informe o título')),
       );
       return;
     }
 
-    if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe os itens')),
-      );
-      return;
-    }
-
-    widget.onSave(categoryName, items, period.isEmpty ? '+0' : period);
+    widget.onSave(title, description);
     Navigator.pop(context);
   }
 
@@ -1052,9 +984,7 @@ class _DietFormModalState extends State<_DietFormModal> {
     final isEditing = widget.item != null;
 
     return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -1109,7 +1039,7 @@ class _DietFormModalState extends State<_DietFormModal> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Categoria',
+              'Título',
               style: TextStyle(
                 color: Color(0xFF4F4A34),
                 fontSize: 14,
@@ -1119,7 +1049,7 @@ class _DietFormModalState extends State<_DietFormModal> {
             ),
             const SizedBox(height: 8),
             TextField(
-              controller: _categoryController,
+              controller: _titleController,
               decoration: InputDecoration(
                 hintText: 'Ex: Verduras',
                 hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
@@ -1134,7 +1064,7 @@ class _DietFormModalState extends State<_DietFormModal> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Itens',
+              'Descrição',
               style: TextStyle(
                 color: Color(0xFF4F4A34),
                 fontSize: 14,
@@ -1144,8 +1074,8 @@ class _DietFormModalState extends State<_DietFormModal> {
             ),
             const SizedBox(height: 8),
             TextField(
-              controller: _itemsController,
-              maxLines: 2,
+              controller: _descriptionController,
+              maxLines: 3,
               decoration: InputDecoration(
                 hintText: 'Ex: Alface, Rúcula, Espinafre...',
                 hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
@@ -1156,32 +1086,6 @@ class _DietFormModalState extends State<_DietFormModal> {
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Período (a partir de qual dia)',
-              style: TextStyle(
-                color: Color(0xFF4F4A34),
-                fontSize: 14,
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _periodController,
-              decoration: InputDecoration(
-                hintText: 'Ex: +7 (após 7 dias)',
-                hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                filled: true,
-                fillColor: const Color(0xFFF5F3EF),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                prefixIcon: const Icon(Icons.calendar_today_outlined, color: Color(0xFF697282)),
               ),
             ),
             const SizedBox(height: 24),

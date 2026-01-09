@@ -14,6 +14,7 @@ import { TrainingModule } from './modules/training/training.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ConnectionModule } from './modules/connection/connection.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     AdminModule,
     PatientsModule,
     NotificationsModule,
+    ConnectionModule,
   ],
   controllers: [],
   providers: [

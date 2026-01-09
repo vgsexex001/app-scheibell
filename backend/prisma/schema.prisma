@@ -42,6 +42,12 @@ enum AdjustmentType {
   MODIFY        // Modificar item base
 }
 
+enum OverrideAction {
+  ADD           // Conteúdo novo específico do paciente
+  DISABLE       // Desabilitar template para este paciente
+  MODIFY        // Modificar campos do template para este paciente
+}
+
 enum UserRole {
   PATIENT
   CLINIC_ADMIN
@@ -50,6 +56,7 @@ enum UserRole {
 }
 
 enum AppointmentType {
+  CONSULTATION    // Consulta
   RETURN_VISIT    // Retorno
   EVALUATION      // Avaliação
   PHYSIOTHERAPY   // Fisioterapia
@@ -78,6 +85,7 @@ enum AlertType {
   LOW_ADHERENCE       // Baixa adesão a medicamentos/treinos
   MISSED_APPOINTMENT  // Consulta perdida
   URGENT_SYMPTOM      // Sintoma urgente
+  HUMAN_HANDOFF       // Solicitação de atendimento humano no chat
   OTHER               // Outro
 }
 
@@ -90,6 +98,7 @@ enum AlertStatus {
 // ==================== NOTIFICAÇÕES ====================
 
 enum NotificationType {
+  NEW_APPOINTMENT        // Nova solicitação de agendamento
   APPOINTMENT_APPROVED   // Consulta aprovada
   APPOINTMENT_REJECTED   // Consulta rejeitada
   ALERT_CREATED          // Alerta criado
@@ -102,6 +111,32 @@ enum NotificationStatus {
   SENT        // Enviado (quando FCM estiver integrado)
   READ        // Lido pelo usuário
   FAILED      // Falha no envio
+}
+
+enum ConnectionStatus {
+  PENDING     // Código gerado, aguardando uso
+  ACTIVE      // Paciente conectado
+  REVOKED     // Conexão revogada pelo admin
+  EXPIRED     // Código expirou
+}
+
+// ==================== CHAT ATTACHMENTS ====================
+
+enum ChatAttachmentType {
+  IMAGE
+}
+
+enum ChatAttachmentStatus {
+  PENDING     // Upload feito, aguardando processamento
+  PROCESSING  // Sendo analisado pela IA
+  COMPLETED   // Análise concluída
+  FAILED      // Falha no processamento
+}
+
+enum ChatMode {
+  AI          // Conversa normal com IA (padrão)
+  HUMAN       // Transferido para atendimento humano
+  CLOSED      // Conversa encerrada
 }
 
 // ==================== USUÁRIOS E CLÍNICAS ====================
@@ -118,6 +153,8 @@ model User {
 
   patient       Patient?
   notifications Notification[]
+  refreshTokens RefreshToken[]
+  generatedConnections PatientConnection[] @relation("GeneratedConnections")
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -140,8 +177,10 @@ model Clinic {
   users         User[]
   patients      Patient[]
   contents      ClinicContent[]
+  contentTemplates ContentTemplate[]
   trainingProtocols TrainingProtocol[]
   alerts        Alert[]
+  patientConnections PatientConnection[]
 
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
@@ -153,8 +192,13 @@ model Clinic {
 model Patient {
   id            String    @id @default(uuid())
 
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // userId opcional - permite admin criar paciente antes de ele ter conta
+  userId        String?   @unique
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Dados básicos obrigatórios quando não há User vinculado
+  name          String?
+  email         String?
 
   clinicId      String
   clinic        Clinic    @relation(fields: [clinicId], references: [id])
@@ -185,6 +229,11 @@ model Patient {
   alerts               Alert[]
   allergies            PatientAllergy[]
   medicalNotes         MedicalNote[]
+  connections          PatientConnection[]
+
+  // Content Management - Templates personalizados
+  contentOverrides     PatientContentOverride[]
+  contentState         PatientContentState?
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -504,11 +553,20 @@ model ChatConversation {
   patient     Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   messages    ChatMessage[]
+  attachments ChatAttachment[]
+
+  // Human Handoff
+  mode            ChatMode      @default(AI)
+  handoffAt       DateTime?                   // Quando solicitou handoff
+  handoffAlertId  String?                     // ID do Alert criado
+  closedAt        DateTime?                   // Quando foi fechada
+  closedBy        String?                     // userId que fechou
 
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   @@index([patientId])
+  @@index([mode])
   @@map("chat_conversations")
 }
 
@@ -521,10 +579,43 @@ model ChatMessage {
   role            String           // 'user' | 'assistant' | 'system'
   content         String
 
+  // Human Handoff - identificação do remetente
+  senderId        String?          // userId do remetente (null para IA)
+  senderType      String?          // 'patient' | 'staff' | 'ai' | 'system'
+
+  attachments     ChatAttachment[]
+
   createdAt       DateTime         @default(now())
 
   @@index([conversationId])
   @@map("chat_messages")
+}
+
+model ChatAttachment {
+  id              String               @id @default(uuid())
+
+  messageId       String?
+  message         ChatMessage?         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  conversationId  String
+  conversation    ChatConversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  type            ChatAttachmentType   @default(IMAGE)
+  originalName    String
+  storagePath     String
+  mimeType        String
+  sizeBytes       Int
+
+  status          ChatAttachmentStatus @default(PENDING)
+  aiAnalysis      String?
+  errorMessage    String?
+
+  createdAt       DateTime             @default(now())
+  processedAt     DateTime?
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@map("chat_attachments")
 }
 
 // ==================== ALERTAS DO PAINEL ====================
@@ -615,4 +706,139 @@ model MedicalNote {
   @@index([patientId])
   @@index([patientId, createdAt])
   @@map("medical_notes")
+}
+
+// ==================== CONEXÃO DE PACIENTES ====================
+
+model PatientConnection {
+  id              String           @id @default(uuid())
+
+  patientId       String
+  patient         Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  clinicId        String
+  clinic          Clinic           @relation(fields: [clinicId], references: [id])
+
+  connectionCode  String           @unique
+  status          ConnectionStatus @default(PENDING)
+
+  codeGeneratedAt DateTime         @default(now())
+  codeExpiresAt   DateTime
+  connectedAt     DateTime?
+  revokedAt       DateTime?
+
+  generatedById   String
+  generatedBy     User             @relation("GeneratedConnections", fields: [generatedById], references: [id])
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([connectionCode])
+  @@index([patientId])
+  @@index([clinicId])
+  @@index([status])
+  @@map("patient_connections")
+}
+
+// ==================== CONTENT TEMPLATES (Gerenciamento de Conteúdo) ====================
+
+/// Templates globais de conteúdo da clínica
+model ContentTemplate {
+  id            String          @id @default(uuid())
+
+  clinicId      String
+  clinic        Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  type          ContentType     // SYMPTOMS, DIET, ACTIVITIES, CARE, TRAINING, EXAMS, DOCUMENTS, MEDICATIONS
+  category      ContentCategory // NORMAL, WARNING, EMERGENCY, ALLOWED, RESTRICTED, PROHIBITED, INFO
+  title         String
+  description   String?
+
+  validFromDay  Int?            // Dia pós-op quando fica visível (null = sempre)
+  validUntilDay Int?            // Dia pós-op quando some (null = sempre)
+
+  sortOrder     Int             @default(0)
+  isActive      Boolean         @default(true)
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  createdBy     String?         // userId do admin que criou
+
+  overrides     PatientContentOverride[]
+
+  @@index([clinicId])
+  @@index([clinicId, type])
+  @@index([clinicId, type, isActive])
+  @@map("content_templates")
+}
+
+/// Personalizações de conteúdo por paciente
+model PatientContentOverride {
+  id              String          @id @default(uuid())
+
+  patientId       String
+  patient         Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  templateId      String?         // null se é conteúdo ADD (novo)
+  template        ContentTemplate? @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  action          OverrideAction  // ADD, DISABLE, MODIFY
+
+  // Campos para MODIFY e ADD
+  type            ContentType?    // Obrigatório para ADD
+  category        ContentCategory?
+  title           String?
+  description     String?
+  validFromDay    Int?
+  validUntilDay   Int?
+
+  reason          String?         // Motivo médico da personalização
+
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  createdBy       String?         // userId do staff que criou
+
+  @@index([patientId])
+  @@index([patientId, templateId])
+  @@index([patientId, action])
+  @@map("patient_content_overrides")
+}
+
+/// Estado de sincronização de conteúdo do paciente
+model PatientContentState {
+  id            String    @id @default(uuid())
+
+  patientId     String    @unique  // Um por paciente
+  patient       Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  version       Int       @default(1)     // Incrementado em cada alteração
+  lastSyncedAt  DateTime  @default(now()) // Última vez que paciente sincronizou
+
+  contentHash   String?   // Hash do conteúdo para detectar mudanças (opcional)
+
+  updatedAt     DateTime  @updatedAt
+
+  @@index([patientId])
+  @@map("patient_content_states")
+}
+
+// ==================== REFRESH TOKENS ====================
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token       String    @unique
+  deviceInfo  String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
 }

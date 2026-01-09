@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/clinic_content_provider.dart';
+import '../providers/patients_provider.dart';
+import '../models/models.dart';
 
 class ClinicSymptomsScreen extends StatefulWidget {
   const ClinicSymptomsScreen({super.key});
@@ -9,24 +13,17 @@ class ClinicSymptomsScreen extends StatefulWidget {
 
 class _ClinicSymptomsScreenState extends State<ClinicSymptomsScreen> {
   final TextEditingController _searchController = TextEditingController();
-
-  // Mock data - será substituído por chamadas de API
-  final List<_PatientItem> _allPatients = [
-    _PatientItem('1', 'Maria Silva', 'PAC001', 'assets/images/avatar1.png'),
-    _PatientItem('2', 'João Santos', 'PAC002', 'assets/images/avatar2.png'),
-    _PatientItem('3', 'Ana Oliveira', 'PAC003', 'assets/images/avatar3.png'),
-    _PatientItem('4', 'Carlos Lima', 'PAC004', 'assets/images/avatar4.png'),
-    _PatientItem('5', 'Fernanda Costa', 'PAC005', 'assets/images/avatar5.png'),
-    _PatientItem('6', 'Roberto Alves', 'PAC006', 'assets/images/avatar6.png'),
-  ];
-
-  List<_PatientItem> _filteredPatients = [];
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _filteredPatients = List.from(_allPatients);
-    _searchController.addListener(_filterPatients);
+    _searchController.addListener(_onSearchChanged);
+    // Carregar pacientes e conteúdos
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<PatientsProvider>().loadPatients(refresh: true);
+      context.read<ClinicContentProvider>().loadContentsByType('SYMPTOMS');
+    });
   }
 
   @override
@@ -35,21 +32,13 @@ class _ClinicSymptomsScreenState extends State<ClinicSymptomsScreen> {
     super.dispose();
   }
 
-  void _filterPatients() {
-    final query = _searchController.text.toLowerCase();
+  void _onSearchChanged() {
     setState(() {
-      if (query.isEmpty) {
-        _filteredPatients = List.from(_allPatients);
-      } else {
-        _filteredPatients = _allPatients.where((p) =>
-          p.name.toLowerCase().contains(query) ||
-          p.id.toLowerCase().contains(query)
-        ).toList();
-      }
+      _searchQuery = _searchController.text.toLowerCase();
     });
   }
 
-  void _navigateToPatientDetail(_PatientItem patient) {
+  void _navigateToPatientDetail(PatientListItem patient) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -124,81 +113,100 @@ class _ClinicSymptomsScreenState extends State<ClinicSymptomsScreen> {
   }
 
   Widget _buildPatientSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF4F4A34), width: 2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Selecione um Paciente',
-            style: TextStyle(
-              color: Color(0xFF212621),
-              fontSize: 16,
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w600,
-            ),
+    return Consumer<PatientsProvider>(
+      builder: (context, provider, _) {
+        final filteredPatients = _searchQuery.isEmpty
+            ? provider.patients
+            : provider.patients.where((p) =>
+                p.name.toLowerCase().contains(_searchQuery) ||
+                (p.phone?.toLowerCase().contains(_searchQuery) ?? false)).toList();
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFF4F4A34), width: 2),
           ),
-          const SizedBox(height: 12),
-          // Campo de busca
-          Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F3EF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: 'Buscar paciente...',
-                hintStyle: TextStyle(
-                  color: Color(0xFF9CA3AF),
-                  fontSize: 14,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Selecione um Paciente',
+                style: TextStyle(
+                  color: Color(0xFF212621),
+                  fontSize: 16,
                   fontFamily: 'Inter',
+                  fontWeight: FontWeight.w600,
                 ),
-                prefixIcon: Icon(Icons.search, color: Color(0xFF697282), size: 20),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Lista de pacientes com scroll
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 280),
-            child: _filteredPatients.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                      child: Text(
-                        'Nenhum paciente encontrado',
-                        style: TextStyle(
-                          color: Color(0xFF697282),
-                          fontSize: 14,
-                          fontFamily: 'Inter',
-                        ),
-                      ),
+              const SizedBox(height: 12),
+              // Campo de busca
+              Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F3EF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(
+                    hintText: 'Buscar paciente...',
+                    hintStyle: TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 14,
+                      fontFamily: 'Inter',
                     ),
-                  )
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: _filteredPatients.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final patient = _filteredPatients[index];
-                      return _PatientCard(
-                        patient: patient,
-                        onTap: () => _navigateToPatientDetail(patient),
-                      );
-                    },
+                    prefixIcon: Icon(Icons.search, color: Color(0xFF697282), size: 20),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Lista de pacientes com scroll
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: provider.isLoadingList
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: CircularProgressIndicator(
+                            color: Color(0xFFA49E86),
+                          ),
+                        ),
+                      )
+                    : filteredPatients.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(
+                              child: Text(
+                                'Nenhum paciente encontrado',
+                                style: TextStyle(
+                                  color: Color(0xFF697282),
+                                  fontSize: 14,
+                                  fontFamily: 'Inter',
+                                ),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: filteredPatients.length,
+                            separatorBuilder: (context, index) => const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final patient = filteredPatients[index];
+                              return _PatientCard(
+                                patient: patient,
+                                onTap: () => _navigateToPatientDetail(patient),
+                              );
+                            },
+                          ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -254,21 +262,10 @@ class _ClinicSymptomsScreenState extends State<ClinicSymptomsScreen> {
   }
 }
 
-// ==================== PATIENT MODEL ====================
-
-class _PatientItem {
-  final String id;
-  final String name;
-  final String patientId;
-  final String avatarPath;
-
-  _PatientItem(this.id, this.name, this.patientId, this.avatarPath);
-}
-
 // ==================== PATIENT CARD ====================
 
 class _PatientCard extends StatelessWidget {
-  final _PatientItem patient;
+  final PatientListItem patient;
   final VoidCallback onTap;
 
   const _PatientCard({
@@ -297,7 +294,7 @@ class _PatientCard extends StatelessWidget {
               ),
               child: Center(
                 child: Text(
-                  patient.name.substring(0, 1).toUpperCase(),
+                  patient.name.isNotEmpty ? patient.name.substring(0, 1).toUpperCase() : '?',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -323,7 +320,7 @@ class _PatientCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'ID: ${patient.patientId}',
+                    (patient.phone?.isNotEmpty ?? false) ? patient.phone! : 'Sem telefone',
                     style: const TextStyle(
                       color: Color(0xFF697282),
                       fontSize: 12,
@@ -333,6 +330,24 @@ class _PatientCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (patient.dayPostOp != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFA49E86).withAlpha(26),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'D+${patient.dayPostOp}',
+                  style: const TextStyle(
+                    color: Color(0xFF4F4A34),
+                    fontSize: 11,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            const SizedBox(width: 8),
             const Icon(
               Icons.chevron_right,
               color: Color(0xFF697282),
@@ -348,7 +363,7 @@ class _PatientCard extends StatelessWidget {
 // ==================== PATIENT SYMPTOMS DETAIL SCREEN ====================
 
 class _PatientSymptomsDetailScreen extends StatefulWidget {
-  final _PatientItem patient;
+  final PatientListItem patient;
 
   const _PatientSymptomsDetailScreen({required this.patient});
 
@@ -366,38 +381,23 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
     _Category('EMERGENCY', 'Emergência', const Color(0xFFE7000B), const Color(0xFFE7000B), Icons.emergency_outlined),
   ];
 
-  // Mock data - será substituído por chamadas de API
-  final List<_ContentItem> _items = [
-    _ContentItem('1', 'Sensibilidade local', 'Pode durar até 30 dias', 'NORMAL', true),
-    _ContentItem('2', 'Inchaço moderado', 'Normal até 14 dias', 'NORMAL', true),
-    _ContentItem('3', 'Pequenos hematomas', 'Desaparecem gradualmente', 'NORMAL', true),
-    _ContentItem('4', 'Dormência temporária', 'A sensibilidade retorna gradualmente', 'NORMAL', true),
-    _ContentItem('5', 'Febre acima de 38°C', 'Entre em contato com a clínica', 'WARNING', true),
-    _ContentItem('6', 'Vermelhidão intensa', 'Pode indicar inflamação', 'WARNING', true),
-    _ContentItem('7', 'Secreção com odor', 'Entre em contato imediatamente', 'WARNING', true),
-    _ContentItem('8', 'Sangramento intenso', 'Procure atendimento imediato', 'EMERGENCY', true),
-    _ContentItem('9', 'Dificuldade para respirar', 'Ligue 192 (SAMU) imediatamente', 'EMERGENCY', true),
-  ];
-
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _categories.length, vsync: this);
-    _loadContent();
-  }
-
-  Future<void> _loadContent() async {
-    // TODO: Chamar API com widget.patient.id
+    // Carregar conteúdos se ainda não foram carregados
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<ClinicContentProvider>();
+      if (provider.currentType != 'SYMPTOMS') {
+        provider.loadContentsByType('SYMPTOMS');
+      }
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
-  }
-
-  List<_ContentItem> _filterByCategory(String categoryId) {
-    return _items.where((i) => i.category == categoryId).toList();
   }
 
   @override
@@ -413,9 +413,21 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
             _buildTabBar(),
             _buildAddButton(),
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: _categories.map((cat) => _buildList(cat)).toList(),
+              child: Consumer<ClinicContentProvider>(
+                builder: (context, provider, _) {
+                  if (provider.isLoadingContents) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFFA49E86),
+                      ),
+                    );
+                  }
+
+                  return TabBarView(
+                    controller: _tabController,
+                    children: _categories.map((cat) => _buildList(cat, provider)).toList(),
+                  );
+                },
               ),
             ),
           ],
@@ -485,7 +497,9 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
             ),
             child: Center(
               child: Text(
-                widget.patient.name.substring(0, 1).toUpperCase(),
+                widget.patient.name.isNotEmpty
+                    ? widget.patient.name.substring(0, 1).toUpperCase()
+                    : '?',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
@@ -511,7 +525,9 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'ID: ${widget.patient.patientId}',
+                  widget.patient.dayPostOp != null
+                      ? 'D+${widget.patient.dayPostOp} pós-operatório'
+                      : (widget.patient.phone ?? 'Sem telefone'),
                   style: TextStyle(
                     color: Colors.white.withAlpha(179),
                     fontSize: 13,
@@ -627,8 +643,8 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
     );
   }
 
-  Widget _buildList(_Category category) {
-    final items = _filterByCategory(category.id);
+  Widget _buildList(_Category category, ClinicContentProvider provider) {
+    final items = provider.getByCategory(category.id);
 
     if (items.isEmpty) {
       return Center(
@@ -654,13 +670,15 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
     return ReorderableListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: items.length,
-      onReorder: (oldIndex, newIndex) {
-        setState(() {
-          if (newIndex > oldIndex) newIndex--;
-          final item = items.removeAt(oldIndex);
-          items.insert(newIndex, item);
-        });
-        // TODO: Chamar API reorder
+      onReorder: (oldIndex, newIndex) async {
+        if (newIndex > oldIndex) newIndex--;
+        final itemsCopy = List<ClinicContent>.from(items);
+        final item = itemsCopy.removeAt(oldIndex);
+        itemsCopy.insert(newIndex, item);
+
+        // Chamar API de reorder
+        final ids = itemsCopy.map((c) => c.id).toList();
+        await provider.reorderContents(ids);
       },
       itemBuilder: (context, index) {
         final item = items[index];
@@ -679,14 +697,8 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
     );
   }
 
-  void _toggleItem(String id) {
-    setState(() {
-      final idx = _items.indexWhere((i) => i.id == id);
-      if (idx != -1) {
-        _items[idx] = _items[idx].copyWith(isActive: !_items[idx].isActive);
-      }
-    });
-    // TODO: Chamar API toggle
+  Future<void> _toggleItem(String id) async {
+    await context.read<ClinicContentProvider>().toggleContent(id);
   }
 
   void _deleteItem(String id) {
@@ -702,13 +714,16 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() => _items.removeWhere((i) => i.id == id));
+            onPressed: () async {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Item excluído')),
-              );
-              // TODO: Chamar API delete
+              final success = await context.read<ClinicContentProvider>().deleteContent(id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(success ? 'Item excluído' : 'Erro ao excluir'),
+                  ),
+                );
+              }
             },
             style: TextButton.styleFrom(foregroundColor: const Color(0xFFE7000B)),
             child: const Text('Excluir'),
@@ -726,26 +741,30 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
       backgroundColor: Colors.transparent,
       builder: (ctx) => _ContentFormModal(
         category: category,
-        onSave: (title, description) {
-          setState(() {
-            _items.add(_ContentItem(
-              DateTime.now().millisecondsSinceEpoch.toString(),
-              title,
-              description,
-              category.id,
-              true,
-            ));
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Item adicionado')),
+        onSave: (title, description) async {
+          final success = await context.read<ClinicContentProvider>().createContent(
+            type: 'SYMPTOMS',
+            category: category.id,
+            title: title,
+            description: description.isNotEmpty ? description : null,
           );
-          // TODO: Chamar API create
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'Item adicionado' : 'Erro ao adicionar'),
+              ),
+            );
+            // Atualizar stats no grid principal
+            if (success) {
+              context.read<ClinicContentProvider>().loadStats();
+            }
+          }
         },
       ),
     );
   }
 
-  void _showEditModal(_ContentItem item) {
+  void _showEditModal(ClinicContent item) {
     final category = _categories.firstWhere((c) => c.id == item.category);
     showModalBottomSheet(
       context: context,
@@ -754,17 +773,19 @@ class _PatientSymptomsDetailScreenState extends State<_PatientSymptomsDetailScre
       builder: (ctx) => _ContentFormModal(
         category: category,
         item: item,
-        onSave: (title, description) {
-          setState(() {
-            final idx = _items.indexWhere((i) => i.id == item.id);
-            if (idx != -1) {
-              _items[idx] = item.copyWith(title: title, description: description);
-            }
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Item atualizado')),
+        onSave: (title, description) async {
+          final success = await context.read<ClinicContentProvider>().updateContent(
+            item.id,
+            title: title,
+            description: description.isNotEmpty ? description : null,
           );
-          // TODO: Chamar API update
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'Item atualizado' : 'Erro ao atualizar'),
+              ),
+            );
+          }
         },
       ),
     );
@@ -780,27 +801,10 @@ class _Category {
   _Category(this.id, this.name, this.color, this.textColor, this.icon);
 }
 
-class _ContentItem {
-  final String id, title, description, category;
-  final bool isActive;
-
-  _ContentItem(this.id, this.title, this.description, this.category, this.isActive);
-
-  _ContentItem copyWith({String? title, String? description, bool? isActive}) {
-    return _ContentItem(
-      id,
-      title ?? this.title,
-      description ?? this.description,
-      category,
-      isActive ?? this.isActive,
-    );
-  }
-}
-
 // ==================== CARD ====================
 
 class _ContentCard extends StatelessWidget {
-  final _ContentItem item;
+  final ClinicContent item;
   final _Category category;
   final VoidCallback onToggle, onDelete, onEdit;
 
@@ -854,25 +858,27 @@ class _ContentCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      // Descrição
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F3EF),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          item.description,
-                          style: const TextStyle(
-                            color: Color(0xFF212621),
-                            fontSize: 14,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w400,
+                      if (item.description != null && item.description!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        // Descrição
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F3EF),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            item.description!,
+                            style: const TextStyle(
+                              color: Color(0xFF212621),
+                              fontSize: 14,
+                              fontFamily: 'Inter',
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -959,7 +965,7 @@ class _ContentCard extends StatelessWidget {
 
 class _ContentFormModal extends StatefulWidget {
   final _Category category;
-  final _ContentItem? item;
+  final ClinicContent? item;
   final void Function(String title, String description) onSave;
 
   const _ContentFormModal({

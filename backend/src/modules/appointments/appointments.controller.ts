@@ -52,6 +52,32 @@ export class AppointmentsController {
   }
 
   /**
+   * Lista histórico completo de agendamentos do paciente
+   * GET /api/appointments/history
+   */
+  @Get('history')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async getAppointmentHistory(@CurrentUser('patientId') patientId: string) {
+    return this.appointmentsService.getAppointmentHistory(patientId);
+  }
+
+  /**
+   * Lista agendamentos da equipe (CONFIRMED futuros)
+   * GET /api/appointments/team
+   */
+  @Get('team')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseGuards(RolesGuard)
+  async getTeamAppointments(
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.appointmentsService.getTeamAppointments(clinicId, startDate, endDate);
+  }
+
+  /**
    * Busca uma consulta específica
    * GET /api/appointments/:id
    */

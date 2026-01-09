@@ -51,7 +51,7 @@ export class AlertService {
       status: alert.status,
       isAutomatic: alert.isAutomatic,
       patientId: alert.patientId,
-      patientName: alert.patient?.user.name || null,
+      patientName: alert.patient?.user?.name || alert.patient?.name || null,
       createdAt: alert.createdAt.toISOString(),
       resolvedAt: alert.resolvedAt?.toISOString() || null,
     }));
@@ -100,7 +100,7 @@ export class AlertService {
       title: alert.title,
       description: alert.description,
       status: alert.status,
-      patientName: alert.patient?.user.name || null,
+      patientName: alert.patient?.user?.name || alert.patient?.name || null,
       createdAt: alert.createdAt.toISOString(),
     };
   }
@@ -241,7 +241,7 @@ export class AlertService {
               patientId: patient.id,
               type: AlertType.LOW_ADHERENCE,
               title: 'Baixa Adesão a Medicamentos',
-              description: `${patient.user.name} apresenta adesão de ${Math.round(adherenceRate)}% nos últimos 3 dias.`,
+              description: `${patient.user?.name || patient.name || 'Paciente'} apresenta adesão de ${Math.round(adherenceRate)}% nos últimos 3 dias.`,
               isAutomatic: true,
             },
           });
@@ -298,7 +298,7 @@ export class AlertService {
             patientId: appointment.patientId,
             type: AlertType.MISSED_APPOINTMENT,
             title: 'Consulta Perdida',
-            description: `${appointment.patient.user.name} não compareceu à consulta "${appointment.title}" de ${new Date(appointment.date).toLocaleDateString('pt-BR')}. (ID: ${appointment.id})`,
+            description: `${appointment.patient.user?.name || appointment.patient.name || 'Paciente'} não compareceu à consulta "${appointment.title}" de ${new Date(appointment.date).toLocaleDateString('pt-BR')}. (ID: ${appointment.id})`,
             isAutomatic: true,
           },
         });

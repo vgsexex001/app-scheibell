@@ -1,28 +1,46 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 
 /// Configuração da API do backend
 class ApiConfig {
-  // URL base para diferentes ambientes
-  // Android Emulator usa 10.0.2.2 para acessar localhost do host
-  // iOS Simulator usa localhost diretamente
-  // Web/Windows/macOS/Linux usa localhost diretamente
+  // ==================== CONFIGURAÇÃO DE AMBIENTE ====================
 
+  /// URL de produção (Render)
+  /// IMPORTANTE: Atualize com sua URL real do Render após o deploy
+  static const String _productionUrl = 'https://app-scheibell-api.onrender.com/api';
+
+  /// Forçar uso de produção (defina via --dart-define=PROD=true)
+  static const bool _forceProd = bool.fromEnvironment('PROD', defaultValue: false);
+
+  // URLs de desenvolvimento
   static const String _androidEmulatorHost = '10.0.2.2';
   static const String _defaultHost = 'localhost';
   static const int _port = 3000;
   static const String _apiPrefix = '/api';
 
-  /// URL base da API para Android Emulator
+  /// URL base da API para Android Emulator (dev)
   static String get baseUrlAndroid =>
       'http://$_androidEmulatorHost:$_port$_apiPrefix';
 
-  /// URL base da API para iOS/Web/Desktop
+  /// URL base da API para iOS/Web/Desktop (dev)
   static String get baseUrlDefault =>
       'http://$_defaultHost:$_port$_apiPrefix';
 
-  /// URL base da API - detecta plataforma automaticamente
+  /// Verifica se está em modo de produção
+  static bool get isProduction => _forceProd || kReleaseMode;
+
+  /// URL base da API - detecta plataforma e ambiente automaticamente
   static String get baseUrl {
+    // Em produção ou com flag PROD=true, usa URL de produção
+    if (isProduction) {
+      assert(() {
+        print('🌐 API Base URL (PROD): $_productionUrl');
+        return true;
+      }());
+      return _productionUrl;
+    }
+
+    // Em desenvolvimento, detecta plataforma
     String url;
     if (kIsWeb) {
       url = baseUrlDefault;
@@ -34,17 +52,20 @@ class ApiConfig {
     }
     // Debug log (só em debug mode)
     assert(() {
-      print('🌐 API Base URL: $url');
+      print('🌐 API Base URL (DEV): $url');
       return true;
     }());
     return url;
   }
 
-  /// Timeout para conexão (em segundos)
-  static const int connectTimeout = 30;
+  /// Timeout para conexão (em segundos) - deve ser curto para detectar problemas de rede
+  static const int connectTimeout = 10;
 
-  /// Timeout para receber resposta (em segundos)
-  static const int receiveTimeout = 30;
+  /// Timeout para receber resposta (em segundos) - maior para operações lentas como IA
+  static const int receiveTimeout = 120;
+
+  /// Timeout para envio de dados (em segundos) - maior para uploads
+  static const int sendTimeout = 60;
 
   /// Endpoints de autenticação
   static const String loginEndpoint = '/auth/login';
@@ -55,6 +76,8 @@ class ApiConfig {
 
   /// Endpoints de conteúdo
   static const String contentClinicEndpoint = '/content/clinic';
+  static const String contentClinicAllEndpoint = '/content/clinic/all';
+  static const String contentClinicStatsEndpoint = '/content/clinic/stats';
   static const String contentPatientEndpoint = '/content/patient/me';
   static const String contentPatientClinicEndpoint = '/content/patient/clinic';
 

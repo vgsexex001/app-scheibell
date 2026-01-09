@@ -174,7 +174,7 @@ export class AdminService {
       return {
         id: apt.id,
         patientId: apt.patientId,
-        patientName: apt.patient.user.name,
+        patientName: apt.patient.user?.name || apt.patient.name || 'Paciente',
         procedureType: apt.patient.surgeryType || apt.title,
         startsAt: `${date.toISOString().split('T')[0]}T${apt.time}:00-03:00`,
         displayDate: date.toLocaleDateString('pt-BR'),
@@ -221,17 +221,19 @@ export class AdminService {
       },
     });
 
-    // Criar notificação para o paciente
-    await this.prisma.notification.create({
-      data: {
-        userId: appointment.patient.userId,
-        type: NotificationType.APPOINTMENT_APPROVED,
-        title: 'Consulta Aprovada',
-        body: `Sua consulta de ${appointment.title} foi aprovada para ${new Date(appointment.date).toLocaleDateString('pt-BR')} às ${appointment.time}.`,
-        data: { appointmentId: appointment.id },
-        status: NotificationStatus.PENDING,
-      },
-    });
+    // Criar notificação para o paciente (apenas se tiver userId vinculado)
+    if (appointment.patient.userId) {
+      await this.prisma.notification.create({
+        data: {
+          userId: appointment.patient.userId,
+          type: NotificationType.APPOINTMENT_APPROVED,
+          title: 'Consulta Aprovada',
+          body: `Sua consulta de ${appointment.title} foi aprovada para ${new Date(appointment.date).toLocaleDateString('pt-BR')} às ${appointment.time}.`,
+          data: { appointmentId: appointment.id },
+          status: NotificationStatus.PENDING,
+        },
+      });
+    }
 
     return { success: true, appointment: updated };
   }
@@ -272,19 +274,21 @@ export class AdminService {
       },
     });
 
-    // Criar notificação para o paciente
-    await this.prisma.notification.create({
-      data: {
-        userId: appointment.patient.userId,
-        type: NotificationType.APPOINTMENT_REJECTED,
-        title: 'Consulta Recusada',
-        body: reason
-          ? `Sua consulta de ${appointment.title} foi recusada. Motivo: ${reason}`
-          : `Sua consulta de ${appointment.title} foi recusada. Entre em contato com a clínica.`,
-        data: { appointmentId: appointment.id, reason },
-        status: NotificationStatus.PENDING,
-      },
-    });
+    // Criar notificação para o paciente (apenas se tiver userId vinculado)
+    if (appointment.patient.userId) {
+      await this.prisma.notification.create({
+        data: {
+          userId: appointment.patient.userId,
+          type: NotificationType.APPOINTMENT_REJECTED,
+          title: 'Consulta Recusada',
+          body: reason
+            ? `Sua consulta de ${appointment.title} foi recusada. Motivo: ${reason}`
+            : `Sua consulta de ${appointment.title} foi recusada. Entre em contato com a clínica.`,
+          data: { appointmentId: appointment.id, reason },
+          status: NotificationStatus.PENDING,
+        },
+      });
+    }
 
     return { success: true, appointment: updated };
   }
@@ -376,7 +380,7 @@ export class AdminService {
 
       return {
         patientId: patient.id,
-        patientName: patient.user.name,
+        patientName: patient.user?.name || patient.name || 'Paciente',
         procedureType: patient.surgeryType || 'Não informado',
         dayPostOp: Math.max(0, dayPostOp),
         progressPercent,
