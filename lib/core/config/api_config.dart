@@ -5,9 +5,8 @@ import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 class ApiConfig {
   // ==================== CONFIGURAÇÃO DE AMBIENTE ====================
 
-  /// URL de produção (Render)
-  /// IMPORTANTE: Atualize com sua URL real do Render após o deploy
-  static const String _productionUrl = 'https://app-scheibell-api.onrender.com/api';
+  /// URL de produção (Google Cloud Run)
+  static const String _productionUrl = 'https://app-scheibell-api-936902782519.southamerica-east1.run.app/api';
 
   /// Forçar uso de produção (defina via --dart-define=PROD=true)
   static const bool _forceProd = bool.fromEnvironment('PROD', defaultValue: false);

@@ -1,0 +1,47 @@
+workflows:
+  ios-workflow:
+    name: iOS Release Build
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      flutter: stable
+      xcode: latest
+      vars:
+        PROD: "true"
+    scripts:
+      - name: Set up code signing settings on Xcode project
+        script: |
+          xcode-project use-profiles
+      - name: Get Flutter packages
+        script: |
+          flutter packages pub get
+      - name: Build iOS
+        script: |
+          flutter build ios --release --no-codesign --dart-define=PROD=true
+      - name: Build unsigned IPA
+        script: |
+          cd build/ios/iphoneos
+          mkdir Payload
+          cp -r Runner.app Payload
+          zip -r ../../../app-release-unsigned.ipa Payload
+    artifacts:
+      - build/**/app-release-unsigned.ipa
+      - flutter_drive.log
+
+  android-workflow:
+    name: Android Release Build
+    max_build_duration: 30
+    instance_type: linux_x2
+    environment:
+      flutter: stable
+      vars:
+        PROD: "true"
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          flutter packages pub get
+      - name: Build APK
+        script: |
+          flutter build apk --release --dart-define=PROD=true
+    artifacts:
+      - build/**/app-release.apk

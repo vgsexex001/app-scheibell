@@ -1,4 +1,4 @@
-package com.example.teste_ios
+package com.scheibell.app
 
 import io.flutter.embedding.android.FlutterActivity
 
