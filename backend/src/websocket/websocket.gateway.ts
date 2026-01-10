@@ -54,7 +54,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       if (!this.userSockets.has(userId)) {
         this.userSockets.set(userId, new Set());
       }
-      this.userSockets.get(userId).add(client.id);
+      this.userSockets.get(userId)!.add(client.id);
 
       // Juntar às salas apropriadas
       client.join(`user:${userId}`);
@@ -78,9 +78,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   handleDisconnect(client: Socket) {
     const userId = client.data.userId;
     if (userId && this.userSockets.has(userId)) {
-      this.userSockets.get(userId).delete(client.id);
-      if (this.userSockets.get(userId).size === 0) {
-        this.userSockets.delete(userId);
+      const userSocketSet = this.userSockets.get(userId);
+      if (userSocketSet) {
+        userSocketSet.delete(client.id);
+        if (userSocketSet.size === 0) {
+          this.userSockets.delete(userId);
+        }
       }
     }
     this.logger.log(`Client disconnected: ${client.id}`);
@@ -159,7 +162,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   // Verificar se usuário está online
   isUserOnline(userId: string): boolean {
-    return this.userSockets.has(userId) && this.userSockets.get(userId).size > 0;
+    const userSocketSet = this.userSockets.get(userId);
+    return userSocketSet !== undefined && userSocketSet.size > 0;
   }
 
   // Obter quantidade de usuários online

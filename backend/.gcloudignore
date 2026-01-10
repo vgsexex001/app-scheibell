@@ -1,0 +1,43 @@
+# This file specifies files that are *not* uploaded to Google Cloud
+# using gcloud. It follows the same syntax as .gitignore.
+
+# Ignore node_modules - will be installed during build
+node_modules/
+
+# Ignore build output - will be built during container build
+dist/
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Tests
+coverage
+*.spec.ts
+test
+
+# Documentation
+README.md
+docs
+
+# Misc
+*.md
+.DS_Store
+Thumbs.db
+
+# SQL files (not needed in container)
+*.sql
+
+# Special files
+nul
