@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../models/user_model.dart';
 import '../services/api_service.dart';
+import '../services/websocket_service.dart';
+import '../config/api_config.dart';
 
 enum AuthStatus {
   initial,
@@ -15,6 +17,7 @@ enum AuthStatus {
 
 class AuthProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
+  final WebSocketService _wsService = WebSocketService();
 
   AuthStatus _status = AuthStatus.initial;
   UserModel? _user;
@@ -66,6 +69,11 @@ class AuthProvider extends ChangeNotifier {
         _user = UserModel.fromJson(response['user']);
         _token = savedToken;
         _status = AuthStatus.authenticated;
+
+        // Conectar WebSocket após validação bem-sucedida
+        final wsBaseUrl = ApiConfig.baseUrl.replaceAll('/api', '');
+        _wsService.connect(wsBaseUrl, savedToken);
+        debugPrint('[AUTH] WebSocket conectado após validação');
       } else {
         await _apiService.removeToken();
         _status = AuthStatus.unauthenticated;
@@ -130,6 +138,15 @@ class AuthProvider extends ChangeNotifier {
 
       _status = AuthStatus.authenticated;
       debugPrint('[AUTH] Login bem-sucedido! Status: authenticated');
+
+      // Conectar WebSocket após login bem-sucedido
+      if (_token != null) {
+        // Remove /api do final para obter URL base do servidor
+        final wsBaseUrl = ApiConfig.baseUrl.replaceAll('/api', '');
+        _wsService.connect(wsBaseUrl, _token!);
+        debugPrint('[AUTH] WebSocket conectado para: $wsBaseUrl');
+      }
+
       notifyListeners();
       return true;
     } on DioException catch (e) {
@@ -176,6 +193,10 @@ class AuthProvider extends ChangeNotifier {
     debugPrint('[AUTH] logout() iniciado');
 
     try {
+      // Desconectar WebSocket antes de remover token
+      _wsService.disconnect();
+      debugPrint('[AUTH] WebSocket desconectado');
+
       await _apiService.removeToken();
       _user = null;
       _token = null;

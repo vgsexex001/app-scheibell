@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'core/providers/providers.dart';
+import 'core/providers/realtime_provider.dart';
 import 'core/routes/app_routes.dart';
 import 'features/patient/providers/recovery_provider.dart';
 import 'features/patient/providers/home_provider.dart';
@@ -41,6 +42,7 @@ class _AppState extends State<App> {
         ChangeNotifierProvider(create: (_) => ChatController()..addWelcomeMessage()),
         ChangeNotifierProvider(create: (_) => AgendaController()),
         ChangeNotifierProvider(create: (_) => ClinicContentProvider()),
+        ChangeNotifierProvider(create: (_) => RealtimeProvider()),
       ],
       child: Consumer<BrandingProvider>(
         builder: (context, brandingProvider, child) {

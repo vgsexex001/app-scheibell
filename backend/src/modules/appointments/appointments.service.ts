@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAppointmentDto, UpdateStatusDto } from './dto';
 import { AppointmentStatus, NotificationType, NotificationStatus } from '@prisma/client';
+import { WebsocketService } from '../../websocket/websocket.service';
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private websocketService: WebsocketService,
+  ) {}
 
   /**
    * Lista todas as consultas do paciente
@@ -111,6 +115,18 @@ export class AppointmentsService {
       });
     }
 
+    // Notificar clínica via WebSocket
+    this.websocketService.notifyNewAppointment(patient.clinicId, {
+      id: appointment.id,
+      title: appointment.title,
+      date: appointment.date,
+      time: appointment.time,
+      type: appointment.type,
+      status: appointment.status,
+      patientId,
+      patientName,
+    });
+
     return appointment;
   }
 
@@ -121,10 +137,29 @@ export class AppointmentsService {
     // Verifica se a consulta existe e pertence ao paciente
     await this.getAppointmentById(id, patientId);
 
-    return this.prisma.appointment.update({
+    const updatedAppointment = await this.prisma.appointment.update({
       where: { id },
       data: { status: dto.status },
     });
+
+    // Buscar clinicId do paciente para notificação
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { clinicId: true },
+    });
+
+    if (patient) {
+      // Notificar via WebSocket
+      this.websocketService.notifyAppointmentStatusChanged(patientId, patient.clinicId, {
+        id: updatedAppointment.id,
+        title: updatedAppointment.title,
+        date: updatedAppointment.date,
+        time: updatedAppointment.time,
+        status: updatedAppointment.status,
+      });
+    }
+
+    return updatedAppointment;
   }
 
   /**

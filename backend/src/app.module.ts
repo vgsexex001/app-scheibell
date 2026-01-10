@@ -15,6 +15,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ConnectionModule } from './modules/connection/connection.module';
+import { WebsocketModule } from './websocket/websocket.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { ConnectionModule } from './modules/connection/connection.module';
     PatientsModule,
     NotificationsModule,
     ConnectionModule,
+    WebsocketModule,
   ],
   controllers: [],
   providers: [

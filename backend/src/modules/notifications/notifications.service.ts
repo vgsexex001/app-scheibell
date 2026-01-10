@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationStatus, NotificationType } from '@prisma/client';
 import { CreateNotificationDto } from './dto';
+import { WebsocketService } from '../../websocket/websocket.service';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly websocketService: WebsocketService,
+  ) {}
 
   /**
    * Criar uma nova notificação para um usuário
@@ -15,7 +19,7 @@ export class NotificationsService {
   async createNotification(dto: CreateNotificationDto) {
     this.logger.log(`[createNotification] userId=${dto.userId} type=${dto.type}`);
 
-    return this.prisma.notification.create({
+    const notification = await this.prisma.notification.create({
       data: {
         userId: dto.userId,
         type: dto.type as NotificationType,
@@ -24,6 +28,17 @@ export class NotificationsService {
         status: NotificationStatus.PENDING,
       },
     });
+
+    // Notificar usuário via WebSocket
+    this.websocketService.notifyUser(dto.userId, {
+      id: notification.id,
+      type: notification.type,
+      title: notification.title,
+      body: notification.body,
+      createdAt: notification.createdAt.toISOString(),
+    });
+
+    return notification;
   }
 
   /**

@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException, ForbiddenException 
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from './storage.service';
+import { WebsocketService } from '../../websocket/websocket.service';
 import {
   SendMessageDto,
   ImageAnalyzeDto,
@@ -40,6 +41,7 @@ export class ChatService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly websocketService: WebsocketService,
   ) {
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
 
@@ -111,7 +113,7 @@ Informações sobre pós-operatório comum:
     });
 
     // Salvar mensagem do usuário
-    await this.prisma.chatMessage.create({
+    const userMessage = await this.prisma.chatMessage.create({
       data: {
         conversationId: conversation.id,
         role: 'user',
@@ -119,6 +121,17 @@ Informações sobre pós-operatório comum:
         senderId: patient?.userId,
         senderType: 'patient',
       },
+    });
+
+    // Emitir mensagem via WebSocket
+    this.websocketService.notifyNewMessage(conversation.id, {
+      id: userMessage.id,
+      conversationId: conversation.id,
+      role: 'user',
+      content: dto.message,
+      senderId: patient?.userId,
+      senderType: 'patient',
+      createdAt: userMessage.createdAt.toISOString(),
     });
 
     // Atualizar timestamp da conversa
@@ -157,13 +170,23 @@ Informações sobre pós-operatório comum:
     }
 
     // Salvar resposta da IA
-    await this.prisma.chatMessage.create({
+    const aiMessage = await this.prisma.chatMessage.create({
       data: {
         conversationId: conversation.id,
         role: 'assistant',
         content: responseText,
         senderType: 'ai',
       },
+    });
+
+    // Emitir resposta da IA via WebSocket
+    this.websocketService.notifyNewMessage(conversation.id, {
+      id: aiMessage.id,
+      conversationId: conversation.id,
+      role: 'assistant',
+      content: responseText,
+      senderType: 'ai',
+      createdAt: aiMessage.createdAt.toISOString(),
     });
 
     return {
@@ -750,6 +773,9 @@ Informações sobre pós-operatório comum:
 
     console.log(`[Handoff] Patient ${patientId} requested handoff. Alert ${alert.id} created.`);
 
+    // Notificar clínica via WebSocket
+    this.websocketService.notifyHandoff(patient.clinicId, conversation.id, patientName);
+
     return {
       conversationId: updatedConversation.id,
       mode: 'HUMAN',
@@ -939,6 +965,18 @@ Informações sobre pós-operatório comum:
 
     console.log(`[Handoff] Staff ${staffUserId} sent message to conversation ${conversationId}`);
 
+    // Emitir mensagem via WebSocket
+    this.websocketService.notifyNewMessage(conversationId, {
+      id: chatMessage.id,
+      conversationId,
+      role: chatMessage.role,
+      content: chatMessage.content,
+      senderId: chatMessage.senderId,
+      senderType: chatMessage.senderType,
+      senderName: staffUser?.name || 'Equipe',
+      createdAt: chatMessage.createdAt.toISOString(),
+    });
+
     return {
       message: {
         id: chatMessage.id,
@@ -1016,6 +1054,9 @@ Informações sobre pós-operatório comum:
     }
 
     console.log(`[Handoff] Conversation ${conversationId} closed by staff ${staffUserId}. Mode: ${newMode}`);
+
+    // Notificar paciente via WebSocket
+    this.websocketService.notifyConversationClosed(conversationId, conversation.patientId);
 
     return {
       success: true,
