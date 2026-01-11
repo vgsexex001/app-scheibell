@@ -121,6 +121,20 @@ export class WebsocketService {
     });
   }
 
+  // === MÉTODOS DE EMISSÃO DIRETA ===
+
+  emitToPatient(patientId: string, event: string, data: any) {
+    this.gateway.emitToPatient(patientId, event, data);
+  }
+
+  emitToClinic(clinicId: string, event: string, data: any) {
+    this.gateway.emitToClinic(clinicId, event, data);
+  }
+
+  emitToUser(userId: string, event: string, data: any) {
+    this.gateway.emitToUser(userId, event, data);
+  }
+
   // === STATUS ONLINE ===
 
   isUserOnline(userId: string): boolean {

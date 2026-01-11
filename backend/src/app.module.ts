@@ -16,6 +16,9 @@ import { PatientsModule } from './modules/patients/patients.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ConnectionModule } from './modules/connection/connection.module';
 import { WebsocketModule } from './websocket/websocket.module';
+import { ExternalEventsModule } from './modules/external-events/external-events.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { QueueModule } from './modules/queue/queue.module';
 
 @Module({
   imports: [
@@ -54,6 +57,9 @@ import { WebsocketModule } from './websocket/websocket.module';
     NotificationsModule,
     ConnectionModule,
     WebsocketModule,
+    ExternalEventsModule,
+    StorageModule,
+    QueueModule,
   ],
   controllers: [],
   providers: [

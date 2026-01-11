@@ -158,7 +158,10 @@ model User {
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?  // Soft delete
 
+  @@index([clinicId])
+  @@index([role])
   @@map("users")
 }
 
@@ -185,7 +188,9 @@ model Clinic {
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?  // Soft delete
 
+  @@index([isActive])
   @@map("clinics")
 }
 
@@ -235,9 +240,15 @@ model Patient {
   contentOverrides     PatientContentOverride[]
   contentState         PatientContentState?
 
+  // External Events
+  externalEvents       ExternalEvent[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?  // Soft delete
 
+  @@index([clinicId])
+  @@index([clinicId, surgeryType])
   @@map("patients")
 }
 
@@ -260,10 +271,12 @@ model Appointment {
 
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?         // Soft delete
 
   @@index([patientId])
   @@index([patientId, status])
   @@index([patientId, date])
+  @@index([status])
   @@map("appointments")
 }
 
@@ -408,6 +421,7 @@ model PatientContentAdjustment {
   isActive        Boolean         @default(true)
   createdBy       String?
   createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @default(now()) @updatedAt  // Campo faltante adicionado
 
   @@index([patientId])
   @@index([baseContentId])
@@ -615,6 +629,7 @@ model ChatAttachment {
 
   @@index([messageId])
   @@index([conversationId])
+  @@index([conversationId, status])
   @@map("chat_attachments")
 }
 
@@ -642,6 +657,8 @@ model Alert {
   @@index([clinicId])
   @@index([clinicId, status])
   @@index([patientId])
+  @@index([type])
+  @@index([createdAt])
   @@map("alerts")
 }
 
@@ -666,6 +683,8 @@ model Notification {
 
   @@index([userId])
   @@index([userId, status])
+  @@index([status])
+  @@index([createdAt])
   @@map("notifications")
 }
 
@@ -817,6 +836,7 @@ model PatientContentState {
 
   contentHash   String?   // Hash do conteúdo para detectar mudanças (opcional)
 
+  createdAt     DateTime  @default(now())  // Campo faltante adicionado
   updatedAt     DateTime  @updatedAt
 
   @@index([patientId])
@@ -841,4 +861,74 @@ model RefreshToken {
   @@index([token])
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// ==================== EXTERNAL EVENTS (Eventos Externos do Paciente) ====================
+
+model ExternalEvent {
+  id          String    @id @default(uuid())
+
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  title       String
+  date        DateTime
+  time        String    // Horário no formato "HH:mm"
+  location    String?
+  notes       String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // Soft delete
+
+  @@index([patientId])
+  @@index([patientId, date])
+  @@map("external_events")
+}
+
+// ==================== JOB QUEUE (Fila de Jobs Async) ====================
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum JobType {
+  CHAT_AI_REPLY
+  IMAGE_ANALYZE
+  NOTIFY_ADMIN
+  SEND_NOTIFICATION
+}
+
+model Job {
+  id          String    @id @default(uuid())
+
+  type        JobType
+  status      JobStatus @default(PENDING)
+
+  // Dados do job (JSON flexível)
+  payload     Json
+
+  // Resultado ou erro
+  result      Json?
+  error       String?
+
+  // Controle de tentativas
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+
+  // Timestamps
+  scheduledAt DateTime  @default(now())  // Quando deve ser processado
+  startedAt   DateTime?                   // Quando começou
+  completedAt DateTime?                   // Quando terminou
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([type, status])
+  @@index([scheduledAt])
+  @@map("jobs")
 }
