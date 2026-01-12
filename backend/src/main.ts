@@ -7,18 +7,42 @@ import { AppModule } from './app.module';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
   // Security headers
   app.use(helmet());
 
-  // CORS configuration
+  // CORS configuration - NUNCA usar wildcard em producao
   const corsOrigins = configService.get<string>('CORS_ORIGINS');
+  const allowedOrigins = corsOrigins
+    ? corsOrigins.split(',').map(origin => origin.trim())
+    : [
+        'http://localhost:3000',
+        'http://localhost:8080',
+        'http://10.0.2.2:3000', // Android emulator
+        'https://app-scheibell-api-936902782519.southamerica-east1.run.app',
+      ];
+
   app.enableCors({
-    origin: corsOrigins ? corsOrigins.split(',') : '*',
+    origin: (origin, callback) => {
+      // Permitir requests sem origin (mobile apps, Postman, etc)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Log de origens rejeitadas para debug
+      logger.warn(`CORS rejected origin: ${origin}`);
+      return callback(new Error('Not allowed by CORS'), false);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
   });
 
   // Global validation pipe
@@ -67,7 +91,6 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = configService.get<number>('PORT') || 3000;
-  const logger = new Logger('Bootstrap');
 
   // Listen on all network interfaces (0.0.0.0) to allow external connections
   await app.listen(port, '0.0.0.0');

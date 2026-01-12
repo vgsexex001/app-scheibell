@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAppointmentDto, UpdateStatusDto } from './dto';
 import { AppointmentStatus, NotificationType, NotificationStatus } from '@prisma/client';
@@ -62,6 +62,7 @@ export class AppointmentsService {
 
   /**
    * Cria uma nova consulta e notifica admins da clínica
+   * COM VALIDACAO DE CONFLITOS E HORARIOS
    */
   async createAppointment(patientId: string, dto: CreateAppointmentDto) {
     // Busca dados do paciente e clínica
@@ -77,13 +78,97 @@ export class AppointmentsService {
       throw new NotFoundException('Paciente não encontrado');
     }
 
-    // Cria o agendamento
+    const appointmentDate = new Date(dto.date);
+
+    // VALIDACAO 1: Nao permitir agendamento no passado
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (appointmentDate < today) {
+      throw new BadRequestException('Não é possível agendar para uma data no passado');
+    }
+
+    // VALIDACAO 2: Verificar se a clínica funciona neste dia da semana
+    const dayOfWeek = appointmentDate.getDay();
+    const clinicSchedule = await this.prisma.clinicSchedule.findUnique({
+      where: {
+        clinicId_dayOfWeek: {
+          clinicId: patient.clinicId,
+          dayOfWeek: dayOfWeek,
+        },
+      },
+    });
+
+    if (!clinicSchedule || !clinicSchedule.isActive) {
+      const dayNames = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+      throw new BadRequestException(`A clínica não funciona às ${dayNames[dayOfWeek]}s`);
+    }
+
+    // VALIDACAO 3: Verificar se o horário está dentro do expediente
+    const [requestedHour, requestedMinute] = dto.time.split(':').map(Number);
+    const [openHour, openMinute] = clinicSchedule.openTime.split(':').map(Number);
+    const [closeHour, closeMinute] = clinicSchedule.closeTime.split(':').map(Number);
+
+    const requestedMinutes = requestedHour * 60 + requestedMinute;
+    const openMinutes = openHour * 60 + openMinute;
+    const closeMinutes = closeHour * 60 + closeMinute;
+
+    if (requestedMinutes < openMinutes || requestedMinutes >= closeMinutes) {
+      throw new BadRequestException(
+        `O horário solicitado está fora do expediente (${clinicSchedule.openTime} - ${clinicSchedule.closeTime})`
+      );
+    }
+
+    // VALIDACAO 4: Verificar conflito de horário (mesmo dia + mesmo horário)
+    const startOfDay = new Date(appointmentDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(appointmentDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const conflictingAppointment = await this.prisma.appointment.findFirst({
+      where: {
+        patient: { clinicId: patient.clinicId },
+        date: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+        time: dto.time,
+        status: { notIn: [AppointmentStatus.CANCELLED] },
+        deletedAt: null,
+      },
+    });
+
+    if (conflictingAppointment) {
+      throw new ConflictException(
+        `Já existe um agendamento para este horário (${dto.time}). Por favor, escolha outro horário.`
+      );
+    }
+
+    // VALIDACAO 5: Verificar limite máximo de agendamentos no dia
+    const appointmentsOnDay = await this.prisma.appointment.count({
+      where: {
+        patient: { clinicId: patient.clinicId },
+        date: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+        status: { notIn: [AppointmentStatus.CANCELLED] },
+        deletedAt: null,
+      },
+    });
+
+    if (appointmentsOnDay >= clinicSchedule.maxSlots) {
+      throw new BadRequestException(
+        'Este dia já está lotado. Por favor, escolha outra data.'
+      );
+    }
+
+    // Todas as validacoes passaram - criar o agendamento
     const appointment = await this.prisma.appointment.create({
       data: {
         patientId,
         title: dto.title,
         description: dto.description,
-        date: new Date(dto.date),
+        date: appointmentDate,
         time: dto.time,
         type: dto.type,
         location: dto.location,
@@ -216,5 +301,186 @@ export class AppointmentsService {
       where: { patientId },
       orderBy: { date: 'desc' },
     });
+  }
+
+  // ==================== SLOTS E DISPONIBILIDADE ====================
+
+  /**
+   * Lista horários disponíveis para uma data específica
+   * GET /api/appointments/available-slots?date=2024-01-15&clinicId=xxx
+   */
+  async getAvailableSlots(clinicId: string, dateStr: string) {
+    const date = new Date(dateStr);
+    const dayOfWeek = date.getDay();
+
+    // Buscar configuração de horário da clínica
+    const schedule = await this.prisma.clinicSchedule.findUnique({
+      where: {
+        clinicId_dayOfWeek: {
+          clinicId,
+          dayOfWeek,
+        },
+      },
+    });
+
+    if (!schedule || !schedule.isActive) {
+      return {
+        date: dateStr,
+        available: false,
+        message: 'A clínica não funciona neste dia',
+        slots: [],
+      };
+    }
+
+    // Gerar todos os slots possíveis
+    const allSlots = this.generateTimeSlots(
+      schedule.openTime,
+      schedule.closeTime,
+      schedule.slotDuration
+    );
+
+    // Buscar agendamentos existentes neste dia
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const existingAppointments = await this.prisma.appointment.findMany({
+      where: {
+        patient: { clinicId },
+        date: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+        status: { notIn: [AppointmentStatus.CANCELLED] },
+        deletedAt: null,
+      },
+      select: { time: true },
+    });
+
+    const bookedTimes = new Set(existingAppointments.map(a => a.time));
+
+    // Marcar slots disponíveis/ocupados
+    const slots = allSlots.map(time => ({
+      time,
+      available: !bookedTimes.has(time),
+    }));
+
+    const availableCount = slots.filter(s => s.available).length;
+
+    return {
+      date: dateStr,
+      dayOfWeek,
+      openTime: schedule.openTime,
+      closeTime: schedule.closeTime,
+      slotDuration: schedule.slotDuration,
+      totalSlots: allSlots.length,
+      availableSlots: availableCount,
+      bookedSlots: bookedTimes.size,
+      maxSlots: schedule.maxSlots,
+      isFull: availableCount === 0 || existingAppointments.length >= schedule.maxSlots,
+      slots,
+    };
+  }
+
+  /**
+   * Gera array de horários entre abertura e fechamento
+   */
+  private generateTimeSlots(openTime: string, closeTime: string, durationMinutes: number): string[] {
+    const slots: string[] = [];
+    const [openHour, openMinute] = openTime.split(':').map(Number);
+    const [closeHour, closeMinute] = closeTime.split(':').map(Number);
+
+    let currentMinutes = openHour * 60 + openMinute;
+    const closeMinutes = closeHour * 60 + closeMinute;
+
+    while (currentMinutes < closeMinutes) {
+      const hours = Math.floor(currentMinutes / 60);
+      const minutes = currentMinutes % 60;
+      slots.push(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`);
+      currentMinutes += durationMinutes;
+    }
+
+    return slots;
+  }
+
+  /**
+   * Lista dias disponíveis em um período (para calendario)
+   * GET /api/appointments/available-days?startDate=2024-01-01&endDate=2024-01-31&clinicId=xxx
+   */
+  async getAvailableDays(clinicId: string, startDateStr: string, endDateStr: string) {
+    // Buscar configuração de horários da clínica
+    const schedules = await this.prisma.clinicSchedule.findMany({
+      where: { clinicId, isActive: true },
+    });
+
+    const activeDays = new Set(schedules.map(s => s.dayOfWeek));
+    const scheduleMap = new Map(schedules.map(s => [s.dayOfWeek, s]));
+
+    const startDate = new Date(startDateStr);
+    const endDate = new Date(endDateStr);
+    const days: Array<{
+      date: string;
+      dayOfWeek: number;
+      available: boolean;
+      openTime?: string;
+      closeTime?: string;
+      remainingSlots?: number;
+    }> = [];
+
+    // Contar agendamentos por dia no período
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        patient: { clinicId },
+        date: {
+          gte: startDate,
+          lte: endDate,
+        },
+        status: { notIn: [AppointmentStatus.CANCELLED] },
+        deletedAt: null,
+      },
+      select: { date: true },
+    });
+
+    // Agrupar agendamentos por dia
+    const appointmentsByDay = new Map<string, number>();
+    for (const apt of appointments) {
+      const dayKey = apt.date.toISOString().split('T')[0];
+      appointmentsByDay.set(dayKey, (appointmentsByDay.get(dayKey) || 0) + 1);
+    }
+
+    // Iterar cada dia do período
+    const current = new Date(startDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    while (current <= endDate) {
+      const dayOfWeek = current.getDay();
+      const dateStr = current.toISOString().split('T')[0];
+      const schedule = scheduleMap.get(dayOfWeek);
+      const bookedCount = appointmentsByDay.get(dateStr) || 0;
+
+      // Disponível se: clínica funciona, não é passado, não está lotado
+      const isOpen = activeDays.has(dayOfWeek);
+      const isPast = current < today;
+      const isFull = schedule ? bookedCount >= schedule.maxSlots : true;
+
+      days.push({
+        date: dateStr,
+        dayOfWeek,
+        available: isOpen && !isPast && !isFull,
+        openTime: schedule?.openTime,
+        closeTime: schedule?.closeTime,
+        remainingSlots: schedule ? Math.max(0, schedule.maxSlots - bookedCount) : 0,
+      });
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return {
+      clinicId,
+      period: { start: startDateStr, end: endDateStr },
+      days,
+    };
   }
 }

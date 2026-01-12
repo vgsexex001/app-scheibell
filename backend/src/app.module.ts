@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { CommonModule } from './common/common.module';
+import { HttpExceptionFilter } from './common/filters';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContentModule } from './modules/content/content.module';
 import { HealthModule } from './modules/health/health.module';
@@ -43,6 +45,9 @@ import { QueueModule } from './modules/queue/queue.module';
     // Database
     PrismaModule,
 
+    // Common (Logger, etc)
+    CommonModule,
+
     // Feature modules
     AuthModule,
     ContentModule,
@@ -67,6 +72,11 @@ import { QueueModule } from './modules/queue/queue.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Exception filter global para logging estruturado
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
     },
   ],
 })

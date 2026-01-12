@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -10,8 +11,9 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto } from './dto';
+import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
 import { UserRole } from '@prisma/client';
+import { LoggerService } from '../../common/services/logger.service';
 
 export interface AuthResponse {
   user: {
@@ -33,6 +35,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private logger: LoggerService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponse> {
@@ -65,22 +68,111 @@ export class AuthService {
     return await this.generateAuthResponse(result);
   }
 
-  async login(dto: LoginDto): Promise<AuthResponse> {
+  // Configurações de Account Lockout
+  private readonly MAX_FAILED_ATTEMPTS = 5;
+  private readonly LOCKOUT_DURATION_MINUTES = 15;
+
+  async login(dto: LoginDto, ipAddress?: string, userAgent?: string): Promise<AuthResponse> {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
+    // Se usuário não existe, registrar tentativa e retornar erro genérico
     if (!user) {
+      await this.recordLoginAttempt(null, dto.email, false, 'user_not_found', ipAddress, userAgent);
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
+    // Verificar se a conta está bloqueada
+    if (user.lockedUntil && new Date() < user.lockedUntil) {
+      const remainingMinutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      await this.recordLoginAttempt(user.id, dto.email, false, 'account_locked', ipAddress, userAgent);
+      throw new UnauthorizedException(
+        `Conta bloqueada temporariamente. Tente novamente em ${remainingMinutes} minuto(s).`
+      );
+    }
+
+    // Verificar senha
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Credenciais inválidas');
+      // Incrementar contador de falhas
+      const newFailedAttempts = user.failedLoginAttempts + 1;
+      const shouldLock = newFailedAttempts >= this.MAX_FAILED_ATTEMPTS;
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: newFailedAttempts,
+          lockedUntil: shouldLock
+            ? new Date(Date.now() + this.LOCKOUT_DURATION_MINUTES * 60 * 1000)
+            : null,
+        },
+      });
+
+      await this.recordLoginAttempt(user.id, dto.email, false, 'invalid_password', ipAddress, userAgent);
+
+      if (shouldLock) {
+        throw new UnauthorizedException(
+          `Conta bloqueada por ${this.LOCKOUT_DURATION_MINUTES} minutos após múltiplas tentativas incorretas.`
+        );
+      }
+
+      const attemptsRemaining = this.MAX_FAILED_ATTEMPTS - newFailedAttempts;
+      throw new UnauthorizedException(
+        `Credenciais inválidas. ${attemptsRemaining} tentativa(s) restante(s).`
+      );
     }
 
+    // Login bem-sucedido: resetar contador de falhas
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+
+    await this.recordLoginAttempt(user.id, dto.email, true, null, ipAddress, userAgent);
+
     return await this.generateAuthResponse(user);
+  }
+
+  /**
+   * Registra tentativa de login para auditoria
+   */
+  private async recordLoginAttempt(
+    userId: string | null,
+    email: string,
+    success: boolean,
+    failReason: string | null,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    await this.prisma.loginAttempt.create({
+      data: {
+        userId,
+        email,
+        success,
+        failReason,
+        ipAddress: ipAddress || null,
+        userAgent: userAgent || null,
+      },
+    });
+  }
+
+  /**
+   * Desbloqueia uma conta manualmente (para admin)
+   */
+  async unlockAccount(userId: string): Promise<{ success: boolean }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+    return { success: true };
   }
 
   async validateUser(userId: string) {
@@ -303,6 +395,162 @@ export class AuthService {
     });
 
     return { deleted: result.count };
+  }
+
+  // ==================== PASSWORD RESET ====================
+
+  /**
+   * Solicita reset de senha - gera token e retorna (em producao, enviaria por email)
+   * POST /api/auth/forgot-password
+   */
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string; resetToken?: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    // IMPORTANTE: Sempre retornar sucesso para evitar enumeracao de emails
+    if (!user) {
+      this.logger.authEvent('password_reset', { email: dto.email, status: 'user_not_found' });
+      return {
+        message: 'Se o email existir em nossa base, você receberá instruções para redefinir sua senha.',
+      };
+    }
+
+    // Invalidar tokens anteriores nao usados
+    await this.prisma.passwordResetToken.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+      },
+      data: {
+        usedAt: new Date(), // Marca como usado para invalidar
+      },
+    });
+
+    // Gerar novo token (6 caracteres alfanumericos para facilitar digitacao)
+    const plainToken = this.generateResetCode();
+    const tokenHash = crypto.createHash('sha256').update(plainToken).digest('hex');
+
+    // Token expira em 1 hora
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1);
+
+    // Salvar token hasheado no banco
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        token: tokenHash,
+        expiresAt,
+      },
+    });
+
+    this.logger.authEvent('password_reset', { email: user.email, userId: user.id, status: 'token_generated' });
+
+    // Em producao, enviaria o token por email
+    // Por enquanto, retornamos o token para teste (REMOVER em producao!)
+    return {
+      message: 'Se o email existir em nossa base, você receberá instruções para redefinir sua senha.',
+      // APENAS PARA DESENVOLVIMENTO - remover em producao
+      resetToken: plainToken,
+    };
+  }
+
+  /**
+   * Valida token de reset (util para verificar antes de mostrar form)
+   * POST /api/auth/validate-reset-token
+   */
+  async validateResetToken(token: string): Promise<{ valid: boolean; email?: string }> {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const storedToken = await this.prisma.passwordResetToken.findUnique({
+      where: { token: tokenHash },
+      include: { user: { select: { email: true } } },
+    });
+
+    if (!storedToken) {
+      return { valid: false };
+    }
+
+    if (storedToken.usedAt) {
+      return { valid: false };
+    }
+
+    if (new Date() > storedToken.expiresAt) {
+      return { valid: false };
+    }
+
+    return {
+      valid: true,
+      email: storedToken.user.email,
+    };
+  }
+
+  /**
+   * Reseta a senha usando o token
+   * POST /api/auth/reset-password
+   */
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const tokenHash = crypto.createHash('sha256').update(dto.token).digest('hex');
+
+    const storedToken = await this.prisma.passwordResetToken.findUnique({
+      where: { token: tokenHash },
+      include: { user: true },
+    });
+
+    if (!storedToken) {
+      throw new BadRequestException('Token inválido ou expirado');
+    }
+
+    if (storedToken.usedAt) {
+      throw new BadRequestException('Este token já foi utilizado');
+    }
+
+    if (new Date() > storedToken.expiresAt) {
+      throw new BadRequestException('Token expirado. Solicite um novo.');
+    }
+
+    // Hash da nova senha
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+
+    // Atualizar senha e marcar token como usado
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: storedToken.userId },
+        data: { passwordHash: hashedPassword },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: storedToken.id },
+        data: { usedAt: new Date() },
+      }),
+      // Revogar todos os refresh tokens do usuario (logout de todas sessoes)
+      this.prisma.refreshToken.updateMany({
+        where: {
+          userId: storedToken.userId,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    this.logger.authEvent('password_reset', {
+      email: storedToken.user.email,
+      userId: storedToken.userId,
+      status: 'completed'
+    });
+
+    return { message: 'Senha redefinida com sucesso. Faça login com sua nova senha.' };
+  }
+
+  /**
+   * Gera codigo de 6 caracteres alfanumericos (mais facil de digitar que UUID)
+   */
+  private generateResetCode(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Sem I, O, 0, 1 para evitar confusao
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
   }
 
   private async generateAuthResponse(user: {

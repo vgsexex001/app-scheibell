@@ -151,10 +151,16 @@ model User {
   clinicId      String?
   clinic        Clinic?   @relation(fields: [clinicId], references: [id])
 
+  // Account Lockout (brute force protection)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime? // null = não bloqueado
+
   patient       Patient?
   notifications Notification[]
   refreshTokens RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
   generatedConnections PatientConnection[] @relation("GeneratedConnections")
+  loginAttempts LoginAttempt[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -162,7 +168,30 @@ model User {
 
   @@index([clinicId])
   @@index([role])
+  @@index([email])
   @@map("users")
+}
+
+// ==================== TENTATIVAS DE LOGIN (Audit) ====================
+
+model LoginAttempt {
+  id          String    @id @default(uuid())
+
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  email       String    // Email tentado (pode não existir no sistema)
+  ipAddress   String?
+  userAgent   String?
+  success     Boolean   @default(false)
+  failReason  String?   // "invalid_password", "account_locked", "user_not_found"
+
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([createdAt])
+  @@map("login_attempts")
 }
 
 model Clinic {
@@ -184,6 +213,7 @@ model Clinic {
   trainingProtocols TrainingProtocol[]
   alerts        Alert[]
   patientConnections PatientConnection[]
+  schedules     ClinicSchedule[]
 
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
@@ -252,6 +282,30 @@ model Patient {
   @@map("patients")
 }
 
+// ==================== HORARIOS DA CLINICA ====================
+
+model ClinicSchedule {
+  id          String    @id @default(uuid())
+
+  clinicId    String
+  clinic      Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  dayOfWeek   Int       // 0=Domingo, 1=Segunda, ... 6=Sabado
+  openTime    String    // Hora de abertura "08:00"
+  closeTime   String    // Hora de fechamento "18:00"
+  slotDuration Int      @default(30) // Duracao de cada slot em minutos
+  maxSlots    Int       @default(20) // Maximo de agendamentos por dia
+
+  isActive    Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([clinicId, dayOfWeek])
+  @@index([clinicId])
+  @@map("clinic_schedules")
+}
+
 // ==================== AGENDAMENTOS ====================
 
 model Appointment {
@@ -277,6 +331,7 @@ model Appointment {
   @@index([patientId, status])
   @@index([patientId, date])
   @@index([status])
+  @@index([date, time])  // Index para buscar conflitos
   @@map("appointments")
 }
 
@@ -841,6 +896,26 @@ model PatientContentState {
 
   @@index([patientId])
   @@map("patient_content_states")
+}
+
+// ==================== PASSWORD RESET TOKENS ====================
+
+model PasswordResetToken {
+  id          String    @id @default(uuid())
+
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token       String    @unique  // Token hasheado (SHA-256)
+  expiresAt   DateTime           // Expira em 1 hora
+  usedAt      DateTime?          // Quando foi usado (null = não usado)
+
+  createdAt   DateTime  @default(now())
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // ==================== REFRESH TOKENS ====================

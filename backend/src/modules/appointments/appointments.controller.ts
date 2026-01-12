@@ -159,4 +159,37 @@ export class AppointmentsController {
   ) {
     return this.appointmentsService.confirmAppointment(id, patientId);
   }
+
+  // ==================== SLOTS E DISPONIBILIDADE ====================
+
+  /**
+   * Lista horários disponíveis para uma data específica
+   * GET /api/appointments/available-slots?date=2024-01-15
+   */
+  @Get('available-slots')
+  async getAvailableSlots(
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('date') date: string,
+  ) {
+    if (!date) {
+      throw new BadRequestException('O parâmetro date é obrigatório (formato: YYYY-MM-DD)');
+    }
+    return this.appointmentsService.getAvailableSlots(clinicId, date);
+  }
+
+  /**
+   * Lista dias disponíveis em um período (para calendário)
+   * GET /api/appointments/available-days?startDate=2024-01-01&endDate=2024-01-31
+   */
+  @Get('available-days')
+  async getAvailableDays(
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new BadRequestException('Os parâmetros startDate e endDate são obrigatórios (formato: YYYY-MM-DD)');
+    }
+    return this.appointmentsService.getAvailableDays(clinicId, startDate, endDate);
+  }
 }
