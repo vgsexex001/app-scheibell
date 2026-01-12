@@ -45,6 +45,13 @@ export class ChatService {
   ) {
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
 
+    // Log de diagnóstico para verificar configuração da API key
+    if (this.openaiApiKey) {
+      console.log(`[ChatService] OpenAI API key configured (${this.openaiApiKey.slice(0, 12)}...)`);
+    } else {
+      console.error('[ChatService] ⚠️ OPENAI_API_KEY not configured! Vision will use fallback.');
+    }
+
     this.visionSystemPrompt = `Você é uma assistente virtual especializada em acompanhamento pós-operatório de cirurgias bariátricas e estéticas, com capacidade de analisar imagens.
 
 Ao analisar imagens do paciente:
@@ -597,6 +604,8 @@ Informações sobre pós-operatório comum:
         },
       ];
 
+      console.log(`[OpenAI Vision] Starting request with key=${this.openaiApiKey ? 'present' : 'MISSING'}`);
+      console.log(`[OpenAI Vision] Image size: ${base64Image.length} chars, mime: ${mimeType}`);
       console.log('[OpenAI Vision] Sending request to API...');
       const startTime = Date.now();
 
@@ -620,7 +629,9 @@ Informações sobre pós-operatório comum:
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[OpenAI Vision] API error: ${response.status} - ${errorText} (${duration}ms)`);
+        console.error(`[OpenAI Vision] API error: ${response.status}`);
+        console.error(`[OpenAI Vision] Error body: ${errorText.substring(0, 500)}`);
+        console.error(`[OpenAI Vision] Duration: ${duration}ms - Using fallback`);
         return this.getVisionFallbackResponse();
       }
 
