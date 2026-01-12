@@ -8,13 +8,14 @@ import {
   HttpCode,
   HttpStatus,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { ConnectionService } from './connection.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ConnectPatientDto } from './dto';
+import { ConnectPatientDto, ConnectionListQueryDto } from './dto';
 
 interface JwtPayload {
   sub: string;
@@ -106,5 +107,38 @@ export class ConnectionController {
       connectionId,
       user.clinicId,
     );
+  }
+
+  /**
+   * Admin lista todas as conexões da clínica
+   * GET /api/admin/connections
+   */
+  @Get('admin/connections')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getClinicConnections(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: ConnectionListQueryDto,
+  ) {
+    if (!user.clinicId) {
+      throw new Error('Usuário não está associado a uma clínica');
+    }
+
+    return this.connectionService.getClinicConnections(user.clinicId, query);
+  }
+
+  /**
+   * Admin obtém estatísticas de conexões
+   * GET /api/admin/connections/stats
+   */
+  @Get('admin/connections/stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getConnectionStats(@CurrentUser() user: JwtPayload) {
+    if (!user.clinicId) {
+      throw new Error('Usuário não está associado a uma clínica');
+    }
+
+    return this.connectionService.getConnectionStats(user.clinicId);
   }
 }

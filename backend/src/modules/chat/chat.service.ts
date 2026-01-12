@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from './storage.service';
 import { WebsocketService } from '../../websocket/websocket.service';
+import { QueueService } from '../queue/queue.service';
 import {
   SendMessageDto,
   ImageAnalyzeDto,
@@ -15,7 +16,7 @@ import {
   AdminConversationsResponseDto,
   SendHumanMessageDto,
 } from './dto';
-import { ChatAttachmentStatus, ChatMode } from '@prisma/client';
+import { ChatAttachmentStatus, ChatMode, JobType } from '@prisma/client';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -42,6 +43,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly websocketService: WebsocketService,
+    private readonly queueService: QueueService,
   ) {
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
 
@@ -157,47 +159,37 @@ Informações sobre pós-operatório comum:
       };
     }
 
-    // Preparar histórico de mensagens para a API
-    const messages: ChatMessage[] = [
-      { role: 'system', content: this.systemPrompt },
-      ...conversation.messages.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-      { role: 'user', content: dto.message },
-    ];
-
-    // Chamar API OpenAI ou usar fallback local
-    let responseText: string;
-
-    if (this.openaiApiKey) {
-      responseText = await this.callOpenAI(messages);
-    } else {
-      responseText = this.getLocalResponse(dto.message);
-    }
-
-    // Salvar resposta da IA
-    const aiMessage = await this.prisma.chatMessage.create({
-      data: {
-        conversationId: conversation.id,
-        role: 'assistant',
-        content: responseText,
-        senderType: 'ai',
+    // Buscar contexto do paciente para o job
+    const patientContext = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      select: {
+        name: true,
+        surgeryType: true,
+        surgeryDate: true,
+        user: { select: { name: true } },
       },
     });
 
-    // Emitir resposta da IA via WebSocket
-    this.websocketService.notifyNewMessage(conversation.id, {
-      id: aiMessage.id,
+    // ASYNC: Enfileirar job para processamento assíncrono
+    // O processor irá chamar OpenAI e enviar a resposta via WebSocket
+    const jobId = await this.queueService.enqueue(JobType.CHAT_AI_REPLY, {
       conversationId: conversation.id,
-      role: 'assistant',
-      content: responseText,
-      senderType: 'ai',
-      createdAt: aiMessage.createdAt.toISOString(),
+      userMessageId: userMessage.id,
+      patientId,
+      messageContent: dto.message,
+      patientContext: patientContext ? {
+        name: patientContext.user?.name || patientContext.name || 'Paciente',
+        surgeryType: patientContext.surgeryType || undefined,
+        surgeryDate: patientContext.surgeryDate?.toISOString() || undefined,
+      } : undefined,
     });
 
+    console.log(`[Chat] Message enqueued for async processing. Job ID: ${jobId}`);
+
+    // Retorna imediatamente ao cliente
+    // A resposta da IA será enviada via WebSocket quando o job for processado
     return {
-      response: responseText,
+      response: null, // Resposta será enviada via WebSocket
       conversationId: conversation.id,
       mode: conversation.mode,
     };

@@ -18,6 +18,12 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Request as ExpressRequest } from 'express';
 import { ExamStatus } from '@prisma/client';
+import {
+  CreateExamDto,
+  UpdateExamDto,
+  AttachFileDto,
+  ExamListQueryDto,
+} from './dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: {
@@ -40,6 +46,14 @@ export class ExamsController {
       throw new BadRequestException('Patient ID not found');
     }
     return patientId;
+  }
+
+  private getClinicId(req: AuthenticatedRequest): string {
+    const clinicId = req.user.clinicId;
+    if (!clinicId) {
+      throw new BadRequestException('Clinic ID not found');
+    }
+    return clinicId;
   }
 
   // ========== ROTAS DO PACIENTE ==========
@@ -87,21 +101,52 @@ export class ExamsController {
 
   // ========== ROTAS DO STAFF/ADMIN ==========
 
+  // GET /api/exams/admin - Listar todos exames da clínica
+  @Get('admin')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getClinicExams(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: ExamListQueryDto,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getClinicExams(clinicId, query);
+  }
+
+  // GET /api/exams/admin/stats - Estatísticas de exames da clínica
+  @Get('admin/stats')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getClinicExamStats(@Request() req: AuthenticatedRequest) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getClinicExamStats(clinicId);
+  }
+
+  // GET /api/exams/admin/patients/:patientId - Listar exames de um paciente
+  @Get('admin/patients/:patientId')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getPatientExamsAdmin(
+    @Request() req: AuthenticatedRequest,
+    @Param('patientId') patientId: string,
+    @Query() query: ExamListQueryDto,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getPatientExamsForAdmin(clinicId, patientId, query);
+  }
+
+  // GET /api/exams/admin/:id - Detalhes de um exame (admin)
+  @Get('admin/:id')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getExamDetailsAdmin(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') examId: string,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getExamByIdForAdmin(clinicId, examId);
+  }
+
   // POST /api/exams - Criar exame para paciente
   @Post()
   @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
-  async createExam(
-    @Body()
-    data: {
-      patientId: string;
-      title: string;
-      type: string;
-      date: string;
-      notes?: string;
-      result?: string;
-      status?: ExamStatus;
-    },
-  ) {
+  async createExam(@Body() data: CreateExamDto) {
     return this.examsService.createExam({
       ...data,
       date: new Date(data.date),
@@ -113,15 +158,7 @@ export class ExamsController {
   @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
   async updateExam(
     @Param('id') examId: string,
-    @Body()
-    data: {
-      title?: string;
-      type?: string;
-      date?: string;
-      notes?: string;
-      result?: string;
-      status?: ExamStatus;
-    },
+    @Body() data: UpdateExamDto,
   ) {
     return this.examsService.updateExam(examId, {
       ...data,
@@ -142,13 +179,7 @@ export class ExamsController {
   @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
   async attachFile(
     @Param('id') examId: string,
-    @Body()
-    data: {
-      fileUrl: string;
-      fileName: string;
-      fileSize: number;
-      mimeType: string;
-    },
+    @Body() data: AttachFileDto,
   ) {
     return this.examsService.attachFile(examId, data);
   }

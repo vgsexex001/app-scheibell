@@ -5,7 +5,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ConnectionStatus } from '@prisma/client';
+import { ConnectionStatus, Prisma } from '@prisma/client';
+import { ConnectionListQueryDto, ConnectionStatsDto } from './dto';
 
 @Injectable()
 export class ConnectionService {
@@ -246,5 +247,101 @@ export class ConnectionService {
         },
       },
     });
+  }
+
+  /**
+   * Lista todas as conexões da clínica (admin)
+   */
+  async getClinicConnections(clinicId: string, query: ConnectionListQueryDto) {
+    const { page = 1, limit = 20, status, patientId } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.PatientConnectionWhereInput = {
+      clinicId,
+      ...(status && { status }),
+      ...(patientId && { patientId }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.patientConnection.findMany({
+        where,
+        include: {
+          patient: {
+            select: {
+              id: true,
+              name: true,
+              user: { select: { name: true } },
+            },
+          },
+          generatedBy: {
+            select: { name: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.patientConnection.count({ where }),
+    ]);
+
+    const mappedItems = items.map((conn) => ({
+      id: conn.id,
+      connectionCode: conn.connectionCode,
+      status: conn.status,
+      patientId: conn.patientId,
+      patientName: conn.patient.user?.name || conn.patient.name || 'Paciente',
+      clinicId: conn.clinicId,
+      codeGeneratedAt: conn.codeGeneratedAt,
+      codeExpiresAt: conn.codeExpiresAt,
+      connectedAt: conn.connectedAt,
+      revokedAt: conn.revokedAt,
+      generatedByName: conn.generatedBy?.name,
+      createdAt: conn.createdAt,
+    }));
+
+    return {
+      items: mappedItems,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Estatísticas de conexões da clínica
+   */
+  async getConnectionStats(clinicId: string): Promise<ConnectionStatsDto> {
+    const whereClinic = { clinicId };
+
+    const [
+      totalConnections,
+      pendingConnections,
+      activeConnections,
+      expiredConnections,
+      revokedConnections,
+    ] = await Promise.all([
+      this.prisma.patientConnection.count({ where: whereClinic }),
+      this.prisma.patientConnection.count({
+        where: { ...whereClinic, status: ConnectionStatus.PENDING },
+      }),
+      this.prisma.patientConnection.count({
+        where: { ...whereClinic, status: ConnectionStatus.ACTIVE },
+      }),
+      this.prisma.patientConnection.count({
+        where: { ...whereClinic, status: ConnectionStatus.EXPIRED },
+      }),
+      this.prisma.patientConnection.count({
+        where: { ...whereClinic, status: ConnectionStatus.REVOKED },
+      }),
+    ]);
+
+    return {
+      totalConnections,
+      pendingConnections,
+      activeConnections,
+      expiredConnections,
+      revokedConnections,
+    };
   }
 }

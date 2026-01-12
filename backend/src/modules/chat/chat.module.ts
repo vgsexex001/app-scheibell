@@ -6,12 +6,14 @@ import { ChatService } from './chat.service';
 import { StorageService } from './storage.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { QueueModule } from '../queue/queue.module';
 
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
     AuthModule,
+    QueueModule,
     MulterModule.register({
       limits: {
         fileSize: 10 * 1024 * 1024, // 10MB
