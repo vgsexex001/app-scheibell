@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'chat_screen.dart' show PatientConversation, PatientStatus;
+import '../../../core/services/api_service.dart';
 
 class PatientChatScreen extends StatefulWidget {
   final PatientConversation patient;
@@ -16,32 +17,72 @@ class PatientChatScreen extends StatefulWidget {
 class _PatientChatScreenState extends State<PatientChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ApiService _apiService = ApiService();
 
-  // Mensagens mock do chat com paciente
-  late List<PatientMessage> _messages;
+  List<PatientMessage> _messages = [];
+  bool _isLoading = true;
+  String? _error;
+  bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
-    // Inicializar mensagens mock baseadas no paciente
-    _messages = [
-      PatientMessage(
-        isFromPatient: true,
-        text: 'Olá doutor, tudo bem?',
-        time: '10:30',
-      ),
-      PatientMessage(
-        isFromPatient: false,
-        text:
-            'Olá ${widget.patient.name.split(' ')[0]}! Tudo bem sim, como você está se sentindo?',
-        time: '10:32',
-      ),
-      PatientMessage(
-        isFromPatient: true,
-        text: widget.patient.lastMessage,
-        time: '10:45',
-      ),
-    ];
+    _loadChatHistory();
+  }
+
+  /// Carrega histórico de mensagens do backend
+  Future<void> _loadChatHistory() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      debugPrint('[PATIENT_CHAT] Loading history for conversation=${widget.patient.id}');
+      final data = await _apiService.getConversationForAdmin(widget.patient.id);
+
+      final messagesData = data['messages'] as List<dynamic>? ?? [];
+      final loadedMessages = messagesData.map((m) {
+        final senderType = m['senderType'] as String? ?? 'patient';
+        final isFromPatient = senderType == 'patient';
+        final createdAt = DateTime.tryParse(m['createdAt'] ?? '') ?? DateTime.now();
+        final timeString = '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}';
+
+        return PatientMessage(
+          isFromPatient: isFromPatient,
+          text: m['content'] as String? ?? '',
+          time: timeString,
+        );
+      }).toList();
+
+      setState(() {
+        _messages = loadedMessages;
+        _isLoading = false;
+      });
+
+      debugPrint('[PATIENT_CHAT] Loaded ${_messages.length} messages');
+
+      // Scroll para o final após carregar
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint('[PATIENT_CHAT] Error loading history: $e');
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
@@ -64,17 +105,83 @@ class _PatientChatScreenState extends State<PatientChatScreen> {
             _buildPatientInfoCard(),
             // Mensagens
             Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(12),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildMessageBubble(_messages[index]),
-                  );
-                },
-              ),
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF4F4A34),
+                      ),
+                    )
+                  : _error != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: Color(0xFF697282),
+                                size: 48,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Erro ao carregar mensagens',
+                                style: const TextStyle(
+                                  color: Color(0xFF697282),
+                                  fontSize: 14,
+                                  fontFamily: 'Inter',
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: _loadChatHistory,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  decoration: ShapeDecoration(
+                                    color: const Color(0xFF4F4A34),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Tentar novamente',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontFamily: 'Inter',
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : _messages.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhuma mensagem ainda',
+                                style: TextStyle(
+                                  color: Color(0xFF697282),
+                                  fontSize: 14,
+                                  fontFamily: 'Inter',
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.all(12),
+                              itemCount: _messages.length,
+                              itemBuilder: (context, index) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: _buildMessageBubble(_messages[index]),
+                                );
+                              },
+                            ),
             ),
             // Input de mensagem
             _buildMessageInput(),
@@ -570,29 +677,52 @@ class _PatientChatScreenState extends State<PatientChatScreen> {
     );
   }
 
-  void _sendMessage() {
-    if (_messageController.text.trim().isEmpty) return;
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _isSending) return;
 
     final now = TimeOfDay.now();
     final timeString =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
+    // Adiciona mensagem localmente para feedback imediato
     setState(() {
+      _isSending = true;
       _messages.add(PatientMessage(
         isFromPatient: false,
-        text: _messageController.text.trim(),
+        text: text,
         time: timeString,
       ));
       _messageController.clear();
     });
 
-    Future.delayed(const Duration(milliseconds: 100), () {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    });
+    _scrollToBottom();
+
+    try {
+      debugPrint('[PATIENT_CHAT] Sending message to conversation=${widget.patient.id}');
+      await _apiService.sendHumanMessage(widget.patient.id, text);
+      debugPrint('[PATIENT_CHAT] Message sent successfully');
+    } catch (e) {
+      debugPrint('[PATIENT_CHAT] Error sending message: $e');
+      // Remove a mensagem otimista em caso de erro
+      setState(() {
+        _messages.removeLast();
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao enviar mensagem: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
+    }
   }
 
   String _getInitials(String name) {

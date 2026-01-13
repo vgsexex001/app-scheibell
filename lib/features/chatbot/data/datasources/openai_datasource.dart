@@ -23,6 +23,9 @@ class OpenAiException implements Exception {
     if (statusCode == 401) {
       return 'Erro de autenticacao. Verifique a configuracao da API.';
     }
+    if (statusCode == 404 || errorType == 'model_not_found') {
+      return 'Modelo de IA nao encontrado. Verifique a configuracao.';
+    }
     if (statusCode == 429) {
       return 'Muitas requisicoes. Aguarde um momento e tente novamente.';
     }
@@ -31,6 +34,9 @@ class OpenAiException implements Exception {
     }
     if (errorType == 'network') {
       return 'Sem conexao com a internet. Verifique sua rede e tente novamente.';
+    }
+    if (errorType == 'timeout') {
+      return 'Tempo limite excedido. Tente novamente.';
     }
     return 'Ocorreu um erro. Por favor, tente novamente.';
   }
@@ -111,7 +117,7 @@ Responda sempre em portugues brasileiro de forma clara e objetiva.''';
   }
 
   /// Obtem o modelo do arquivo .env ou usa default
-  String get _model => dotenv.env['OPENAI_MODEL'] ?? 'gpt-4.1-mini';
+  String get _model => dotenv.env['OPENAI_MODEL'] ?? 'gpt-4o-mini';
 
   /// Envia mensagem para a OpenAI e retorna a resposta
   /// [messages] - Lista de mensagens do historico da conversa
@@ -215,6 +221,15 @@ Responda sempre em portugues brasileiro de forma clara e objetiva.''';
     final errorData = error.response?.data;
     String errorMessage = 'Erro desconhecido';
     String? errorType;
+
+    // Tratamento específico para erro 404 (modelo não encontrado)
+    if (statusCode == 404) {
+      return OpenAiException(
+        message: 'Modelo de IA nao encontrado. Verifique a configuracao.',
+        statusCode: 404,
+        errorType: 'model_not_found',
+      );
+    }
 
     if (errorData is Map<String, dynamic>) {
       final errorObj = errorData['error'];
