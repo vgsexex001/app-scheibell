@@ -217,6 +217,16 @@ class _AppointmentDetailPageState extends State<AppointmentDetailPage> {
           statusIcon = Icons.task_alt;
           statusText = 'Realizado';
           break;
+        case AppointmentStatus.inProgress:
+          accentColor = Colors.teal;
+          statusIcon = Icons.play_circle_outline;
+          statusText = 'Em Andamento';
+          break;
+        case AppointmentStatus.noShow:
+          accentColor = Colors.grey;
+          statusIcon = Icons.person_off;
+          statusText = 'Não Compareceu';
+          break;
       }
     } else {
       accentColor = theme.colorScheme.tertiary;

@@ -7,6 +7,141 @@ import '../../home/data/storage/home_progress_storage.dart';
 /// Estados possíveis da tela Home
 enum HomeStatus { initial, loading, success, error }
 
+/// Dados dinâmicos da Home vindos da API
+class DynamicHomeData {
+  final String greeting;
+  final int dayPostOp;
+  final DynamicHomeSummary summary;
+  final List<DynamicHomeItem> items;
+  final DynamicNextAppointment? nextAppointment;
+
+  DynamicHomeData({
+    required this.greeting,
+    required this.dayPostOp,
+    required this.summary,
+    required this.items,
+    this.nextAppointment,
+  });
+
+  factory DynamicHomeData.fromJson(Map<String, dynamic> json) {
+    return DynamicHomeData(
+      greeting: json['greeting'] as String? ?? 'Olá!',
+      dayPostOp: json['dayPostOp'] as int? ?? 0,
+      summary: DynamicHomeSummary.fromJson(json['summary'] as Map<String, dynamic>? ?? {}),
+      items: (json['items'] as List<dynamic>? ?? [])
+          .map((e) => DynamicHomeItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      nextAppointment: json['nextAppointment'] != null
+          ? DynamicNextAppointment.fromJson(json['nextAppointment'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+}
+
+class DynamicHomeSummary {
+  final int medicationsPending;
+  final int tasksPending;
+  final int videosIncomplete;
+
+  DynamicHomeSummary({
+    required this.medicationsPending,
+    required this.tasksPending,
+    required this.videosIncomplete,
+  });
+
+  factory DynamicHomeSummary.fromJson(Map<String, dynamic> json) {
+    return DynamicHomeSummary(
+      medicationsPending: json['medicationsPending'] as int? ?? 0,
+      tasksPending: json['tasksPending'] as int? ?? 0,
+      videosIncomplete: json['videosIncomplete'] as int? ?? 0,
+    );
+  }
+}
+
+class DynamicHomeItem {
+  final String id;
+  final String type; // 'MEDICATION', 'VIDEO', 'TASK', 'APPOINTMENT'
+  final int priority;
+  final String status; // 'PENDING', 'IN_PROGRESS', 'OVERDUE', 'UPCOMING'
+  final String title;
+  final String? subtitle;
+  final String? scheduledTime;
+  final DynamicHomeAction? action;
+  final Map<String, dynamic>? metadata;
+
+  DynamicHomeItem({
+    required this.id,
+    required this.type,
+    required this.priority,
+    required this.status,
+    required this.title,
+    this.subtitle,
+    this.scheduledTime,
+    this.action,
+    this.metadata,
+  });
+
+  factory DynamicHomeItem.fromJson(Map<String, dynamic> json) {
+    return DynamicHomeItem(
+      id: json['id'] as String,
+      type: json['type'] as String,
+      priority: json['priority'] as int? ?? 0,
+      status: json['status'] as String? ?? 'PENDING',
+      title: json['title'] as String,
+      subtitle: json['subtitle'] as String?,
+      scheduledTime: json['scheduledTime'] as String?,
+      action: json['action'] != null
+          ? DynamicHomeAction.fromJson(json['action'] as Map<String, dynamic>)
+          : null,
+      metadata: json['metadata'] as Map<String, dynamic>?,
+    );
+  }
+
+  bool get isOverdue => status == 'OVERDUE';
+  bool get isPending => status == 'PENDING';
+  bool get isUpcoming => status == 'UPCOMING';
+  bool get isMedication => type == 'MEDICATION';
+  bool get isVideo => type == 'VIDEO';
+  bool get isTask => type == 'TASK';
+}
+
+class DynamicHomeAction {
+  final String type; // 'TAKE', 'WATCH', 'COMPLETE', 'VIEW'
+  final String label;
+
+  DynamicHomeAction({required this.type, required this.label});
+
+  factory DynamicHomeAction.fromJson(Map<String, dynamic> json) {
+    return DynamicHomeAction(
+      type: json['type'] as String? ?? 'VIEW',
+      label: json['label'] as String? ?? 'Ver',
+    );
+  }
+}
+
+class DynamicNextAppointment {
+  final String id;
+  final String date;
+  final String type;
+  final String title;
+
+  DynamicNextAppointment({
+    required this.id,
+    required this.date,
+    required this.type,
+    required this.title,
+  });
+
+  factory DynamicNextAppointment.fromJson(Map<String, dynamic> json) {
+    return DynamicNextAppointment(
+      id: json['id'] as String,
+      date: json['date'] as String,
+      type: json['type'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+    );
+  }
+}
+
 /// Estados de loading por seção
 class HomeSectionLoading {
   final bool consultas;
@@ -64,6 +199,10 @@ class HomeProvider extends ChangeNotifier {
   List<dynamic> _logsHoje = [];
   Map<String, dynamic> _adesaoData = {};
 
+  // Dados dinâmicos da Home (novo endpoint)
+  DynamicHomeData? _dynamicHomeData;
+  List<DynamicHomeItem> _dynamicItems = [];
+
   // ==================== GETTERS DE ESTADO ====================
 
   HomeStatus get status => _status;
@@ -93,6 +232,30 @@ class HomeProvider extends ChangeNotifier {
       _sectionLoading.medicacoes ||
       _sectionLoading.cuidados ||
       _sectionLoading.tarefas;
+
+  // ==================== GETTERS DA HOME DINÂMICA ====================
+
+  DynamicHomeData? get dynamicHomeData => _dynamicHomeData;
+  List<DynamicHomeItem> get dynamicItems => _dynamicItems;
+  String get dynamicGreeting => _dynamicHomeData?.greeting ?? 'Olá!';
+  int get dynamicDayPostOp => _dynamicHomeData?.dayPostOp ?? 0;
+  DynamicHomeSummary? get dynamicSummary => _dynamicHomeData?.summary;
+  DynamicNextAppointment? get dynamicNextAppointment => _dynamicHomeData?.nextAppointment;
+
+  // Filtros por tipo nos itens dinâmicos
+  List<DynamicHomeItem> get dynamicMedications =>
+      _dynamicItems.where((i) => i.isMedication).toList();
+  List<DynamicHomeItem> get dynamicVideos =>
+      _dynamicItems.where((i) => i.isVideo).toList();
+  List<DynamicHomeItem> get dynamicTasks =>
+      _dynamicItems.where((i) => i.isTask).toList();
+
+  // Itens urgentes (OVERDUE)
+  List<DynamicHomeItem> get urgentItems =>
+      _dynamicItems.where((i) => i.isOverdue).toList();
+
+  // Verifica se tem itens pendentes da API dinâmica
+  bool get hasDynamicData => _dynamicHomeData != null && _dynamicItems.isNotEmpty;
 
   /// Verifica se não há dados para exibir
   bool get isEmpty =>
@@ -237,6 +400,7 @@ class HomeProvider extends ChangeNotifier {
       await Future.wait([
         _carregarConsultas(),
         _carregarConteudo(),
+        _carregarHomeDinamica(),
       ]);
 
       // Aplica progresso salvo localmente
@@ -301,6 +465,22 @@ class HomeProvider extends ChangeNotifier {
         cuidados: false,
         tarefas: false,
       );
+    }
+  }
+
+  /// Carrega dados da Home dinâmica (novo endpoint)
+  Future<void> _carregarHomeDinamica() async {
+    try {
+      final response = await _apiService.get('/patient/home');
+
+      if (response.statusCode == 200 && response.data != null) {
+        _dynamicHomeData = DynamicHomeData.fromJson(response.data as Map<String, dynamic>);
+        _dynamicItems = _dynamicHomeData?.items ?? [];
+        debugPrint('✅ Home dinâmica carregada: ${_dynamicItems.length} itens');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Erro ao carregar home dinâmica (usando dados locais): $e');
+      // Não lança erro - fallback para dados locais
     }
   }
 
@@ -521,6 +701,122 @@ class HomeProvider extends ChangeNotifier {
     );
   }
 
+  // ==================== AÇÕES DA HOME DINÂMICA ====================
+
+  /// Marca medicação como tomada (via Home dinâmica)
+  Future<bool> takeDynamicMedication(DynamicHomeItem item) async {
+    if (!item.isMedication) return false;
+
+    final contentId = item.metadata?['contentId'] as String?;
+    final scheduledTime = item.metadata?['scheduledTime'] as String? ?? item.scheduledTime;
+
+    if (contentId == null || scheduledTime == null) {
+      debugPrint('⚠️ Dados incompletos para tomar medicação');
+      return false;
+    }
+
+    try {
+      await _apiService.post('/patient/home/medication/take', data: {
+        'contentId': contentId,
+        'scheduledTime': scheduledTime,
+      });
+
+      // Remove item localmente (atualização otimista)
+      _dynamicItems = _dynamicItems.where((i) => i.id != item.id).toList();
+      notifyListeners();
+
+      debugPrint('✅ Medicação tomada: ${item.title}');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Erro ao tomar medicação: $e');
+      return false;
+    }
+  }
+
+  /// Completa uma tarefa (via Home dinâmica)
+  Future<bool> completeDynamicTask(DynamicHomeItem item, {String? notes}) async {
+    if (!item.isTask) return false;
+
+    final taskId = item.metadata?['taskId'] as String?;
+
+    if (taskId == null) {
+      debugPrint('⚠️ TaskId não encontrado');
+      return false;
+    }
+
+    try {
+      await _apiService.post('/patient/home/task/complete', data: {
+        'taskId': taskId,
+        if (notes != null) 'notes': notes,
+      });
+
+      // Remove item localmente
+      _dynamicItems = _dynamicItems.where((i) => i.id != item.id).toList();
+      notifyListeners();
+
+      debugPrint('✅ Tarefa completada: ${item.title}');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Erro ao completar tarefa: $e');
+      return false;
+    }
+  }
+
+  /// Atualiza progresso de vídeo (via Home dinâmica)
+  Future<bool> updateDynamicVideoProgress(
+    DynamicHomeItem item, {
+    required int watchedSeconds,
+    required int totalSeconds,
+    bool? isCompleted,
+  }) async {
+    if (!item.isVideo) return false;
+
+    final contentId = item.metadata?['contentId'] as String?;
+
+    if (contentId == null) {
+      debugPrint('⚠️ ContentId não encontrado para vídeo');
+      return false;
+    }
+
+    try {
+      await _apiService.post('/patient/home/video/progress', data: {
+        'contentId': contentId,
+        'watchedSeconds': watchedSeconds,
+        'totalSeconds': totalSeconds,
+        if (isCompleted != null) 'isCompleted': isCompleted,
+      });
+
+      // Se completou, remove da lista
+      if (isCompleted == true || (watchedSeconds / totalSeconds) >= 0.9) {
+        _dynamicItems = _dynamicItems.where((i) => i.id != item.id).toList();
+        notifyListeners();
+      }
+
+      debugPrint('✅ Progresso do vídeo atualizado: ${item.title}');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Erro ao atualizar progresso do vídeo: $e');
+      return false;
+    }
+  }
+
+  /// Executa ação de um item dinâmico baseado no tipo
+  Future<bool> executeDynamicAction(DynamicHomeItem item) async {
+    switch (item.type) {
+      case 'MEDICATION':
+        return takeDynamicMedication(item);
+      case 'TASK':
+        return completeDynamicTask(item);
+      case 'VIDEO':
+        // Vídeo requer parâmetros adicionais, retorna false
+        debugPrint('⚠️ Para vídeo, use updateDynamicVideoProgress');
+        return false;
+      default:
+        debugPrint('⚠️ Tipo de item não suportado: ${item.type}');
+        return false;
+    }
+  }
+
   // ==================== REFRESH E RESET ====================
 
   Future<void> refresh() async {
@@ -530,6 +826,7 @@ class HomeProvider extends ChangeNotifier {
       await Future.wait([
         _carregarConsultas(),
         _carregarConteudo(),
+        _carregarHomeDinamica(),
       ]);
 
       // Reaplicar progresso local
@@ -560,6 +857,8 @@ class HomeProvider extends ChangeNotifier {
     _tarefasRaw = [];
     _logsHoje = [];
     _adesaoData = {};
+    _dynamicHomeData = null;
+    _dynamicItems = [];
 
     // Limpa progresso local
     _storage.clearAllProgress();

@@ -21,6 +21,7 @@ import { WebsocketModule } from './websocket/websocket.module';
 import { ExternalEventsModule } from './modules/external-events/external-events.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { QueueModule } from './modules/queue/queue.module';
+import { HomeModule } from './modules/home/home.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { QueueModule } from './modules/queue/queue.module';
     ExternalEventsModule,
     StorageModule,
     QueueModule,
+    HomeModule,
   ],
   controllers: [],
   providers: [

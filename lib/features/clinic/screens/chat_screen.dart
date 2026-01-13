@@ -14,7 +14,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  int _selectedTabIndex = 0; // 0 = IA, 1 = Clínico, 2 = Atendimento, 3 = Agendamentos
+  int _selectedTabIndex = 0; // 0 = IA, 1 = Clínico (atendimento humano), 2 = Agenda
   final int _selectedNavIndex = 2; // Chat tab
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -218,17 +218,15 @@ class _ChatScreenState extends State<ChatScreen> {
       case 0:
         return _buildIAChatContent();
       case 1:
-        return _buildClinicoPatientsContent();
+        return _buildAtendimentoContent(); // Clínico (atendimento humano)
       case 2:
-        return _buildAtendimentoContent();
-      case 3:
         return _buildAgendamentosContent();
       default:
         return _buildIAChatContent();
     }
   }
 
-  /// Tab Bar com 4 abas
+  /// Tab Bar com 3 abas
   Widget _buildTabBar() {
     return Container(
       width: double.infinity,
@@ -256,28 +254,19 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: _buildTab(
               index: 1,
-              icon: Icons.medical_services_outlined,
+              icon: Icons.support_agent,
               label: 'Clínico',
               isActive: _selectedTabIndex == 1,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _buildTab(
-              index: 2,
-              icon: Icons.support_agent,
-              label: 'Atendimento',
-              isActive: _selectedTabIndex == 2,
               badgeCount: _humanConversationsCount,
             ),
           ),
           const SizedBox(width: 6),
           Expanded(
             child: _buildTab(
-              index: 3,
+              index: 2,
               icon: Icons.calendar_today_outlined,
               label: 'Agenda',
-              isActive: _selectedTabIndex == 3,
+              isActive: _selectedTabIndex == 2,
             ),
           ),
         ],
@@ -1108,7 +1097,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   SizedBox(width: 8),
                   Text(
-                    'Atendimento Humano',
+                    'Atendimento Clínico',
                     style: TextStyle(
                       color: Color(0xFF212621),
                       fontSize: 16,

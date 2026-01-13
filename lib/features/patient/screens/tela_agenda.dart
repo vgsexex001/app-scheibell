@@ -56,7 +56,7 @@ class _TelaAgendaState extends State<TelaAgenda> {
   }
 
   void _navegarParaAgendamento(String tipo, String titulo, String disponibilidade) {
-    Navigator.push(
+    Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => TelaSelecaoData(
@@ -66,7 +66,12 @@ class _TelaAgendaState extends State<TelaAgenda> {
           dataCirurgia: _dataCirurgia,
         ),
       ),
-    );
+    ).then((result) {
+      if (result == true && mounted) {
+        // Agendamento criado com sucesso, volta para AgendaPage
+        Navigator.of(context).pop(true);
+      }
+    });
   }
 
   @override

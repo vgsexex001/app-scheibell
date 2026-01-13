@@ -626,13 +626,14 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
           ),
           const SizedBox(height: 16),
           Container(
-            height: 42,
+            height: 44,
             decoration: BoxDecoration(
               color: const Color(0xFFF9FAFB),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: const Color(0xFFD0D5DB)),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(width: 12),
                 const Icon(Icons.search, color: Color(0xFF697282), size: 20),
@@ -640,18 +641,21 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
                 Expanded(
                   child: TextField(
                     controller: _buscaController,
+                    textAlignVertical: TextAlignVertical.center,
                     decoration: const InputDecoration(
-                      hintText: 'Buscar sintomas, atividades, alimentos...',
+                      hintText: 'Buscar sintomas, atividades...',
                       hintStyle: TextStyle(
                         color: Color(0xFF697282),
                         fontSize: 14,
                         fontWeight: FontWeight.w400,
                       ),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 10),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
+                const SizedBox(width: 12),
               ],
             ),
           ),

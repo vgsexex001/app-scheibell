@@ -12,6 +12,7 @@ import '../widgets/agenda_skeleton.dart';
 import 'appointment_detail_page.dart';
 import 'external_event_form_page.dart';
 import 'appointment_form_page.dart';
+import '../../../../features/patient/screens/tela_agenda.dart';
 
 /// Página principal da Agenda
 class AgendaPage extends StatefulWidget {
@@ -74,54 +75,18 @@ class _AgendaPageState extends State<AgendaPage> {
 
   void _showAddOptions() {
     final controller = context.read<AgendaController>();
-    final externalEventsAvailable = controller.isExternalEventsAvailable;
+    final navigator = Navigator.of(context);
 
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.medical_services),
-              title: const Text('Novo Agendamento'),
-              subtitle: const Text('Consultas e retornos'),
-              onTap: () {
-                Navigator.of(context).pop();
-                _navigateToAppointmentForm();
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.event_note,
-                color: externalEventsAvailable ? null : Colors.grey,
-              ),
-              title: Text(
-                'Novo Evento Externo',
-                style: TextStyle(
-                  color: externalEventsAvailable ? null : Colors.grey,
-                ),
-              ),
-              subtitle: Text(
-                externalEventsAvailable
-                    ? 'Fisioterapia, exames, etc'
-                    : 'Indisponível no momento',
-                style: TextStyle(
-                  color: externalEventsAvailable ? null : Colors.grey,
-                ),
-              ),
-              enabled: externalEventsAvailable,
-              onTap: externalEventsAvailable
-                  ? () {
-                      Navigator.of(context).pop();
-                      _navigateToExternalEventForm();
-                    }
-                  : null,
-            ),
-          ],
-        ),
+    // Navega para TelaAgenda com os tipos de agendamento (Splint, Fisioterapia, Consulta)
+    navigator.push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const TelaAgenda(),
       ),
-    );
+    ).then((result) {
+      if (result == true && mounted) {
+        controller.refresh();
+      }
+    });
   }
 
   void _navigateToAppointmentForm() {

@@ -8,7 +8,7 @@
   import 'tela_medicamentos.dart';
   import 'tela_chatbot.dart';
   import 'tela_recuperacao.dart';
-  import '../../../features/agenda/presentation/pages/agenda_page.dart';
+  import 'tela_agendar.dart';
   import 'tela_perfil.dart';
 
   /// Tela principal com navegacao por tabs usando IndexedStack
@@ -223,8 +223,8 @@
             const TelaChatbot(),
             // Tab 2: Recuperacao
             const TelaRecuperacao(),
-            // Tab 3: Agenda
-            const AgendaPage(),
+            // Tab 3: Agenda (tela de seleção de tipo de agendamento)
+            const TelaAgendar(),
             // Tab 4: Perfil
             const TelaPerfil(),
           ],
@@ -611,9 +611,9 @@
               children: [
                 Expanded(
                   child: AcaoRapidaCard(
-                    icon: Icons.medication,
-                    titulo: 'Medicacoes',
-                    subtitulo: 'Gerenciar remedios',
+                    icon: Icons.timeline,
+                    titulo: 'Timeline',
+                    subtitulo: 'Ver medicacoes',
                     gradientColors: const [_textPrimary, _primaryDark],
                     onTap: () {
                       Navigator.push(
@@ -737,73 +737,61 @@
 
     Widget _buildBottomNavBar() {
       return Container(
-        margin: const EdgeInsets.only(left: 24, right: 24, bottom: 16),
-        height: 68,
+        margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
+        height: 64,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(69),
+          borderRadius: BorderRadius.circular(32),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 10,
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 12,
               offset: const Offset(0, -2),
             ),
           ],
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildNavItem(Icons.home, 'Home', 0),
-            _buildNavItem(Icons.chat_bubble_outline, 'Chatbot', 1),
-            _buildNavItem(Icons.favorite_border, 'Recuperacao', 2),
-            _buildNavItem(Icons.calendar_today, 'Agenda', 3),
-            _buildNavItem(Icons.person_outline, 'Perfil', 4),
+            _buildNavItem(Icons.home_outlined, Icons.home, 'Home', 0),
+            _buildNavItem(Icons.chat_bubble_outline, Icons.chat_bubble, 'Chat', 1),
+            _buildNavItem(Icons.favorite_outline, Icons.favorite, 'Recuperação', 2),
+            _buildNavItem(Icons.calendar_today_outlined, Icons.calendar_today, 'Agenda', 3),
+            _buildNavItem(Icons.person_outline, Icons.person, 'Perfil', 4),
           ],
         ),
       );
     }
 
-    Widget _buildNavItem(IconData icon, String label, int index) {
+    Widget _buildNavItem(IconData iconOutline, IconData iconFilled, String label, int index) {
       final isActive = _selectedIndex == index;
-      return Semantics(
-        button: true,
-        label: label,
-        selected: isActive,
-        child: GestureDetector(
-          onTap: () => _onItemTapped(index),
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            width: 60,
+      return Expanded(
+        child: Semantics(
+          button: true,
+          label: label,
+          selected: isActive,
+          child: GestureDetector(
+            onTap: () => _onItemTapped(index),
+            behavior: HitTestBehavior.opaque,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  icon,
-                  size: 24,
-                  color: isActive ? _textPrimary : _navInactive,
+                  isActive ? iconFilled : iconOutline,
+                  size: 22,
+                  color: isActive ? _primaryDark : _navInactive,
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                    color: isActive ? _textPrimary : _navInactive,
-                  ),
-                ),
-                if (isActive)
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    width: 40,
-                    height: 4,
-                    decoration: const BoxDecoration(
-                      color: _primaryDark,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(999),
-                        topRight: Radius.circular(999),
-                      ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                      color: isActive ? _primaryDark : _navInactive,
                     ),
                   ),
+                ),
               ],
             ),
           ),

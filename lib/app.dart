@@ -8,6 +8,7 @@ import 'features/patient/providers/recovery_provider.dart';
 import 'features/patient/providers/home_provider.dart';
 import 'features/chatbot/presentation/controller/chat_controller.dart';
 import 'features/agenda/presentation/controller/agenda_controller.dart';
+import 'features/agenda/providers/appointment_provider.dart';
 import 'features/recovery/presentation/controller/recovery_controller.dart';
 import 'features/clinic/providers/clinic_content_provider.dart';
 import 'features/clinic/providers/calendar_provider.dart';
@@ -39,6 +40,7 @@ class _AppState extends State<App> {
         ChangeNotifierProvider(create: (_) => BrandingProvider()),
         ChangeNotifierProvider(create: (_) => RecoveryProvider()),
         ChangeNotifierProvider(create: (_) => HomeProvider()),
+        ChangeNotifierProvider(create: (_) => AppointmentProvider()),
         ChangeNotifierProvider(create: (_) => RecoveryController()),
         ChangeNotifierProvider(create: (_) => ChatController()..addWelcomeMessage()),
         ChangeNotifierProvider(create: (_) => AgendaController()),

@@ -1,33 +1,45 @@
-/// Status de um agendamento
+import 'package:flutter/material.dart';
+
+/// Status de um agendamento (Supabase enum)
 enum AppointmentStatus {
-  confirmed,
   pending,
+  confirmed,
+  inProgress,
+  completed,
   cancelled,
-  completed;
+  noShow;
 
   String get apiValue {
     switch (this) {
-      case AppointmentStatus.confirmed:
-        return 'CONFIRMED';
       case AppointmentStatus.pending:
         return 'PENDING';
-      case AppointmentStatus.cancelled:
-        return 'CANCELLED';
+      case AppointmentStatus.confirmed:
+        return 'CONFIRMED';
+      case AppointmentStatus.inProgress:
+        return 'IN_PROGRESS';
       case AppointmentStatus.completed:
         return 'COMPLETED';
+      case AppointmentStatus.cancelled:
+        return 'CANCELLED';
+      case AppointmentStatus.noShow:
+        return 'NO_SHOW';
     }
   }
 
   static AppointmentStatus fromApi(String value) {
     switch (value.toUpperCase()) {
-      case 'CONFIRMED':
-        return AppointmentStatus.confirmed;
       case 'PENDING':
         return AppointmentStatus.pending;
-      case 'CANCELLED':
-        return AppointmentStatus.cancelled;
+      case 'CONFIRMED':
+        return AppointmentStatus.confirmed;
+      case 'IN_PROGRESS':
+        return AppointmentStatus.inProgress;
       case 'COMPLETED':
         return AppointmentStatus.completed;
+      case 'CANCELLED':
+        return AppointmentStatus.cancelled;
+      case 'NO_SHOW':
+        return AppointmentStatus.noShow;
       default:
         return AppointmentStatus.pending;
     }
@@ -35,19 +47,42 @@ enum AppointmentStatus {
 
   String get displayName {
     switch (this) {
+      case AppointmentStatus.pending:
+        return 'Aguardando';
       case AppointmentStatus.confirmed:
         return 'Confirmado';
-      case AppointmentStatus.pending:
-        return 'Pendente';
+      case AppointmentStatus.inProgress:
+        return 'Em andamento';
+      case AppointmentStatus.completed:
+        return 'Concluído';
       case AppointmentStatus.cancelled:
         return 'Cancelado';
-      case AppointmentStatus.completed:
-        return 'Realizado';
+      case AppointmentStatus.noShow:
+        return 'Não compareceu';
     }
   }
+
+  Color get color {
+    switch (this) {
+      case AppointmentStatus.pending:
+        return const Color(0xFFFF9800);
+      case AppointmentStatus.confirmed:
+        return const Color(0xFF4CAF50);
+      case AppointmentStatus.inProgress:
+        return const Color(0xFF2196F3);
+      case AppointmentStatus.completed:
+        return const Color(0xFF9E9E9E);
+      case AppointmentStatus.cancelled:
+        return const Color(0xFFF44336);
+      case AppointmentStatus.noShow:
+        return const Color(0xFF795548);
+    }
+  }
+
+  bool get canCancel => this == pending || this == confirmed;
 }
 
-/// Tipo de agendamento
+/// Tipo de agendamento (Prisma enum)
 /// Backend enum: CONSULTATION, RETURN_VISIT, EVALUATION, PHYSIOTHERAPY, EXAM, OTHER
 enum AppointmentType {
   consultation,
@@ -100,13 +135,49 @@ enum AppointmentType {
       case AppointmentType.returnVisit:
         return 'Retorno';
       case AppointmentType.evaluation:
-        return 'Avaliação';
+        return 'Retirada de Splint';
       case AppointmentType.physiotherapy:
         return 'Fisioterapia';
       case AppointmentType.exam:
         return 'Exame';
       case AppointmentType.other:
         return 'Outro';
+    }
+  }
+
+  /// Gradiente de cor para cada tipo
+  List<Color> get gradientColors {
+    switch (this) {
+      case AppointmentType.consultation:
+        return const [Color(0xFF2B7FFF), Color(0xFF155CFB)]; // Azul
+      case AppointmentType.returnVisit:
+        return const [Color(0xFF00C850), Color(0xFF00A63D)]; // Verde
+      case AppointmentType.evaluation:
+        return const [Color(0xFFFF9800), Color(0xFFF57C00)]; // Laranja
+      case AppointmentType.physiotherapy:
+        return const [Color(0xFFAC46FF), Color(0xFF980FFA)]; // Roxo
+      case AppointmentType.exam:
+        return const [Color(0xFF00BCD4), Color(0xFF0097A7)]; // Ciano
+      case AppointmentType.other:
+        return const [Color(0xFF9E9E9E), Color(0xFF757575)]; // Cinza
+    }
+  }
+
+  /// Ícone para cada tipo
+  IconData get icon {
+    switch (this) {
+      case AppointmentType.consultation:
+        return Icons.medical_services_outlined;
+      case AppointmentType.returnVisit:
+        return Icons.event_repeat;
+      case AppointmentType.evaluation:
+        return Icons.healing;
+      case AppointmentType.physiotherapy:
+        return Icons.spa;
+      case AppointmentType.exam:
+        return Icons.science;
+      case AppointmentType.other:
+        return Icons.event_note;
     }
   }
 }
@@ -177,14 +248,18 @@ class Appointment {
     required this.updatedAt,
   });
 
+  bool get isConsultation => type == AppointmentType.consultation;
   bool get isReturnVisit => type == AppointmentType.returnVisit;
   bool get isEvaluation => type == AppointmentType.evaluation;
   bool get isPhysiotherapy => type == AppointmentType.physiotherapy;
   bool get isExam => type == AppointmentType.exam;
   bool get isPending => status == AppointmentStatus.pending;
   bool get isConfirmed => status == AppointmentStatus.confirmed;
-  bool get isCancelled => status == AppointmentStatus.cancelled;
+  bool get isInProgress => status == AppointmentStatus.inProgress;
   bool get isCompleted => status == AppointmentStatus.completed;
+  bool get isCancelled => status == AppointmentStatus.cancelled;
+  bool get isNoShow => status == AppointmentStatus.noShow;
+  bool get canCancel => status.canCancel;
 
   DateTime get dateTime {
     final parts = time.split(':');

@@ -262,6 +262,11 @@ class _TelaHomeState extends State<TelaHome> {
         children: [
           _buildHeader(provider, size),
           const SizedBox(height: 24),
+          // Itens dinâmicos pendentes (se houver)
+          if (provider.dynamicItems.isNotEmpty)
+            _buildDynamicItemsSection(provider),
+          if (provider.dynamicItems.isNotEmpty)
+            const SizedBox(height: 24),
           _buildConsultasSection(provider),
           const SizedBox(height: 24),
           _buildTopActionCards(),
@@ -570,9 +575,9 @@ class _TelaHomeState extends State<TelaHome> {
             children: [
               Expanded(
                 child: AcaoRapidaCard(
-                  icon: Icons.medication,
-                  titulo: 'Medicacoes',
-                  subtitulo: 'Gerenciar remedios',
+                  icon: Icons.timeline,
+                  titulo: 'Timeline',
+                  subtitulo: 'Ver medicacoes',
                   gradientColors: const [_textPrimary, _primaryDark],
                   onTap: () {
                     Navigator.push(
@@ -694,6 +699,25 @@ class _TelaHomeState extends State<TelaHome> {
       child: ScoreCard(
         score: provider.scoreSaude,
         mensagem: provider.mensagemScore,
+      ),
+    );
+  }
+
+  Widget _buildDynamicItemsSection(HomeProvider provider) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: new_widgets.DynamicItemsWidget(
+        items: provider.dynamicItems,
+        isLoading: provider.isLoading,
+        onAction: (item) => provider.executeDynamicAction(item),
+        onVideoTap: (item) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Abrindo video: ${item.title}'),
+              backgroundColor: _primaryDark,
+            ),
+          );
+        },
       ),
     );
   }

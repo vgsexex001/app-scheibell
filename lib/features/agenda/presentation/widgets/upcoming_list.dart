@@ -90,6 +90,14 @@ class _EventCard extends StatelessWidget {
           accentColor = Colors.blue;
           icon = Icons.task_alt;
           break;
+        case AppointmentStatus.inProgress:
+          accentColor = Colors.teal;
+          icon = Icons.play_circle_outline;
+          break;
+        case AppointmentStatus.noShow:
+          accentColor = Colors.grey;
+          icon = Icons.person_off;
+          break;
       }
     } else {
       accentColor = theme.colorScheme.tertiary;

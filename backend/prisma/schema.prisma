@@ -273,6 +273,10 @@ model Patient {
   // External Events
   externalEvents       ExternalEvent[]
 
+  // Home Dinâmica
+  videoProgress        VideoProgress[]
+  tasks                PatientTask[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?  // Soft delete
@@ -959,6 +963,138 @@ model ExternalEvent {
   @@index([patientId])
   @@index([patientId, date])
   @@map("external_events")
+}
+
+// ==================== HOME DINÂMICA - PROGRESSO DE VÍDEO ====================
+
+model VideoProgress {
+  id              String    @id @default(uuid())
+
+  patientId       String
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  contentId       String    // Referência ao ClinicContent do vídeo
+
+  // Progresso
+  watchedSeconds  Int       @default(0)    // Segundos assistidos
+  totalSeconds    Int                       // Duração total do vídeo
+  progressPercent Float     @default(0)    // 0-100%
+  isCompleted     Boolean   @default(false)
+
+  // Timestamps
+  lastWatchedAt   DateTime  @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([patientId, contentId])
+  @@index([patientId])
+  @@index([contentId])
+  @@index([patientId, isCompleted])
+  @@map("video_progress")
+}
+
+// ==================== HOME DINÂMICA - TAREFAS DO PACIENTE ====================
+
+enum TaskCategory {
+  CARE          // Cuidados pós-operatórios
+  MEDICATION    // Relacionado a medicação
+  EXERCISE      // Exercícios/Fisioterapia
+  DIET          // Alimentação
+  HYGIENE       // Higiene
+  REST          // Descanso
+  APPOINTMENT   // Lembrete de consulta
+  CUSTOM        // Personalizado
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  PENDING       // Aguardando
+  IN_PROGRESS   // Em andamento
+  COMPLETED     // Concluída
+  SKIPPED       // Pulada
+  OVERDUE       // Atrasada
+}
+
+enum TaskSource {
+  CLINIC        // Criada pela clínica
+  SYSTEM        // Gerada automaticamente
+  PATIENT       // Criada pelo paciente
+  TRAINING      // Derivada do protocolo de treino
+}
+
+model PatientTask {
+  id              String        @id @default(uuid())
+
+  patientId       String
+  patient         Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  clinicId        String
+
+  // Dados da tarefa
+  title           String
+  description     String?
+  category        TaskCategory  @default(CARE)
+  priority        TaskPriority  @default(MEDIUM)
+
+  // Agendamento
+  scheduledDate   DateTime?     // Data específica (null = recorrente)
+  scheduledTime   String?       // Horário "HH:mm"
+  dueDate         DateTime?     // Prazo final
+
+  // Recorrência
+  isRecurring     Boolean       @default(false)
+  recurrenceRule  String?       // "DAILY", "WEEKLY:MON,WED,FRI", etc
+
+  // Validade por dia pós-op (como ClinicContent)
+  validFromDay    Int?
+  validUntilDay   Int?
+
+  // Status
+  status          TaskStatus    @default(PENDING)
+  completedAt     DateTime?
+  completedNote   String?
+
+  // Origem
+  sourceType      TaskSource    @default(CLINIC)
+  sourceId        String?       // ID do ClinicContent ou TrainingSession
+
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relações
+  completionLogs  TaskCompletionLog[]
+
+  @@index([patientId, status])
+  @@index([patientId, scheduledDate])
+  @@index([clinicId])
+  @@map("patient_tasks")
+}
+
+// ==================== HOME DINÂMICA - LOG DE CONCLUSÃO DE TAREFAS ====================
+
+model TaskCompletionLog {
+  id            String      @id @default(uuid())
+
+  taskId        String
+  task          PatientTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  patientId     String
+
+  completedAt   DateTime    @default(now())
+  scheduledFor  DateTime    // Para qual dia foi completada
+  notes         String?
+
+  @@index([patientId, scheduledFor])
+  @@index([taskId])
+  @@map("task_completion_logs")
 }
 
 // ==================== JOB QUEUE (Fila de Jobs Async) ====================

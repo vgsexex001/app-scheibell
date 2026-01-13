@@ -539,68 +539,93 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
   // ========== CARD TIMELINE ==========
   Widget _buildCardTimeline() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 0),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFFC8C2B4),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x3F000000),
-            blurRadius: 4,
-            offset: Offset(0, 4),
+            color: Color(0x19212621),
+            blurRadius: 6,
+            offset: Offset(0, 3),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Título
-          const Padding(
-            padding: EdgeInsets.only(left: 24, top: 16),
-            child: Text(
-              'Timeline do dia',
-              style: TextStyle(
-                color: Color(0xFF212621),
-                fontSize: 14,
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w600,
-                height: 1.40,
+          // Título e hora atual
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Timeline do dia',
+                style: TextStyle(
+                  color: Color(0xFF212621),
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF212621),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Agora: ${_horaAtual.toString().padLeft(2, '0')}:00',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
-          // Timeline horizontal
+          // Timeline horizontal com linha do tempo
           SizedBox(
-            height: 56,
-            child: ListView.builder(
-              controller: _timelineController,
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              itemCount: 24,
-              itemBuilder: (context, index) {
-                return _buildItemTimeline(index);
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Legenda
-          Padding(
-            padding: const EdgeInsets.only(left: 24, bottom: 16),
-            child: Row(
+            height: 80,
+            child: Stack(
               children: [
-                _buildLegendaItem(const Color(0xFF4CAF50), 'Tomado'),
-                const SizedBox(width: 16),
-                _buildLegendaItem(const Color(0xFF155DFC), 'Próxima'),
-                const SizedBox(width: 16),
-                _buildLegendaItem(const Color(0xFFE7000B), 'Perdida'),
+                // Linha horizontal de fundo
+                Positioned(
+                  top: 20,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    height: 2,
+                    color: const Color(0xFFE0E0E0),
+                  ),
+                ),
+                // Lista de horas
+                ListView.builder(
+                  controller: _timelineController,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  itemCount: 24,
+                  itemBuilder: (context, index) {
+                    return _buildItemTimeline(index);
+                  },
+                ),
               ],
             ),
+          ),
+
+          // Legenda compacta
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLegendaItem(const Color(0xFF4CAF50), 'Tomado'),
+              const SizedBox(width: 20),
+              _buildLegendaItem(const Color(0xFF155DFC), 'Próxima'),
+              const SizedBox(width: 20),
+              _buildLegendaItem(const Color(0xFFE7000B), 'Perdida'),
+            ],
           ),
         ],
       ),
@@ -612,108 +637,84 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
     final StatusDose? statusMedicacao = _timelineHorarios[hora];
     final bool temMedicacao = statusMedicacao != null;
 
-    // Cores da legenda
-    const corTomado = Color(0xFF4CAF50);     // Verde
-    const corProxima = Color(0xFF155DFC);    // Azul
-    const corPerdida = Color(0xFFE7000B);    // Vermelho
-    const corPendente = Color(0xFFC8C2B4);   // Cinza claro
+    // Cores
+    const corTomado = Color(0xFF4CAF50);
+    const corProxima = Color(0xFF155DFC);
+    const corPerdida = Color(0xFFE7000B);
+    const corPendente = Color(0xFFC8C2B4);
 
-    // Determinar estilo baseado no estado
-    Color corFundo;
-    Color corTexto;
-    Color corIndicador;
-    double tamanho;
-    bool mostrarIndicador = false;
-
-    if (isHoraAtual) {
-      // Hora atual - maior e com destaque
-      corFundo = const Color(0xFF212621);
-      corTexto = Colors.white;
-      tamanho = 44;
-      mostrarIndicador = temMedicacao;
-      corIndicador = temMedicacao ? _getCorStatus(statusMedicacao, corTomado, corProxima, corPerdida, corPendente) : corPendente;
-    } else if (temMedicacao) {
-      if (statusMedicacao == StatusDose.tomado) {
-        // Já tomado - Verde
-        corFundo = corTomado;
-        corTexto = Colors.white;
-        corIndicador = corTomado;
-      } else if (statusMedicacao == StatusDose.perdida) {
-        // Perdida - Vermelho
-        corFundo = corPerdida;
-        corTexto = Colors.white;
-        corIndicador = corPerdida;
-      } else if (statusMedicacao == StatusDose.proxima) {
-        // Próxima - Azul
-        corFundo = corProxima;
-        corTexto = Colors.white;
-        corIndicador = corProxima;
-      } else {
-        // Pendente futuro - fundo claro com borda
-        corFundo = const Color(0xFFF5F3EF);
-        corTexto = const Color(0xFF212621);
-        corIndicador = corPendente;
+    // Buscar nomes dos remédios para esse horário
+    List<String> remediosHora = [];
+    if (temMedicacao) {
+      final horaStr = hora.toString().padLeft(2, '0');
+      for (final med in _medicacoesApi) {
+        final descricao = med.description ?? '';
+        if (descricao.contains('$horaStr:')) {
+          remediosHora.add(med.title.split(' ').first); // Apenas primeiro nome
+        }
       }
-      tamanho = 40;
-      mostrarIndicador = true;
-    } else {
-      // Sem medicação
-      corFundo = Colors.transparent;
-      corTexto = const Color(0xFF4F4A34);
-      corIndicador = corPendente;
-      tamanho = 40;
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: GestureDetector(
-        onTap: temMedicacao ? () => _mostrarMedicacoesHora(hora, statusMedicacao) : null,
+    // Determinar cor do marcador
+    Color corMarcador;
+    if (isHoraAtual) {
+      corMarcador = const Color(0xFF212621);
+    } else if (temMedicacao) {
+      corMarcador = _getCorStatus(statusMedicacao!, corTomado, corProxima, corPerdida, corPendente);
+    } else {
+      corMarcador = const Color(0xFFE0E0E0);
+    }
+
+    return GestureDetector(
+      onTap: temMedicacao ? () => _mostrarMedicacoesHora(hora, statusMedicacao!) : null,
+      child: Container(
+        width: 48,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Container(
-              width: tamanho,
-              height: tamanho,
-              decoration: BoxDecoration(
-                color: corFundo,
-                borderRadius: BorderRadius.circular(tamanho / 2),
-                border: statusMedicacao == StatusDose.pendente && !isHoraAtual
-                    ? Border.all(color: corPendente, width: 2)
-                    : null,
-                boxShadow: temMedicacao || isHoraAtual
-                    ? const [
-                        BoxShadow(
-                          color: Color(0x19212621),
-                          blurRadius: 3,
-                          offset: Offset(0, 1),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Center(
-                child: Text(
-                  hora.toString().padLeft(2, '0'),
-                  style: TextStyle(
-                    color: corTexto,
-                    fontSize: 12,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w600,
-                    height: 1.30,
-                  ),
-                ),
+            // Hora
+            Text(
+              '${hora.toString().padLeft(2, '0')}h',
+              style: TextStyle(
+                color: isHoraAtual ? const Color(0xFF212621) : const Color(0xFF757575),
+                fontSize: 10,
+                fontWeight: isHoraAtual ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
-            if (mostrarIndicador) ...[
-              const SizedBox(height: 4),
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: corIndicador,
-                  borderRadius: BorderRadius.circular(4),
-                ),
+            const SizedBox(height: 4),
+            // Marcador na linha
+            Container(
+              width: isHoraAtual ? 16 : (temMedicacao ? 12 : 8),
+              height: isHoraAtual ? 16 : (temMedicacao ? 12 : 8),
+              decoration: BoxDecoration(
+                color: corMarcador,
+                shape: BoxShape.circle,
+                border: isHoraAtual ? Border.all(color: Colors.white, width: 2) : null,
+                boxShadow: isHoraAtual || temMedicacao
+                    ? [BoxShadow(color: corMarcador.withValues(alpha: 0.4), blurRadius: 4, offset: const Offset(0, 2))]
+                    : null,
               ),
-            ],
+            ),
+            const SizedBox(height: 6),
+            // Nome do remédio (compacto)
+            if (remediosHora.isNotEmpty)
+              SizedBox(
+                height: 32,
+                child: Column(
+                  children: remediosHora.take(2).map((nome) => Text(
+                    nome,
+                    style: TextStyle(
+                      color: _getCorStatus(statusMedicacao!, corTomado, corProxima, corPerdida, corPendente),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  )).toList(),
+                ),
+              )
+            else
+              const SizedBox(height: 32),
           ],
         ),
       ),
@@ -1221,7 +1222,7 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
   }
 }
 
-// ========== CARD DE MEDICAÇÃO ==========
+// ========== CARD DE MEDICAÇÃO COMPACTO ==========
 class _CardMedicacao extends StatelessWidget {
   final Medicacao medicacao;
   final bool isFirst;
@@ -1235,292 +1236,78 @@ class _CardMedicacao extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: isFirst && medicacao.tomadoHoje ? 0.6 : 1.0,
+    final tomado = medicacao.tomadoHoje;
+
+    return GestureDetector(
+      onTap: tomado ? null : onMarcarTomado,
       child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: const Color(0xFF212621),
-            width: 4,
+            color: tomado ? const Color(0xFF4CAF50) : const Color(0xFFE0E0E0),
+            width: tomado ? 2 : 1,
           ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x19212621),
-              blurRadius: 6,
-              offset: Offset(0, 3),
-            ),
-            BoxShadow(
-              color: Color(0x14212621),
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Ícone circular
+            // Ícone do status
             Container(
-              width: 48,
-              height: 48,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
-                color: const Color(0x19212621),
-                borderRadius: BorderRadius.circular(24),
+                color: tomado
+                    ? const Color(0xFF4CAF50).withValues(alpha: 0.1)
+                    : const Color(0xFFF5F3EF),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
-                Icons.medication_outlined,
-                color: Color(0xFF212621),
+              child: Icon(
+                tomado ? Icons.check : Icons.medication_outlined,
+                color: tomado ? const Color(0xFF4CAF50) : const Color(0xFF4F4A34),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Nome do remédio
+            Expanded(
+              child: Text(
+                medicacao.nome,
+                style: TextStyle(
+                  color: tomado ? const Color(0xFF757575) : const Color(0xFF212621),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  decoration: tomado ? TextDecoration.lineThrough : null,
+                ),
+              ),
+            ),
+            // Indicador de ação
+            if (!tomado)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF212621),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Tomar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF4CAF50),
                 size: 24,
               ),
-            ),
-            const SizedBox(width: 16),
-
-            // Conteúdo
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Linha 1: Nome + Badge frequência
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${medicacao.nome} ${medicacao.dosagem}',
-                              style: const TextStyle(
-                                color: Color(0xFF212621),
-                                fontSize: 16,
-                                fontFamily: 'Inter',
-                                fontWeight: FontWeight.w600,
-                                height: 1.40,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              medicacao.forma,
-                              style: const TextStyle(
-                                color: Color(0xFF4F4A34),
-                                fontSize: 14,
-                                fontFamily: 'Inter',
-                                fontWeight: FontWeight.w400,
-                                height: 1.50,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Badge frequência
-                      Container(
-                        height: 24,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF212621),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Center(
-                          child: Text(
-                            medicacao.frequencia,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontFamily: 'Inter',
-                              fontWeight: FontWeight.w600,
-                              height: 1.30,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Caixa próxima dose
-                  if (medicacao.proximaDose != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5F3EF),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.access_time,
-                            color: Color(0xFF212621),
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Próxima dose: ',
-                            style: TextStyle(
-                              color: Color(0xFF212621),
-                              fontSize: 14,
-                              fontFamily: 'Inter',
-                              fontWeight: FontWeight.w400,
-                              height: 1.50,
-                            ),
-                          ),
-                          Text(
-                            medicacao.proximaDose!,
-                            style: const TextStyle(
-                              color: Color(0xFF212621),
-                              fontSize: 14,
-                              fontFamily: 'Inter',
-                              fontWeight: FontWeight.w600,
-                              height: 1.50,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-
-                  // Tags de horário
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: medicacao.horarios.map((horario) {
-                      return Container(
-                        height: 25,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: const Color(0xFFC8C2B4),
-                            width: 1,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            horario.horario,
-                            style: const TextStyle(
-                              color: Color(0xFF212621),
-                              fontSize: 12,
-                              fontFamily: 'Inter',
-                              fontWeight: FontWeight.w600,
-                              height: 1.30,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  // Dica
-                  if (medicacao.dica != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      '💡 ${medicacao.dica}',
-                      style: const TextStyle(
-                        color: Color(0xFF4F4A34),
-                        fontSize: 12,
-                        fontFamily: 'Inter',
-                        fontWeight: FontWeight.w400,
-                        height: 1.50,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-
-                  // Botão de ação
-                  _buildBotaoAcao(),
-                ],
-              ),
-            ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildBotaoAcao() {
-    if (isFirst && medicacao.tomadoHoje) {
-      // Já tomado - botão com opacity
-      return Opacity(
-        opacity: 0.5,
-        child: Container(
-          width: double.infinity,
-          height: 48,
-          decoration: BoxDecoration(
-            color: const Color(0xFFE9DABB),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.check,
-                color: Color(0xFF4F4A34),
-                size: 16,
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Tomado!',
-                style: TextStyle(
-                  color: Color(0xFF4F4A34),
-                  fontSize: 14,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w500,
-                  height: 1.43,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else {
-      // Botão ativo para marcar como tomado
-      return GestureDetector(
-        onTap: onMarcarTomado,
-        child: Container(
-          width: double.infinity,
-          height: 48,
-          decoration: BoxDecoration(
-            color: const Color(0xFF212621),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x19212621),
-                blurRadius: 3,
-                offset: Offset(0, 1),
-              ),
-            ],
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.check_circle_outline,
-                color: Colors.white,
-                size: 16,
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Marcar como tomado',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w500,
-                  height: 1.43,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
   }
 }
 
