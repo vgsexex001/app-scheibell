@@ -38,6 +38,28 @@ export class AdminController {
   }
 
   /**
+   * Retorna agendamentos do mês para o calendário
+   * GET /api/admin/calendar
+   */
+  @Get('calendar')
+  async getCalendarAppointments(
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('month', new DefaultValuePipe(new Date().getMonth() + 1), ParseIntPipe) month: number,
+    @Query('year', new DefaultValuePipe(new Date().getFullYear()), ParseIntPipe) year: number,
+  ) {
+    return this.adminService.getCalendarAppointments(clinicId, month, year);
+  }
+
+  /**
+   * Retorna agendamentos de hoje
+   * GET /api/admin/appointments/today
+   */
+  @Get('appointments/today')
+  async getTodayAppointments(@CurrentUser('clinicId') clinicId: string) {
+    return this.adminService.getTodayAppointments(clinicId);
+  }
+
+  /**
    * Lista consultas pendentes de aprovação
    * GET /api/admin/appointments/pending
    */
@@ -89,6 +111,33 @@ export class AdminController {
   }
 
   /**
+   * Atualiza um agendamento (status, notas, tipo)
+   * PATCH /api/admin/appointments/:id
+   */
+  @Patch('appointments/:id')
+  async updateAppointment(
+    @Param('id') appointmentId: string,
+    @CurrentUser('clinicId') clinicId: string,
+    @Body() dto: { status?: string; notes?: string; type?: string },
+  ) {
+    return this.adminService.updateAppointment(appointmentId, clinicId, dto);
+  }
+
+  /**
+   * Cancela um agendamento
+   * POST /api/admin/appointments/:id/cancel
+   */
+  @Post('appointments/:id/cancel')
+  async cancelAppointment(
+    @Param('id') appointmentId: string,
+    @CurrentUser('clinicId') clinicId: string,
+    @CurrentUser('sub') userId: string,
+    @Body() dto: { reason?: string },
+  ) {
+    return this.adminService.cancelAppointment(appointmentId, clinicId, userId, dto.reason);
+  }
+
+  /**
    * Lista pacientes em recuperação
    * GET /api/admin/recovery/patients
    */
@@ -99,6 +148,18 @@ export class AdminController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ) {
     return this.adminService.getRecoveryPatients(clinicId, page, limit);
+  }
+
+  /**
+   * Retorna pacientes recentes (últimos atualizados)
+   * GET /api/admin/patients/recent
+   */
+  @Get('patients/recent')
+  async getRecentPatients(
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('limit', new DefaultValuePipe(5), ParseIntPipe) limit: number,
+  ) {
+    return this.adminService.getRecentPatients(clinicId, limit);
   }
 
   // ==================== ALERTAS ====================

@@ -7,6 +7,12 @@ import {
   PendingAppointmentsResponseDto,
   RecoveryPatientDto,
   RecoveryPatientsResponseDto,
+  CalendarAppointmentDto,
+  CalendarResponseDto,
+  TodayAppointmentDto,
+  TodayAppointmentsResponseDto,
+  RecentPatientDto,
+  RecentPatientsResponseDto,
 } from './dto';
 
 @Injectable()
@@ -294,6 +300,103 @@ export class AdminService {
   }
 
   /**
+   * Atualiza um agendamento (status, notas, tipo)
+   */
+  async updateAppointment(
+    appointmentId: string,
+    clinicId: string,
+    dto: { status?: string; notes?: string; type?: string },
+  ) {
+    this.logger.log(`[updateAppointment] appointmentId=${appointmentId}`);
+
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: { patient: true },
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Consulta não encontrada');
+    }
+
+    if (appointment.patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a esta consulta');
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (dto.status) {
+      updateData.status = dto.status as AppointmentStatus;
+    }
+    if (dto.notes !== undefined) {
+      updateData.notes = dto.notes;
+    }
+    if (dto.type) {
+      updateData.type = dto.type;
+    }
+
+    const updated = await this.prisma.appointment.update({
+      where: { id: appointmentId },
+      data: updateData,
+    });
+
+    return { success: true, appointment: updated };
+  }
+
+  /**
+   * Cancela um agendamento
+   */
+  async cancelAppointment(
+    appointmentId: string,
+    clinicId: string,
+    userId: string,
+    reason?: string,
+  ) {
+    this.logger.log(`[cancelAppointment] appointmentId=${appointmentId}, userId=${userId}`);
+
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        patient: {
+          include: { user: true },
+        },
+      },
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Consulta não encontrada');
+    }
+
+    if (appointment.patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a esta consulta');
+    }
+
+    const updated = await this.prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: AppointmentStatus.CANCELLED,
+        notes: reason ? `${appointment.notes || ''}\n[Cancelado] ${reason}`.trim() : appointment.notes,
+      },
+    });
+
+    // Criar notificação para o paciente (apenas se tiver userId vinculado)
+    if (appointment.patient.userId) {
+      await this.prisma.notification.create({
+        data: {
+          userId: appointment.patient.userId,
+          type: NotificationType.APPOINTMENT_REJECTED,
+          title: 'Consulta Cancelada',
+          body: reason
+            ? `Sua consulta de ${appointment.title} foi cancelada. Motivo: ${reason}`
+            : `Sua consulta de ${appointment.title} foi cancelada. Entre em contato com a clínica.`,
+          data: { appointmentId: appointment.id, reason },
+          status: NotificationStatus.PENDING,
+        },
+      });
+    }
+
+    return { success: true, appointment: updated };
+  }
+
+  /**
    * Lista pacientes em recuperação
    */
   async getRecoveryPatients(
@@ -390,5 +493,149 @@ export class AdminService {
     });
 
     return { items, page, limit, total };
+  }
+
+  /**
+   * Retorna agendamentos do mês para o calendário
+   * GET /api/admin/calendar
+   */
+  async getCalendarAppointments(
+    clinicId: string,
+    month: number,
+    year: number,
+  ): Promise<CalendarResponseDto> {
+    this.logger.log(`[getCalendarAppointments] clinicId=${clinicId}, month=${month}, year=${year}`);
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        patient: { clinicId },
+        date: {
+          gte: startDate,
+          lte: endDate,
+        },
+        status: {
+          not: AppointmentStatus.CANCELLED,
+        },
+      },
+      include: {
+        patient: {
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ date: 'asc' }, { time: 'asc' }],
+    });
+
+    const items: CalendarAppointmentDto[] = appointments.map((apt) => ({
+      id: apt.id,
+      patientId: apt.patientId,
+      patientName: apt.patient.user?.name || apt.patient.name || 'Paciente',
+      procedureType: apt.patient.surgeryType || apt.title,
+      consultationType: apt.type || 'CONSULTATION',
+      date: new Date(apt.date).toISOString().split('T')[0],
+      time: apt.time,
+      status: apt.status,
+      notes: apt.notes || '',
+    }));
+
+    return {
+      items,
+      month,
+      year,
+      total: items.length,
+    };
+  }
+
+  /**
+   * Retorna agendamentos de hoje
+   * GET /api/admin/appointments/today
+   */
+  async getTodayAppointments(clinicId: string): Promise<TodayAppointmentsResponseDto> {
+    this.logger.log(`[getTodayAppointments] clinicId=${clinicId}`);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        patient: { clinicId },
+        date: {
+          gte: today,
+          lt: tomorrow,
+        },
+        status: {
+          in: [AppointmentStatus.CONFIRMED, AppointmentStatus.PENDING],
+        },
+      },
+      include: {
+        patient: {
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { time: 'asc' },
+    });
+
+    const items: TodayAppointmentDto[] = appointments.map((apt) => ({
+      id: apt.id,
+      patientId: apt.patientId,
+      patientName: apt.patient.user?.name || apt.patient.name || 'Paciente',
+      procedureType: apt.patient.surgeryType || apt.title,
+      time: apt.time,
+      status: apt.status,
+    }));
+
+    return {
+      items,
+      total: items.length,
+    };
+  }
+
+  /**
+   * Retorna pacientes recentes (últimos atualizados)
+   * GET /api/admin/patients/recent
+   */
+  async getRecentPatients(clinicId: string, limit: number = 5): Promise<RecentPatientsResponseDto> {
+    this.logger.log(`[getRecentPatients] clinicId=${clinicId}, limit=${limit}`);
+
+    const patients = await this.prisma.patient.findMany({
+      where: { clinicId },
+      include: {
+        user: { select: { name: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const items: RecentPatientDto[] = patients.map((patient) => {
+      const lastActivityDate = new Date(patient.updatedAt);
+      lastActivityDate.setHours(0, 0, 0, 0);
+      const daysAgo = Math.floor(
+        (today.getTime() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      return {
+        id: patient.id,
+        name: patient.user?.name || patient.name || 'Paciente',
+        procedureType: patient.surgeryType || 'Não informado',
+        daysAgo: Math.max(0, daysAgo),
+        lastActivity: patient.updatedAt.toISOString(),
+      };
+    });
+
+    return {
+      items,
+      total: items.length,
+    };
   }
 }

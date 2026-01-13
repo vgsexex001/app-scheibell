@@ -3,3 +3,6 @@ export * from './pending-appointment.dto';
 export * from './recovery-patient.dto';
 export * from './reject-appointment.dto';
 export * from './create-alert.dto';
+export * from './calendar-appointment.dto';
+export * from './today-appointments.dto';
+export * from './recent-patients.dto';

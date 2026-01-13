@@ -1145,6 +1145,71 @@ class ApiService {
     return response.data;
   }
 
+  /// Busca agendamentos de hoje
+  Future<Map<String, dynamic>> getAdminTodayAppointments() async {
+    final response = await get(ApiConfig.adminTodayAppointmentsEndpoint);
+    return response.data;
+  }
+
+  /// Busca agendamentos do mês para calendário
+  Future<Map<String, dynamic>> getAdminCalendar({
+    int? month,
+    int? year,
+  }) async {
+    final now = DateTime.now();
+    final response = await get(
+      ApiConfig.adminCalendarEndpoint,
+      queryParameters: {
+        'month': (month ?? now.month).toString(),
+        'year': (year ?? now.year).toString(),
+      },
+    );
+    return response.data;
+  }
+
+  /// Busca pacientes recentes
+  Future<Map<String, dynamic>> getAdminRecentPatients({
+    int limit = 5,
+  }) async {
+    final response = await get(
+      ApiConfig.adminRecentPatientsEndpoint,
+      queryParameters: {
+        'limit': limit.toString(),
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza um agendamento (status, notas, tipo)
+  Future<Map<String, dynamic>> updateAdminAppointment(
+    String appointmentId, {
+    String? status,
+    String? notes,
+    String? type,
+  }) async {
+    final response = await patch(
+      '/admin/appointments/$appointmentId',
+      data: {
+        if (status != null) 'status': status,
+        if (notes != null) 'notes': notes,
+        if (type != null) 'type': type,
+      },
+    );
+    return response.data;
+  }
+
+  /// Cancela um agendamento pelo admin
+  Future<Map<String, dynamic>> cancelAdminAppointment(
+    String appointmentId, {
+    String? reason,
+  }) async {
+    final response = await post(
+      '/admin/appointments/$appointmentId/cancel',
+      data: reason != null ? {'reason': reason} : {},
+    );
+    return response.data;
+  }
+
   /// Lista alertas da clínica
   Future<Map<String, dynamic>> getAdminAlerts({
     int page = 1,

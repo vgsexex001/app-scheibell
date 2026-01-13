@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/calendar_provider.dart';
+import '../models/calendar_appointment.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -8,118 +11,14 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  DateTime _currentMonth = DateTime(2024, 12, 1);
-  DateTime _selectedDate = DateTime(2024, 12, 8);
-  String _selectedFilter = 'ALL';
   final int _selectedNavIndex = 4; // Calendário tab
 
-  // Mock - será substituído por API
-  final List<_Appointment> _appointments = [
-    _Appointment(
-      id: '1',
-      patientId: 'p1',
-      patientName: 'Maria Silva',
-      procedure: 'Lipoaspiração',
-      consultationType: 'RETURN_7D',
-      status: 'CONFIRMED',
-      date: DateTime(2024, 12, 8),
-      time: '09:00',
-      notes: '',
-    ),
-    _Appointment(
-      id: '2',
-      patientId: 'p2',
-      patientName: 'João Santos',
-      procedure: 'Avaliação para Abdominoplastia',
-      consultationType: 'FIRST_CONSULTATION',
-      status: 'CONFIRMED',
-      date: DateTime(2024, 12, 8),
-      time: '10:30',
-      notes: '',
-    ),
-    _Appointment(
-      id: '3',
-      patientId: 'p3',
-      patientName: 'Ana Costa',
-      procedure: 'Mamoplastia',
-      consultationType: 'RETURN_30D',
-      status: 'PENDING',
-      date: DateTime(2024, 12, 8),
-      time: '14:00',
-      notes: '',
-    ),
-    _Appointment(
-      id: '4',
-      patientId: 'p4',
-      patientName: 'Carlos Lima',
-      procedure: 'Rinoplastia',
-      consultationType: 'POST_OP',
-      status: 'CONFIRMED',
-      date: DateTime(2024, 12, 9),
-      time: '09:00',
-      notes: '',
-    ),
-    _Appointment(
-      id: '5',
-      patientId: 'p5',
-      patientName: 'Paula Mendes',
-      procedure: 'Blefaroplastia',
-      consultationType: 'EVALUATION',
-      status: 'PENDING',
-      date: DateTime(2024, 12, 10),
-      time: '11:00',
-      notes: '',
-    ),
-    _Appointment(
-      id: '6',
-      patientId: 'p6',
-      patientName: 'Ricardo Alves',
-      procedure: 'Check-up',
-      consultationType: 'TELEMEDICINE',
-      status: 'COMPLETED',
-      date: DateTime(2024, 12, 7),
-      time: '15:00',
-      notes: 'Paciente relatou boa evolução',
-    ),
-    _Appointment(
-      id: '7',
-      patientId: 'p7',
-      patientName: 'Fernanda Souza',
-      procedure: 'Abdominoplastia',
-      consultationType: 'RETURN_7D',
-      status: 'CONFIRMED',
-      date: DateTime(2024, 12, 12),
-      time: '10:00',
-      notes: '',
-    ),
-  ];
-
-  List<_Appointment> get _appointmentsForSelectedDate {
-    var filtered = _appointments.where((a) =>
-      a.date.year == _selectedDate.year &&
-      a.date.month == _selectedDate.month &&
-      a.date.day == _selectedDate.day
-    ).toList();
-
-    if (_selectedFilter != 'ALL') {
-      filtered = filtered.where((a) => a.status == _selectedFilter).toList();
-    }
-
-    filtered.sort((a, b) => a.time.compareTo(b.time));
-    return filtered;
-  }
-
-  int get _totalCount => _appointments.length;
-  int get _confirmedCount => _appointments.where((a) => a.status == 'CONFIRMED').length;
-  int get _pendingCount => _appointments.where((a) => a.status == 'PENDING').length;
-  int get _completedCount => _appointments.where((a) => a.status == 'COMPLETED').length;
-
-  List<String> _getStatusesForDay(DateTime day) {
-    return _appointments
-      .where((a) => a.date.year == day.year && a.date.month == day.month && a.date.day == day.day)
-      .map((a) => a.status)
-      .toSet()
-      .toList();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<CalendarProvider>().loadMonthAppointments();
+    });
   }
 
   @override
@@ -127,25 +26,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F3EF),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                const SizedBox(height: 16),
-                _buildStatsRow(),
-                const SizedBox(height: 16),
-                _buildCalendar(),
-                const SizedBox(height: 16),
-                _buildLegends(),
-                const SizedBox(height: 24),
-                _buildDayAppointments(),
-                const SizedBox(height: 16),
-              ],
-            ),
-          ),
+        child: Consumer<CalendarProvider>(
+          builder: (context, provider, _) {
+            if (provider.isLoading && provider.appointments.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            return SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 16),
+                    _buildStatsRow(provider),
+                    const SizedBox(height: 16),
+                    _buildCalendar(provider),
+                    const SizedBox(height: 16),
+                    _buildLegends(),
+                    const SizedBox(height: 24),
+                    _buildDayAppointments(provider),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
       bottomNavigationBar: _buildBottomNav(),
@@ -198,7 +105,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     Icon(Icons.download, color: Colors.white, size: 16),
                     SizedBox(width: 4),
                     Text(
-                      'CSV',
+                      'Exportar',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 12,
@@ -212,28 +119,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: () => _showNewAppointmentModal(),
+              onTap: _showNewAppointmentModal,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF212621),
+                  color: const Color(0xFF4F4A34),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.add, color: Colors.white, size: 16),
-                    SizedBox(width: 4),
-                    Text(
-                      'Novo',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontFamily: 'Inter',
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                child: const Icon(Icons.add, color: Colors.white, size: 20),
               ),
             ),
           ],
@@ -242,44 +135,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildStatsRow() {
+  Widget _buildStatsRow(CalendarProvider provider) {
     return Row(
       children: [
-        _StatCard(value: _totalCount.toString(), label: 'Total', color: const Color(0xFF212621), isFirst: true),
+        _StatCard(
+          value: provider.totalCount.toString(),
+          label: 'Total',
+          color: const Color(0xFF212621),
+          isFirst: true,
+        ),
         const SizedBox(width: 8),
-        _StatCard(value: _confirmedCount.toString(), label: 'Confirmados', color: const Color(0xFF00A63E)),
+        _StatCard(
+          value: provider.confirmedCount.toString(),
+          label: 'Confirmados',
+          color: const Color(0xFF00A63E),
+        ),
         const SizedBox(width: 8),
-        _StatCard(value: _pendingCount.toString(), label: 'Pendentes', color: const Color(0xFFD08700)),
+        _StatCard(
+          value: provider.pendingCount.toString(),
+          label: 'Pendentes',
+          color: const Color(0xFFD08700),
+        ),
         const SizedBox(width: 8),
-        _StatCard(value: _completedCount.toString(), label: 'Concluídos', color: const Color(0xFF495565)),
+        _StatCard(
+          value: provider.completedCount.toString(),
+          label: 'Concluídos',
+          color: const Color(0xFF495565),
+        ),
       ],
     );
   }
 
-  Widget _buildCalendar() {
+  Widget _buildCalendar(CalendarProvider provider) {
+    final currentMonth = provider.currentMonth;
+    final selectedDate = provider.selectedDate;
+    final firstDay = DateTime(currentMonth.year, currentMonth.month, 1);
+    final lastDay = DateTime(currentMonth.year, currentMonth.month + 1, 0);
+    final startWeekday = firstDay.weekday == 7 ? 0 : firstDay.weekday;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: const Color(0xFFC8C2B4)),
       ),
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               GestureDetector(
                 onTap: () {
-                  setState(() {
-                    _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
-                  });
+                  final newMonth = DateTime(currentMonth.year, currentMonth.month - 1, 1);
+                  provider.setCurrentMonth(newMonth);
                 },
                 child: const Icon(Icons.chevron_left, color: Color(0xFF495565)),
               ),
-              const SizedBox(width: 16),
               Text(
-                _getMonthName(_currentMonth),
+                _getMonthName(currentMonth),
                 style: const TextStyle(
                   color: Color(0xFF212621),
                   fontSize: 16,
@@ -287,117 +201,103 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 16),
               GestureDetector(
                 onTap: () {
-                  setState(() {
-                    _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
-                  });
+                  final newMonth = DateTime(currentMonth.year, currentMonth.month + 1, 1);
+                  provider.setCurrentMonth(newMonth);
                 },
                 child: const Icon(Icons.chevron_right, color: Color(0xFF495565)),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-                .map((day) => SizedBox(
-                      width: 40,
-                      child: Text(
-                        day,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF495565),
-                          fontSize: 12,
-                          fontFamily: 'Inter',
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ))
-                .toList(),
+            children: [
+              _WeekdayLabel(label: 'D'),
+              _WeekdayLabel(label: 'S'),
+              _WeekdayLabel(label: 'T'),
+              _WeekdayLabel(label: 'Q'),
+              _WeekdayLabel(label: 'Q'),
+              _WeekdayLabel(label: 'S'),
+              _WeekdayLabel(label: 'S'),
+            ],
           ),
           const SizedBox(height: 8),
-          _buildDaysGrid(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDaysGrid() {
-    final firstDayOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
-    final lastDayOfMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
-    final firstWeekday = firstDayOfMonth.weekday % 7;
-    final daysInMonth = lastDayOfMonth.day;
-
-    List<Widget> dayWidgets = [];
-
-    for (int i = 0; i < firstWeekday; i++) {
-      dayWidgets.add(const SizedBox(width: 40, height: 48));
-    }
-
-    for (int day = 1; day <= daysInMonth; day++) {
-      final date = DateTime(_currentMonth.year, _currentMonth.month, day);
-      final isSelected = date.year == _selectedDate.year &&
-          date.month == _selectedDate.month &&
-          date.day == _selectedDate.day;
-      final statuses = _getStatusesForDay(date);
-
-      dayWidgets.add(
-        GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedDate = date;
-            });
-          },
-          child: Container(
-            width: 40,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF4F4A34) : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  day.toString(),
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : const Color(0xFF212621),
-                    fontSize: 14,
-                    fontFamily: 'Inter',
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+            itemCount: startWeekday + lastDay.day,
+            itemBuilder: (context, index) {
+              if (index < startWeekday) {
+                return const SizedBox();
+              }
+              final day = index - startWeekday + 1;
+              final date = DateTime(currentMonth.year, currentMonth.month, day);
+              final isSelected = date.year == selectedDate.year &&
+                  date.month == selectedDate.month &&
+                  date.day == selectedDate.day;
+              final isToday = date.year == DateTime.now().year &&
+                  date.month == DateTime.now().month &&
+                  date.day == DateTime.now().day;
+              final statuses = provider.getStatusesForDay(date);
+
+              return GestureDetector(
+                onTap: () => provider.setSelectedDate(date),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? const Color(0xFF4F4A34)
+                        : isToday
+                            ? const Color(0xFFF5F3EF)
+                            : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: isToday && !isSelected
+                        ? Border.all(color: const Color(0xFF4F4A34))
+                        : null,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        day.toString(),
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : const Color(0xFF212621),
+                          fontSize: 14,
+                          fontFamily: 'Inter',
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                      if (statuses.isNotEmpty)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: statuses.take(3).map((status) {
+                            return Container(
+                              width: 4,
+                              height: 4,
+                              margin: const EdgeInsets.only(top: 2, right: 1),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? Colors.white.withAlpha(179)
+                                    : _getStatusColor(status),
+                                shape: BoxShape.circle,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                    ],
                   ),
                 ),
-                if (statuses.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: statuses.take(3).map((status) {
-                      return Container(
-                        width: 6,
-                        height: 6,
-                        margin: const EdgeInsets.symmetric(horizontal: 1),
-                        decoration: BoxDecoration(
-                          color: _getStatusColor(status),
-                          shape: BoxShape.circle,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ],
-            ),
+              );
+            },
           ),
-        ),
-      );
-    }
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      alignment: WrapAlignment.start,
-      children: dayWidgets,
+        ],
+      ),
     );
   }
 
@@ -406,14 +306,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Status dos Agendamentos',
+            'Legenda de Status',
             style: TextStyle(
               color: Color(0xFF212621),
               fontSize: 14,
@@ -422,18 +322,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          const Wrap(
-            spacing: 16,
-            runSpacing: 8,
+          const Row(
             children: [
               _LegendItem(color: Color(0xFF00A63E), label: 'Confirmado'),
+              SizedBox(width: 16),
               _LegendItem(color: Color(0xFFD08700), label: 'Pendente'),
+              SizedBox(width: 16),
               _LegendItem(color: Color(0xFF9CA3AF), label: 'Concluído'),
-              _LegendItem(color: Color(0xFFE7000B), label: 'Cancelado'),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(color: Color(0xFFE5E7EB)),
           const SizedBox(height: 16),
           const Text(
             'Tipos de Consulta',
@@ -445,31 +342,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          const Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _ConsultationTypeLegend(icon: Icons.person_add_outlined, color: Color(0xFF7C3AED), label: 'Primeira Consulta'),
-                    SizedBox(height: 8),
-                    _ConsultationTypeLegend(icon: Icons.replay_outlined, color: Color(0xFF00A63E), label: 'Retorno 30d'),
-                    SizedBox(height: 8),
-                    _ConsultationTypeLegend(icon: Icons.search_outlined, color: Color(0xFFD08700), label: 'Avaliação'),
-                  ],
-                ),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: const [
+              _ConsultationTypeLegend(
+                icon: Icons.person_add_outlined,
+                color: Color(0xFF7C3AED),
+                label: 'Primeira Consulta',
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _ConsultationTypeLegend(icon: Icons.event_repeat_outlined, color: Color(0xFF155CFB), label: 'Retorno 7d'),
-                    SizedBox(height: 8),
-                    _ConsultationTypeLegend(icon: Icons.healing_outlined, color: Color(0xFFE7000B), label: 'Pós-Operatório'),
-                    SizedBox(height: 8),
-                    _ConsultationTypeLegend(icon: Icons.videocam_outlined, color: Color(0xFF059669), label: 'Telemedicina'),
-                  ],
-                ),
+              _ConsultationTypeLegend(
+                icon: Icons.event_repeat_outlined,
+                color: Color(0xFF155CFB),
+                label: 'Retorno 7d',
+              ),
+              _ConsultationTypeLegend(
+                icon: Icons.replay_outlined,
+                color: Color(0xFF00A63E),
+                label: 'Retorno 30d',
+              ),
+              _ConsultationTypeLegend(
+                icon: Icons.healing_outlined,
+                color: Color(0xFFE7000B),
+                label: 'Pós-Operatório',
+              ),
+              _ConsultationTypeLegend(
+                icon: Icons.search_outlined,
+                color: Color(0xFFD08700),
+                label: 'Avaliação',
+              ),
+              _ConsultationTypeLegend(
+                icon: Icons.videocam_outlined,
+                color: Color(0xFF059669),
+                label: 'Telemedicina',
               ),
             ],
           ),
@@ -478,9 +383,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildDayAppointments() {
-    final appointments = _appointmentsForSelectedDate;
-    final monthName = _getMonthNameShort(_selectedDate.month);
+  Widget _buildDayAppointments(CalendarProvider provider) {
+    final selectedDate = provider.selectedDate;
+    final appointments = provider.appointmentsForSelectedDate;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -492,7 +397,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Dia ${_selectedDate.day} de $monthName',
+                  'Dia ${selectedDate.day} de ${_getMonthNameShort(selectedDate.month)}',
                   style: const TextStyle(
                     color: Color(0xFF212621),
                     fontSize: 16,
@@ -510,43 +415,56 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ],
             ),
+            Row(
+              children: [
+                _FilterChip(
+                  label: 'Todos',
+                  isSelected: provider.statusFilter == 'ALL',
+                  onTap: () => provider.setStatusFilter('ALL'),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Confirmados',
+                  isSelected: provider.statusFilter == 'CONFIRMED',
+                  onTap: () => provider.setStatusFilter('CONFIRMED'),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Pendentes',
+                  isSelected: provider.statusFilter == 'PENDING',
+                  onTap: () => provider.setStatusFilter('PENDING'),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Concluídos',
+                  isSelected: provider.statusFilter == 'COMPLETED',
+                  onTap: () => provider.setStatusFilter('COMPLETED'),
+                ),
+              ],
+            ),
           ],
-        ),
-        const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _FilterChip(label: 'Todos', isSelected: _selectedFilter == 'ALL', onTap: () => setState(() => _selectedFilter = 'ALL')),
-              const SizedBox(width: 4),
-              _FilterChip(label: 'Confirmados', isSelected: _selectedFilter == 'CONFIRMED', onTap: () => setState(() => _selectedFilter = 'CONFIRMED')),
-              const SizedBox(width: 4),
-              _FilterChip(label: 'Pendentes', isSelected: _selectedFilter == 'PENDING', onTap: () => setState(() => _selectedFilter = 'PENDING')),
-              const SizedBox(width: 4),
-              _FilterChip(label: 'Concluídos', isSelected: _selectedFilter == 'COMPLETED', onTap: () => setState(() => _selectedFilter = 'COMPLETED')),
-            ],
-          ),
         ),
         const SizedBox(height: 16),
         if (appointments.isEmpty)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: const Color(0xFFE5E7EB)),
             ),
             child: const Column(
               children: [
-                Icon(Icons.event_busy_outlined, size: 48, color: Color(0xFF9CA3AF)),
-                SizedBox(height: 16),
+                Icon(Icons.calendar_today_outlined, size: 48, color: Color(0xFF9CA3AF)),
+                SizedBox(height: 12),
                 Text(
                   'Nenhum agendamento',
                   style: TextStyle(
-                    color: Color(0xFF9CA3AF),
+                    color: Color(0xFF495565),
                     fontSize: 16,
                     fontFamily: 'Inter',
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 SizedBox(height: 4),
@@ -666,24 +584,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  void _showAppointmentDetailModal(_Appointment appointment) {
+  void _showAppointmentDetailModal(CalendarAppointment appointment) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _AppointmentDetailModal(
+      builder: (ctx) => _AppointmentDetailModal(
         appointment: appointment,
-        onSave: (updatedAppointment) {
-          setState(() {
-            final index = _appointments.indexWhere((a) => a.id == updatedAppointment.id);
-            if (index != -1) {
-              _appointments[index] = updatedAppointment;
-            }
-          });
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Agendamento atualizado')),
+        onSave: (status, notes, consultationType) async {
+          final provider = context.read<CalendarProvider>();
+          final success = await provider.updateAppointment(
+            appointment.id,
+            status: status,
+            notes: notes,
+            consultationType: consultationType,
           );
+          if (mounted) {
+            Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'Agendamento atualizado' : 'Erro ao atualizar'),
+              ),
+            );
+          }
         },
       ),
     );
@@ -695,7 +618,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  void _cancelAppointment(_Appointment appointment) {
+  void _cancelAppointment(CalendarAppointment appointment) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -708,17 +631,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: const Text('Não'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                final index = _appointments.indexWhere((a) => a.id == appointment.id);
-                if (index != -1) {
-                  _appointments[index] = appointment.copyWith(status: 'CANCELLED');
-                }
-              });
+            onPressed: () async {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Agendamento cancelado')),
-              );
+              final provider = context.read<CalendarProvider>();
+              final success = await provider.cancelAppointment(appointment.id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(success ? 'Agendamento cancelado' : 'Erro ao cancelar'),
+                  ),
+                );
+              }
             },
             style: TextButton.styleFrom(foregroundColor: const Color(0xFFE7000B)),
             child: const Text('Cancelar'),
@@ -758,55 +681,31 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 }
 
-// ==================== MODELS ====================
+// ==================== WIDGETS ====================
 
-class _Appointment {
-  final String id;
-  final String patientId;
-  final String patientName;
-  final String procedure;
-  final String consultationType;
-  final String status;
-  final DateTime date;
-  final String time;
-  final String notes;
+class _WeekdayLabel extends StatelessWidget {
+  final String label;
 
-  _Appointment({
-    required this.id,
-    required this.patientId,
-    required this.patientName,
-    required this.procedure,
-    required this.consultationType,
-    required this.status,
-    required this.date,
-    required this.time,
-    required this.notes,
-  });
+  const _WeekdayLabel({required this.label});
 
-  _Appointment copyWith({
-    String? patientName,
-    String? procedure,
-    String? consultationType,
-    String? status,
-    DateTime? date,
-    String? time,
-    String? notes,
-  }) {
-    return _Appointment(
-      id: id,
-      patientId: patientId,
-      patientName: patientName ?? this.patientName,
-      procedure: procedure ?? this.procedure,
-      consultationType: consultationType ?? this.consultationType,
-      status: status ?? this.status,
-      date: date ?? this.date,
-      time: time ?? this.time,
-      notes: notes ?? this.notes,
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 32,
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF9CA3AF),
+            fontSize: 12,
+            fontFamily: 'Inter',
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 }
-
-// ==================== WIDGETS ====================
 
 class _StatCard extends StatelessWidget {
   final String value;
@@ -962,7 +861,7 @@ class _ConsultationTypeLegend extends StatelessWidget {
 }
 
 class _AppointmentCard extends StatelessWidget {
-  final _Appointment appointment;
+  final CalendarAppointment appointment;
   final VoidCallback onTap;
   final VoidCallback onEdit;
   final VoidCallback onCancel;
@@ -1024,6 +923,7 @@ class _AppointmentCard extends StatelessWidget {
       case 'FIRST_CONSULTATION':
         return 'Primeira Consulta';
       case 'RETURN_7D':
+      case 'RETURN_VISIT':
         return 'Retorno 7 dias';
       case 'RETURN_30D':
         return 'Retorno 30 dias';
@@ -1033,6 +933,8 @@ class _AppointmentCard extends StatelessWidget {
         return 'Avaliação';
       case 'TELEMEDICINE':
         return 'Telemedicina';
+      case 'CONSULTATION':
+        return 'Consulta';
       default:
         return appointment.consultationType;
     }
@@ -1043,6 +945,7 @@ class _AppointmentCard extends StatelessWidget {
       case 'FIRST_CONSULTATION':
         return const Color(0xFF7C3AED);
       case 'RETURN_7D':
+      case 'RETURN_VISIT':
         return const Color(0xFF155CFB);
       case 'RETURN_30D':
         return const Color(0xFF00A63E);
@@ -1052,6 +955,8 @@ class _AppointmentCard extends StatelessWidget {
         return const Color(0xFFD08700);
       case 'TELEMEDICINE':
         return const Color(0xFF059669);
+      case 'CONSULTATION':
+        return const Color(0xFF495565);
       default:
         return const Color(0xFF495565);
     }
@@ -1062,6 +967,7 @@ class _AppointmentCard extends StatelessWidget {
       case 'FIRST_CONSULTATION':
         return Icons.person_add_outlined;
       case 'RETURN_7D':
+      case 'RETURN_VISIT':
         return Icons.event_repeat_outlined;
       case 'RETURN_30D':
         return Icons.replay_outlined;
@@ -1071,6 +977,8 @@ class _AppointmentCard extends StatelessWidget {
         return Icons.search_outlined;
       case 'TELEMEDICINE':
         return Icons.videocam_outlined;
+      case 'CONSULTATION':
+        return Icons.medical_services_outlined;
       default:
         return Icons.event_outlined;
     }
@@ -1152,7 +1060,7 @@ class _AppointmentCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    appointment.procedure,
+                    appointment.procedureType,
                     style: const TextStyle(
                       color: Color(0xFF495565),
                       fontSize: 14,
@@ -1237,8 +1145,8 @@ class _AppointmentCard extends StatelessWidget {
 // ==================== MODAL DE DETALHES ====================
 
 class _AppointmentDetailModal extends StatefulWidget {
-  final _Appointment appointment;
-  final Function(_Appointment) onSave;
+  final CalendarAppointment appointment;
+  final Function(String status, String notes, String consultationType) onSave;
 
   const _AppointmentDetailModal({
     required this.appointment,
@@ -1250,7 +1158,6 @@ class _AppointmentDetailModal extends StatefulWidget {
 }
 
 class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
-  late TextEditingController _procedureController;
   late TextEditingController _notesController;
   late String _selectedStatus;
   late String _selectedConsultationType;
@@ -1264,17 +1171,16 @@ class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
 
   final List<Map<String, dynamic>> _consultationTypes = [
     {'value': 'FIRST_CONSULTATION', 'label': 'Primeira Consulta', 'icon': Icons.person_add_outlined, 'color': const Color(0xFF7C3AED)},
-    {'value': 'RETURN_7D', 'label': 'Retorno 7 dias', 'icon': Icons.event_repeat_outlined, 'color': const Color(0xFF155CFB)},
-    {'value': 'RETURN_30D', 'label': 'Retorno 30 dias', 'icon': Icons.replay_outlined, 'color': const Color(0xFF00A63E)},
-    {'value': 'POST_OP', 'label': 'Pós-Operatório', 'icon': Icons.healing_outlined, 'color': const Color(0xFFE7000B)},
+    {'value': 'RETURN_VISIT', 'label': 'Retorno', 'icon': Icons.event_repeat_outlined, 'color': const Color(0xFF155CFB)},
     {'value': 'EVALUATION', 'label': 'Avaliação', 'icon': Icons.search_outlined, 'color': const Color(0xFFD08700)},
-    {'value': 'TELEMEDICINE', 'label': 'Telemedicina', 'icon': Icons.videocam_outlined, 'color': const Color(0xFF059669)},
+    {'value': 'CONSULTATION', 'label': 'Consulta', 'icon': Icons.medical_services_outlined, 'color': const Color(0xFF495565)},
+    {'value': 'PHYSIOTHERAPY', 'label': 'Fisioterapia', 'icon': Icons.healing_outlined, 'color': const Color(0xFFE7000B)},
+    {'value': 'EXAM', 'label': 'Exame', 'icon': Icons.biotech_outlined, 'color': const Color(0xFF059669)},
   ];
 
   @override
   void initState() {
     super.initState();
-    _procedureController = TextEditingController(text: widget.appointment.procedure);
     _notesController = TextEditingController(text: widget.appointment.notes);
     _selectedStatus = widget.appointment.status;
     _selectedConsultationType = widget.appointment.consultationType;
@@ -1282,7 +1188,6 @@ class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
 
   @override
   void dispose() {
-    _procedureController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -1395,7 +1300,15 @@ class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
                   ),
                   const SizedBox(height: 16),
 
-                  const Text('Tipo de Consulta Médica', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                  const Text('Procedimento', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.appointment.procedureType,
+                    style: const TextStyle(color: Color(0xFF212621), fontSize: 14, fontFamily: 'Inter', fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 16),
+
+                  const Text('Tipo de Consulta', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -1430,21 +1343,6 @@ class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
                         ),
                       );
                     }).toList(),
-                  ),
-                  const SizedBox(height: 16),
-
-                  const Text('Procedimento/Motivo', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _procedureController,
-                    decoration: InputDecoration(
-                      hintText: 'Descreva o procedimento...',
-                      hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                      filled: true,
-                      fillColor: const Color(0xFFF5F3EF),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.all(12),
-                    ),
                   ),
                   const SizedBox(height: 16),
 
@@ -1505,13 +1403,11 @@ class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
 
                   GestureDetector(
                     onTap: () {
-                      final updated = widget.appointment.copyWith(
-                        procedure: _procedureController.text,
-                        consultationType: _selectedConsultationType,
-                        status: _selectedStatus,
-                        notes: _notesController.text,
+                      widget.onSave(
+                        _selectedStatus,
+                        _notesController.text,
+                        _selectedConsultationType,
                       );
-                      widget.onSave(updated);
                     },
                     child: Container(
                       width: double.infinity,

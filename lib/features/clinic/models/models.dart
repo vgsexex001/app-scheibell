@@ -8,3 +8,6 @@ export 'clinic_content.dart';
 export 'content_stats.dart';
 export 'content_template.dart';
 export 'patient_content_override.dart';
+export 'calendar_appointment.dart';
+export 'today_appointment.dart';
+export 'recent_patient.dart';

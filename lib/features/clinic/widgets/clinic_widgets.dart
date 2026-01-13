@@ -1,32 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../shared/widgets/patient_card.dart';
+import '../providers/clinic_dashboard_provider.dart';
+import '../models/models.dart';
 
-class TodayScheduleWidget extends StatelessWidget {
+class TodayScheduleWidget extends StatefulWidget {
   const TodayScheduleWidget({super.key});
 
   @override
+  State<TodayScheduleWidget> createState() => _TodayScheduleWidgetState();
+}
+
+class _TodayScheduleWidgetState extends State<TodayScheduleWidget> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ClinicDashboardProvider>().loadTodayAppointments();
+    });
+  }
+
+  String _getStatusLabel(String status) {
+    switch (status.toUpperCase()) {
+      case 'CONFIRMED':
+        return 'confirmado';
+      case 'PENDING':
+        return 'aguardando';
+      case 'CANCELLED':
+        return 'cancelado';
+      default:
+        return status.toLowerCase();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Mock data - replace with actual data from provider
-    final appointments = [
-      {
-        'time': '09:00',
-        'name': 'Maria Silva',
-        'procedure': 'Consulta de Retorno',
-        'status': 'confirmado',
-      },
-      {
-        'time': '10:30',
-        'name': 'João Santos',
-        'procedure': 'Retirada de Splint',
-        'status': 'aguardando',
-      },
-      {
-        'time': '14:00',
-        'name': 'Ana Oliveira',
-        'procedure': 'Fisioterapia',
-        'status': 'confirmado',
-      },
-    ];
+    final provider = context.watch<ClinicDashboardProvider>();
+    final appointments = provider.todayAppointments;
 
     return Container(
       decoration: BoxDecoration(
@@ -42,28 +52,42 @@ class TodayScheduleWidget extends StatelessWidget {
       ),
       child: Column(
         children: [
-          ...appointments.asMap().entries.map((entry) {
-            final index = entry.key;
-            final appointment = entry.value;
-            return Column(
-              children: [
-                _buildAppointmentItem(
-                  time: appointment['time']!,
-                  name: appointment['name']!,
-                  procedure: appointment['procedure']!,
-                  status: appointment['status']!,
-                  onTap: () {},
-                ),
-                if (index < appointments.length - 1)
-                  Divider(
-                    height: 1,
-                    color: Colors.grey.withAlpha(31),
-                    indent: 16,
-                    endIndent: 16,
+          if (provider.isLoadingToday)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (appointments.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Nenhum agendamento para hoje',
+                style: TextStyle(color: Color(0xFF6B6B6B)),
+              ),
+            )
+          else
+            ...appointments.asMap().entries.map((entry) {
+              final index = entry.key;
+              final appointment = entry.value;
+              return Column(
+                children: [
+                  _buildAppointmentItem(
+                    time: appointment.time,
+                    name: appointment.patientName,
+                    procedure: appointment.procedureType,
+                    status: _getStatusLabel(appointment.status),
+                    onTap: () {},
                   ),
-              ],
-            );
-          }),
+                  if (index < appointments.length - 1)
+                    Divider(
+                      height: 1,
+                      color: Colors.grey.withAlpha(31),
+                      indent: 16,
+                      endIndent: 16,
+                    ),
+                ],
+              );
+            }),
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextButton(
@@ -174,29 +198,34 @@ class TodayScheduleWidget extends StatelessWidget {
   }
 }
 
-class RecentPatientsWidget extends StatelessWidget {
+class RecentPatientsWidget extends StatefulWidget {
   const RecentPatientsWidget({super.key});
 
   @override
+  State<RecentPatientsWidget> createState() => _RecentPatientsWidgetState();
+}
+
+class _RecentPatientsWidgetState extends State<RecentPatientsWidget> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ClinicDashboardProvider>().loadRecentPatients();
+    });
+  }
+
+  String _formatDaysAgo(int days) {
+    if (days == 0) return 'Hoje';
+    if (days == 1) return '1 dia atrás';
+    if (days < 7) return '$days dias atrás';
+    if (days < 14) return '1 semana atrás';
+    return '${days ~/ 7} semanas atrás';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Mock data - replace with actual data from provider
-    final patients = [
-      {
-        'name': 'Carla Mendes',
-        'procedure': 'Rinoplastia',
-        'daysAgo': '2 dias atrás',
-      },
-      {
-        'name': 'Roberto Lima',
-        'procedure': 'Lipoaspiração',
-        'daysAgo': '5 dias atrás',
-      },
-      {
-        'name': 'Fernanda Costa',
-        'procedure': 'Blefaroplastia',
-        'daysAgo': '1 semana atrás',
-      },
-    ];
+    final provider = context.watch<ClinicDashboardProvider>();
+    final patients = provider.recentPatients;
 
     return Container(
       decoration: BoxDecoration(
@@ -212,12 +241,26 @@ class RecentPatientsWidget extends StatelessWidget {
       ),
       child: Column(
         children: [
-          ...patients.map((patient) => PatientListTile(
-                name: patient['name']!,
-                procedure: patient['procedure']!,
-                date: patient['daysAgo']!,
-                onTap: () {},
-              )),
+          if (provider.isLoadingRecent)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (patients.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Nenhum paciente recente',
+                style: TextStyle(color: Color(0xFF6B6B6B)),
+              ),
+            )
+          else
+            ...patients.map((patient) => PatientListTile(
+                  name: patient.name,
+                  procedure: patient.procedureType,
+                  date: _formatDaysAgo(patient.daysAgo),
+                  onTap: () {},
+                )),
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextButton(

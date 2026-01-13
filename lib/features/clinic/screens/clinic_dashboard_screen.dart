@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../providers/clinic_dashboard_provider.dart';
 import '../models/models.dart';
 
@@ -132,8 +133,8 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
 
   // ===== DRAWER MENU =====
   Widget _buildDrawerMenu() {
-    // TODO: Pegar nome da clínica do provider/state
-    const String clinicName = 'Clínica Scheibel';
+    final authProvider = context.watch<AuthProvider>();
+    final String clinicName = authProvider.user?.clinicName ?? 'Clínica';
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -276,13 +277,13 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   // Nome da clínica
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           clinicName,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Color(0xFF212621),
                             fontSize: 14,
                             fontFamily: 'Inter',
@@ -290,7 +291,7 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
+                        const Text(
                           'Clínica',
                           style: TextStyle(
                             color: Color(0xFF9CA3AF),

@@ -11,6 +11,9 @@ class ClinicDashboardProvider extends ChangeNotifier {
   List<PendingAppointment> _pendingAppointments = [];
   List<RecoveryPatient> _recoveryPatients = [];
   List<ClinicAlert> _alerts = [];
+  List<CalendarAppointment> _calendarAppointments = [];
+  List<TodayAppointment> _todayAppointments = [];
+  List<RecentPatient> _recentPatients = [];
 
   // Paginação
   int _pendingPage = 1;
@@ -25,6 +28,9 @@ class ClinicDashboardProvider extends ChangeNotifier {
   bool _isLoadingPending = false;
   bool _isLoadingRecovery = false;
   bool _isLoadingAlerts = false;
+  bool _isLoadingCalendar = false;
+  bool _isLoadingToday = false;
+  bool _isLoadingRecent = false;
   bool _isApproving = false;
   bool _isRejecting = false;
 
@@ -36,11 +42,17 @@ class ClinicDashboardProvider extends ChangeNotifier {
   List<PendingAppointment> get pendingAppointments => _pendingAppointments;
   List<RecoveryPatient> get recoveryPatients => _recoveryPatients;
   List<ClinicAlert> get alerts => _alerts;
+  List<CalendarAppointment> get calendarAppointments => _calendarAppointments;
+  List<TodayAppointment> get todayAppointments => _todayAppointments;
+  List<RecentPatient> get recentPatients => _recentPatients;
 
   bool get isLoadingSummary => _isLoadingSummary;
   bool get isLoadingPending => _isLoadingPending;
   bool get isLoadingRecovery => _isLoadingRecovery;
   bool get isLoadingAlerts => _isLoadingAlerts;
+  bool get isLoadingCalendar => _isLoadingCalendar;
+  bool get isLoadingToday => _isLoadingToday;
+  bool get isLoadingRecent => _isLoadingRecent;
   bool get isApproving => _isApproving;
   bool get isRejecting => _isRejecting;
   bool get isLoading =>
@@ -333,12 +345,84 @@ class ClinicDashboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Carrega agendamentos do mês para o calendário
+  Future<void> loadCalendarAppointments({int? month, int? year}) async {
+    _isLoadingCalendar = true;
+    notifyListeners();
+
+    try {
+      final data = await _apiService.getAdminCalendar(month: month, year: year);
+      final response = CalendarResponse.fromJson(data);
+      _calendarAppointments = response.items;
+      _error = null;
+    } on DioException catch (e) {
+      final apiError = _apiService.mapDioError(e);
+      _error = apiError.message;
+      debugPrint('[ClinicDashboardProvider] Erro ao carregar calendário: $_error');
+    } catch (e) {
+      _error = 'Erro ao carregar calendário';
+      debugPrint('[ClinicDashboardProvider] Erro inesperado: $e');
+    } finally {
+      _isLoadingCalendar = false;
+      notifyListeners();
+    }
+  }
+
+  /// Carrega agendamentos de hoje
+  Future<void> loadTodayAppointments() async {
+    _isLoadingToday = true;
+    notifyListeners();
+
+    try {
+      final data = await _apiService.getAdminTodayAppointments();
+      final response = TodayAppointmentsResponse.fromJson(data);
+      _todayAppointments = response.items;
+      _error = null;
+    } on DioException catch (e) {
+      final apiError = _apiService.mapDioError(e);
+      _error = apiError.message;
+      debugPrint('[ClinicDashboardProvider] Erro ao carregar hoje: $_error');
+    } catch (e) {
+      _error = 'Erro ao carregar agendamentos de hoje';
+      debugPrint('[ClinicDashboardProvider] Erro inesperado: $e');
+    } finally {
+      _isLoadingToday = false;
+      notifyListeners();
+    }
+  }
+
+  /// Carrega pacientes recentes
+  Future<void> loadRecentPatients({int limit = 5}) async {
+    _isLoadingRecent = true;
+    notifyListeners();
+
+    try {
+      final data = await _apiService.getAdminRecentPatients(limit: limit);
+      final response = RecentPatientsResponse.fromJson(data);
+      _recentPatients = response.items;
+      _error = null;
+    } on DioException catch (e) {
+      final apiError = _apiService.mapDioError(e);
+      _error = apiError.message;
+      debugPrint('[ClinicDashboardProvider] Erro ao carregar recentes: $_error');
+    } catch (e) {
+      _error = 'Erro ao carregar pacientes recentes';
+      debugPrint('[ClinicDashboardProvider] Erro inesperado: $e');
+    } finally {
+      _isLoadingRecent = false;
+      notifyListeners();
+    }
+  }
+
   /// Reseta o estado
   void reset() {
     _summary = null;
     _pendingAppointments = [];
     _recoveryPatients = [];
     _alerts = [];
+    _calendarAppointments = [];
+    _todayAppointments = [];
+    _recentPatients = [];
     _pendingTotal = 0;
     _recoveryTotal = 0;
     _alertsTotal = 0;

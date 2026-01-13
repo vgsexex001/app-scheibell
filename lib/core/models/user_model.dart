@@ -16,6 +16,7 @@ class UserModel {
   final String? avatarUrl;
   final UserRole role;
   final String? clinicId;
+  final String? clinicName;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? surgeryDate;
@@ -31,6 +32,7 @@ class UserModel {
     this.avatarUrl,
     required this.role,
     this.clinicId,
+    this.clinicName,
     this.createdAt,
     this.updatedAt,
     this.surgeryDate,
@@ -64,6 +66,7 @@ class UserModel {
     String? avatarUrl,
     UserRole? role,
     String? clinicId,
+    String? clinicName,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? surgeryDate,
@@ -79,6 +82,7 @@ class UserModel {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       role: role ?? this.role,
       clinicId: clinicId ?? this.clinicId,
+      clinicName: clinicName ?? this.clinicName,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       surgeryDate: surgeryDate ?? this.surgeryDate,
@@ -108,6 +112,12 @@ class UserModel {
     // Extrair dados do paciente se existirem
     final patient = json['patient'] as Map<String, dynamic>?;
 
+    // Extrair dados da clínica (pode vir como objeto ou diretamente)
+    final clinic = json['clinic'] as Map<String, dynamic>?;
+    final clinicName = json['clinicName'] as String? ??
+                       json['clinic_name'] as String? ??
+                       clinic?['name'] as String?;
+
     return UserModel(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -117,6 +127,7 @@ class UserModel {
       avatarUrl: (json['avatar_url'] ?? json['avatarUrl']) as String?,
       role: parseRole(json['role'] as String?),
       clinicId: (json['clinic_id'] ?? json['clinicId']) as String?,
+      clinicName: clinicName,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : (json['createdAt'] != null
@@ -150,6 +161,7 @@ class UserModel {
       'avatar_url': avatarUrl,
       'role': role.name,
       'clinic_id': clinicId,
+      'clinic_name': clinicName,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'surgery_date': surgeryDate?.toIso8601String(),

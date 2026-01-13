@@ -184,6 +184,11 @@ export class AuthService {
         email: true,
         role: true,
         clinicId: true,
+        clinic: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
@@ -191,7 +196,11 @@ export class AuthService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    return user;
+    // Flatten clinic name for easier frontend consumption
+    return {
+      ...user,
+      clinicName: user.clinic?.name ?? null,
+    };
   }
 
   async getProfile(userId: string) {
@@ -205,6 +214,11 @@ export class AuthService {
         clinicId: true,
         createdAt: true,
         updatedAt: true,
+        clinic: {
+          select: {
+            name: true,
+          },
+        },
         patient: {
           select: {
             id: true,
@@ -222,7 +236,11 @@ export class AuthService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    return user;
+    // Flatten clinic name for easier frontend consumption
+    return {
+      ...user,
+      clinicName: user.clinic?.name ?? null,
+    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {

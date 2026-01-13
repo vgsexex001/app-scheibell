@@ -105,6 +105,9 @@ class ApiConfig {
   /// Endpoints de administração (painel clínica)
   static const String adminDashboardSummaryEndpoint = '/admin/dashboard/summary';
   static const String adminPendingAppointmentsEndpoint = '/admin/appointments/pending';
+  static const String adminTodayAppointmentsEndpoint = '/admin/appointments/today';
+  static const String adminCalendarEndpoint = '/admin/calendar';
+  static const String adminRecentPatientsEndpoint = '/admin/patients/recent';
   static const String adminRecoveryPatientsEndpoint = '/admin/recovery/patients';
   static const String adminAlertsEndpoint = '/admin/alerts';
 

@@ -50,8 +50,8 @@ VALUES (
     'paciente@teste.com',
     'clinic-default-scheibell',
     '(11) 98888-8888',
-    NOW() - INTERVAL '7 days',
-    'Cirurgia Cardíaca',
+    NOW() - INTERVAL '11 days',
+    'Rinoplastia',
     NOW(),
     NOW()
 );
@@ -61,9 +61,9 @@ INSERT INTO "training_protocols" ("id", "clinicId", "name", "surgeryType", "desc
 VALUES (
     'protocol-default-001',
     'clinic-default-scheibell',
-    'Protocolo Pós-Operatório Cardíaco',
-    'Cirurgia Cardíaca',
-    'Protocolo padrão de recuperação pós-cirurgia cardíaca',
+    'Protocolo Pós-Operatório Rinoplastia',
+    'Rinoplastia',
+    'Protocolo padrão de recuperação pós-rinoplastia',
     8,
     true,
     true,

@@ -10,6 +10,7 @@ import 'features/chatbot/presentation/controller/chat_controller.dart';
 import 'features/agenda/presentation/controller/agenda_controller.dart';
 import 'features/recovery/presentation/controller/recovery_controller.dart';
 import 'features/clinic/providers/clinic_content_provider.dart';
+import 'features/clinic/providers/calendar_provider.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -43,6 +44,7 @@ class _AppState extends State<App> {
         ChangeNotifierProvider(create: (_) => AgendaController()),
         ChangeNotifierProvider(create: (_) => ClinicContentProvider()),
         ChangeNotifierProvider(create: (_) => RealtimeProvider()),
+        ChangeNotifierProvider(create: (_) => CalendarProvider()),
       ],
       child: Consumer<BrandingProvider>(
         builder: (context, brandingProvider, child) {
