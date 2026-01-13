@@ -374,26 +374,26 @@ class QuickActionsWidget extends StatelessWidget {
   }
 }
 
-class PatientsInRecoveryWidget extends StatelessWidget {
+class PatientsInRecoveryWidget extends StatefulWidget {
   const PatientsInRecoveryWidget({super.key});
 
   @override
+  State<PatientsInRecoveryWidget> createState() => _PatientsInRecoveryWidgetState();
+}
+
+class _PatientsInRecoveryWidgetState extends State<PatientsInRecoveryWidget> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ClinicDashboardProvider>().loadRecoveryPatients(limit: 5);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Mock data
-    final patients = [
-      {
-        'name': 'Maria Silva',
-        'procedure': 'Rinoplastia',
-        'day': 'Dia 7',
-        'progress': 0.7,
-      },
-      {
-        'name': 'João Santos',
-        'procedure': 'Blefaroplastia',
-        'day': 'Dia 3',
-        'progress': 0.3,
-      },
-    ];
+    final provider = context.watch<ClinicDashboardProvider>();
+    final patients = provider.recoveryPatients;
 
     return Container(
       decoration: BoxDecoration(
@@ -409,12 +409,26 @@ class PatientsInRecoveryWidget extends StatelessWidget {
       ),
       child: Column(
         children: [
-          ...patients.map((patient) => _buildRecoveryItem(
-                name: patient['name'] as String,
-                procedure: patient['procedure'] as String,
-                day: patient['day'] as String,
-                progress: patient['progress'] as double,
-              )),
+          if (provider.isLoadingRecovery)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (patients.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Nenhum paciente em recuperação',
+                style: TextStyle(color: Color(0xFF6B6B6B)),
+              ),
+            )
+          else
+            ...patients.map((patient) => _buildRecoveryItem(
+                  name: patient.patientName,
+                  procedure: patient.procedureType,
+                  day: 'Dia ${patient.dayPostOp}',
+                  progress: patient.progressPercent / 100.0,
+                )),
         ],
       ),
     );
