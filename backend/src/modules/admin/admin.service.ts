@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
+import { Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppointmentStatus, AlertStatus, NotificationType, NotificationStatus } from '@prisma/client';
 import {
@@ -13,7 +14,9 @@ import {
   TodayAppointmentsResponseDto,
   RecentPatientDto,
   RecentPatientsResponseDto,
+  CreateAppointmentDto,
 } from './dto';
+import { AppointmentType } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
@@ -637,5 +640,144 @@ export class AdminService {
       items,
       total: items.length,
     };
+  }
+
+  /**
+   * Cria um novo agendamento
+   * POST /api/admin/appointments
+   */
+  async createAppointment(
+    clinicId: string,
+    userId: string,
+    dto: CreateAppointmentDto,
+  ) {
+    this.logger.log(`[createAppointment] clinicId=${clinicId}, patientId=${dto.patientId}`);
+
+    // 1. Validar que paciente pertence à clínica
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: dto.patientId, clinicId },
+      include: { user: true },
+    });
+
+    if (!patient) {
+      throw new NotFoundException('Paciente não encontrado nesta clínica');
+    }
+
+    // 2. Criar o agendamento
+    const appointment = await this.prisma.appointment.create({
+      data: {
+        patientId: dto.patientId,
+        title: dto.title,
+        description: dto.description,
+        date: new Date(dto.date),
+        time: dto.time,
+        type: dto.type as AppointmentType,
+        status: dto.status ?? AppointmentStatus.CONFIRMED,
+        location: dto.location,
+        notes: dto.notes,
+      },
+    });
+
+    this.logger.log(`[createAppointment] Created appointment id=${appointment.id}`);
+
+    // 3. Criar notificação para o paciente (se tiver userId vinculado)
+    if (patient.userId) {
+      await this.prisma.notification.create({
+        data: {
+          userId: patient.userId,
+          type: NotificationType.APPOINTMENT_APPROVED,
+          title: 'Novo Agendamento',
+          body: `Você tem uma consulta agendada: ${dto.title} em ${dto.date} às ${dto.time}`,
+          data: { appointmentId: appointment.id },
+          status: NotificationStatus.PENDING,
+        },
+      });
+    }
+
+    return { success: true, appointment };
+  }
+
+  /**
+   * Exporta agendamentos em formato CSV
+   * GET /api/admin/appointments/export
+   */
+  async exportAppointmentsCsv(
+    clinicId: string,
+    from: string,
+    to: string,
+    status: string | undefined,
+    res: Response,
+  ) {
+    this.logger.log(`[exportAppointmentsCsv] clinicId=${clinicId}, from=${from}, to=${to}, status=${status}`);
+
+    // 1. Validar parâmetros obrigatórios
+    if (!from || !to) {
+      throw new BadRequestException('Parâmetros from e to são obrigatórios');
+    }
+
+    // 2. Validar range máximo (90 dias)
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    const diffDays = (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    if (diffDays > 90) {
+      throw new BadRequestException('Range máximo permitido: 90 dias');
+    }
+
+    if (diffDays < 0) {
+      throw new BadRequestException('Data inicial deve ser anterior à data final');
+    }
+
+    // 3. Buscar agendamentos
+    const whereClause: {
+      patient: { clinicId: string };
+      date: { gte: Date; lte: Date };
+      deletedAt: null;
+      status?: AppointmentStatus;
+    } = {
+      patient: { clinicId },
+      date: {
+        gte: fromDate,
+        lte: toDate,
+      },
+      deletedAt: null,
+    };
+
+    if (status && status !== 'ALL') {
+      whereClause.status = status as AppointmentStatus;
+    }
+
+    const appointments = await this.prisma.appointment.findMany({
+      where: whereClause,
+      include: {
+        patient: {
+          include: { user: { select: { name: true } } },
+        },
+      },
+      orderBy: [{ date: 'asc' }, { time: 'asc' }],
+    });
+
+    this.logger.log(`[exportAppointmentsCsv] Found ${appointments.length} appointments`);
+
+    // 4. Gerar CSV
+    const headers = 'id,date,time,patientName,patientId,title,type,status,location,notes\n';
+    const rows = appointments
+      .map((apt) => {
+        const patientName = apt.patient.user?.name || apt.patient.name || 'Paciente';
+        const escapedNotes = (apt.notes || '').replace(/"/g, '""').replace(/\n/g, ' ');
+        const escapedTitle = (apt.title || '').replace(/"/g, '""');
+        const escapedLocation = (apt.location || '').replace(/"/g, '""');
+
+        return `"${apt.id}","${apt.date.toISOString().split('T')[0]}","${apt.time}","${patientName}","${apt.patientId}","${escapedTitle}","${apt.type}","${apt.status}","${escapedLocation}","${escapedNotes}"`;
+      })
+      .join('\n');
+
+    // 5. Configurar headers e enviar resposta
+    const fileName = `appointments_${from}_to_${to}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    // BOM para Excel reconhecer UTF-8
+    res.send('\uFEFF' + headers + rows);
   }
 }

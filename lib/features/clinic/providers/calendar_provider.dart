@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../core/services/api_service.dart';
 import '../models/calendar_appointment.dart';
 
@@ -141,5 +143,72 @@ class CalendarProvider extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  /// Cria um novo agendamento
+  Future<bool> createAppointment({
+    required String patientId,
+    required String title,
+    required DateTime date,
+    required String time,
+    required String type,
+    String? status,
+    String? location,
+    String? notes,
+    String? description,
+  }) async {
+    try {
+      debugPrint('[ADMIN_CREATE_APPT] Creating for patient=$patientId');
+      await _apiService.createAdminAppointment(
+        patientId: patientId,
+        title: title,
+        date: date.toIso8601String().split('T')[0],
+        time: time,
+        type: type,
+        status: status,
+        location: location,
+        notes: notes,
+        description: description,
+      );
+      // Recarrega os agendamentos para refletir a mudança
+      await loadMonthAppointments();
+      debugPrint('[ADMIN_CREATE_APPT] success');
+      return true;
+    } catch (e) {
+      debugPrint('[ADMIN_CREATE_APPT] error: $e');
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Exporta agendamentos do mês atual em CSV
+  Future<String?> exportAppointments() async {
+    try {
+      final from = DateTime(_currentMonth.year, _currentMonth.month, 1);
+      final to = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
+
+      debugPrint('[ADMIN_EXPORT] Exporting ${from.toIso8601String()} to ${to.toIso8601String()}');
+
+      final bytes = await _apiService.exportAdminAppointments(
+        from: from.toIso8601String().split('T')[0],
+        to: to.toIso8601String().split('T')[0],
+        status: _statusFilter != 'ALL' ? _statusFilter : null,
+      );
+
+      // Salvar arquivo
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'agendamentos_${from.month}_${from.year}.csv';
+      final file = File('${directory.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      debugPrint('[ADMIN_EXPORT] rows=${bytes.length} bytes saved to ${file.path}');
+      return file.path;
+    } catch (e) {
+      debugPrint('[ADMIN_EXPORT] error: $e');
+      _error = e.toString();
+      notifyListeners();
+      return null;
+    }
   }
 }

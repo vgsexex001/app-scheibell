@@ -9,14 +9,17 @@ import {
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
+  Res,
+  Header,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AdminService } from './admin.service';
 import { AlertService } from './services/alert.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ApproveAppointmentDto, RejectAppointmentDto, CreateAlertDto } from './dto';
+import { ApproveAppointmentDto, RejectAppointmentDto, CreateAlertDto, CreateAppointmentDto } from './dto';
 import { AlertStatus } from '@prisma/client';
 
 @Controller('admin')
@@ -135,6 +138,35 @@ export class AdminController {
     @Body() dto: { reason?: string },
   ) {
     return this.adminService.cancelAppointment(appointmentId, clinicId, userId, dto.reason);
+  }
+
+  /**
+   * Cria um novo agendamento
+   * POST /api/admin/appointments
+   */
+  @Post('appointments')
+  async createAppointment(
+    @CurrentUser('clinicId') clinicId: string,
+    @CurrentUser('sub') userId: string,
+    @Body() dto: CreateAppointmentDto,
+  ) {
+    return this.adminService.createAppointment(clinicId, userId, dto);
+  }
+
+  /**
+   * Exporta agendamentos em CSV
+   * GET /api/admin/appointments/export
+   */
+  @Get('appointments/export')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async exportAppointments(
+    @CurrentUser('clinicId') clinicId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Res() res: Response,
+    @Query('status') status?: string,
+  ) {
+    return this.adminService.exportAppointmentsCsv(clinicId, from, to, status, res);
   }
 
   /**

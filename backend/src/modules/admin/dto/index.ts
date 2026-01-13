@@ -6,3 +6,4 @@ export * from './create-alert.dto';
 export * from './calendar-appointment.dto';
 export * from './today-appointments.dto';
 export * from './recent-patients.dto';
+export * from './create-appointment.dto';

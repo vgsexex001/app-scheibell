@@ -1210,6 +1210,53 @@ class ApiService {
     return response.data;
   }
 
+  /// Cria um novo agendamento pelo admin
+  Future<Map<String, dynamic>> createAdminAppointment({
+    required String patientId,
+    required String title,
+    required String date,
+    required String time,
+    required String type,
+    String? status,
+    String? location,
+    String? notes,
+    String? description,
+  }) async {
+    final response = await post(
+      '/admin/appointments',
+      data: {
+        'patientId': patientId,
+        'title': title,
+        'date': date,
+        'time': time,
+        'type': type,
+        if (status != null) 'status': status,
+        if (location != null) 'location': location,
+        if (notes != null) 'notes': notes,
+        if (description != null) 'description': description,
+      },
+    );
+    return response.data;
+  }
+
+  /// Exporta agendamentos em CSV
+  Future<List<int>> exportAdminAppointments({
+    required String from,
+    required String to,
+    String? status,
+  }) async {
+    final response = await _dio.get(
+      '/admin/appointments/export',
+      queryParameters: {
+        'from': from,
+        'to': to,
+        if (status != null && status != 'ALL') 'status': status,
+      },
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return response.data;
+  }
+
   /// Lista alertas da clínica
   Future<Map<String, dynamic>> getAdminAlerts({
     int page = 1,

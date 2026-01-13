@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../providers/calendar_provider.dart';
+import '../providers/clinic_dashboard_provider.dart';
 import '../models/calendar_appointment.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -89,11 +91,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         Row(
           children: [
             GestureDetector(
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Exportar CSV')),
-                );
-              },
+              onTap: _exportAppointments,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
@@ -613,9 +611,64 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _showNewAppointmentModal() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Criar novo agendamento')),
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _CreateAppointmentModal(
+        selectedDate: context.read<CalendarProvider>().selectedDate,
+        onSave: (data) async {
+          final provider = context.read<CalendarProvider>();
+          final success = await provider.createAppointment(
+            patientId: data['patientId'],
+            title: data['title'],
+            date: data['date'],
+            time: data['time'],
+            type: data['type'],
+            status: data['status'],
+            location: data['location'],
+            notes: data['notes'],
+          );
+          if (mounted) {
+            Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'Agendamento criado!' : 'Erro ao criar agendamento'),
+                backgroundColor: success ? const Color(0xFF00A63E) : const Color(0xFFE7000B),
+              ),
+            );
+          }
+        },
+      ),
     );
+  }
+
+  Future<void> _exportAppointments() async {
+    final provider = context.read<CalendarProvider>();
+
+    // Mostrar loading
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Exportando...')),
+    );
+
+    final filePath = await provider.exportAppointments();
+
+    if (!mounted) return;
+
+    if (filePath != null) {
+      // Compartilhar arquivo
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        text: 'Agendamentos exportados',
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao exportar: ${provider.error ?? "Erro desconhecido"}'),
+          backgroundColor: const Color(0xFFE7000B),
+        ),
+      );
+    }
   }
 
   void _cancelAppointment(CalendarAppointment appointment) {
@@ -1426,6 +1479,387 @@ class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
                   ),
                   const SizedBox(height: 16),
                 ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==================== MODAL DE CRIAR AGENDAMENTO ====================
+
+class _CreateAppointmentModal extends StatefulWidget {
+  final DateTime selectedDate;
+  final Function(Map<String, dynamic> data) onSave;
+
+  const _CreateAppointmentModal({
+    required this.selectedDate,
+    required this.onSave,
+  });
+
+  @override
+  State<_CreateAppointmentModal> createState() => _CreateAppointmentModalState();
+}
+
+class _CreateAppointmentModalState extends State<_CreateAppointmentModal> {
+  final _formKey = GlobalKey<FormState>();
+  final _titleController = TextEditingController();
+  final _notesController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _patientSearchController = TextEditingController();
+
+  late DateTime _selectedDate;
+  String _selectedTime = '09:00';
+  String _selectedType = 'CONSULTATION';
+  String _selectedStatus = 'CONFIRMED';
+  String? _selectedPatientId;
+  String? _selectedPatientName;
+
+  List<Map<String, dynamic>> _patients = [];
+  bool _isLoadingPatients = false;
+  bool _isSaving = false;
+
+  final List<String> _timeSlots = [
+    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
+    '16:00', '16:30', '17:00', '17:30', '18:00',
+  ];
+
+  final List<Map<String, dynamic>> _typeOptions = [
+    {'value': 'CONSULTATION', 'label': 'Consulta'},
+    {'value': 'RETURN_VISIT', 'label': 'Retorno'},
+    {'value': 'EVALUATION', 'label': 'Avaliação'},
+    {'value': 'PHYSIOTHERAPY', 'label': 'Fisioterapia'},
+    {'value': 'EXAM', 'label': 'Exame'},
+    {'value': 'OTHER', 'label': 'Outro'},
+  ];
+
+  final List<Map<String, dynamic>> _statusOptions = [
+    {'value': 'CONFIRMED', 'label': 'Confirmado'},
+    {'value': 'PENDING', 'label': 'Pendente'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = widget.selectedDate;
+    _loadPatients();
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _notesController.dispose();
+    _locationController.dispose();
+    _patientSearchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPatients() async {
+    setState(() => _isLoadingPatients = true);
+    try {
+      final apiService = context.read<ClinicDashboardProvider>();
+      // Usar o provider para carregar os pacientes recentes como fallback
+      await apiService.loadRecentPatients(limit: 50);
+      final recentPatients = apiService.recentPatients;
+      setState(() {
+        _patients = recentPatients.map((p) => {
+          'id': p.id,
+          'name': p.name,
+        }).toList();
+      });
+    } catch (e) {
+      debugPrint('[CreateAppointment] Error loading patients: $e');
+    }
+    setState(() => _isLoadingPatients = false);
+  }
+
+  Future<void> _selectDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      locale: const Locale('pt', 'BR'),
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
+  void _save() {
+    if (_formKey.currentState?.validate() != true) return;
+    if (_selectedPatientId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecione um paciente'), backgroundColor: Color(0xFFE7000B)),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    widget.onSave({
+      'patientId': _selectedPatientId,
+      'title': _titleController.text,
+      'date': _selectedDate,
+      'time': _selectedTime,
+      'type': _selectedType,
+      'status': _selectedStatus,
+      'location': _locationController.text.isEmpty ? null : _locationController.text,
+      'notes': _notesController.text.isEmpty ? null : _notesController.text,
+    });
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.1),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFF4F4A34),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Novo Agendamento',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: const Icon(Icons.close, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+          // Form
+          Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Paciente
+                    const Text('Paciente *', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                    const SizedBox(height: 8),
+                    if (_isLoadingPatients)
+                      const Center(child: CircularProgressIndicator())
+                    else
+                      DropdownButtonFormField<String>(
+                        value: _selectedPatientId,
+                        decoration: InputDecoration(
+                          hintText: 'Selecione o paciente',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        items: _patients.map((p) => DropdownMenuItem(
+                          value: p['id'] as String,
+                          child: Text(p['name'] as String),
+                        )).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedPatientId = value;
+                            _selectedPatientName = _patients.firstWhere((p) => p['id'] == value)['name'] as String?;
+                          });
+                        },
+                      ),
+                    const SizedBox(height: 16),
+
+                    // Título
+                    const Text('Título *', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _titleController,
+                      decoration: InputDecoration(
+                        hintText: 'Ex: Consulta de retorno',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      validator: (v) => v?.isEmpty == true ? 'Campo obrigatório' : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Data e Hora
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Data *', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: _selectDate,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(_formatDate(_selectedDate), style: const TextStyle(fontSize: 14)),
+                                      const Icon(Icons.calendar_today, size: 18, color: Color(0xFF495565)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Hora *', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<String>(
+                                value: _selectedTime,
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                items: _timeSlots.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                onChanged: (v) => setState(() => _selectedTime = v!),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Tipo e Status
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Tipo *', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<String>(
+                                value: _selectedType,
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                items: _typeOptions.map((t) => DropdownMenuItem(
+                                  value: t['value'] as String,
+                                  child: Text(t['label'] as String),
+                                )).toList(),
+                                onChanged: (v) => setState(() => _selectedType = v!),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Status', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<String>(
+                                value: _selectedStatus,
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                items: _statusOptions.map((s) => DropdownMenuItem(
+                                  value: s['value'] as String,
+                                  child: Text(s['label'] as String),
+                                )).toList(),
+                                onChanged: (v) => setState(() => _selectedStatus = v!),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Local
+                    const Text('Local', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _locationController,
+                      decoration: InputDecoration(
+                        hintText: 'Ex: Sala 1',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Observações
+                    const Text('Observações', style: TextStyle(color: Color(0xFF495565), fontSize: 12, fontFamily: 'Inter')),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _notesController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Adicione observações...',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.all(12),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Botão Salvar
+                    GestureDetector(
+                      onTap: _isSaving ? null : _save,
+                      child: Container(
+                        width: double.infinity,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _isSaving ? const Color(0xFF9CA3AF) : const Color(0xFF4F4A34),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: _isSaving
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Text(
+                                  'Criar Agendamento',
+                                  style: TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Inter', fontWeight: FontWeight.w600),
+                                ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
             ),
           ),
