@@ -1,11 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ExamStatus, Prisma } from '@prisma/client';
-import { ExamListQueryDto, ClinicExamStatsDto } from './dto';
+import { ExamStatus, Prisma, PatientFileType, AiAnalysisStatus } from '@prisma/client';
+import { ExamListQueryDto, ClinicExamStatsDto, PatientUploadFileDto, PatientFilesQueryDto } from './dto';
+import { StorageService } from '../storage/storage.service';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class ExamsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(ExamsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private storageService: StorageService,
+  ) {}
 
   // Buscar todos os exames do paciente
   async getPatientExams(patientId: string, status?: ExamStatus) {
@@ -327,5 +334,238 @@ export class ExamsService {
       ...exam,
       patientName: exam.patient.user?.name || exam.patient.name || 'Paciente',
     };
+  }
+
+  // ========== PATIENT UPLOAD METHODS ==========
+
+  /**
+   * Upload de arquivo pelo paciente (exame ou documento)
+   */
+  async uploadPatientFile(
+    patientId: string,
+    userId: string,
+    file: Express.Multer.File,
+    dto: PatientUploadFileDto,
+  ) {
+    this.logger.log(`Patient ${patientId} uploading ${dto.fileType}: ${dto.title}`);
+
+    // Gerar nome único para o arquivo
+    const ext = file.originalname.split('.').pop() || 'bin';
+    const uniqueFilename = `${uuidv4()}.${ext}`;
+
+    // Determinar bucket baseado no tipo
+    const bucket = dto.fileType === PatientFileType.EXAM ? 'exam-files' : 'patient-documents';
+
+    // Upload para Supabase Storage
+    let uploadResult;
+    try {
+      uploadResult = await this.storageService.uploadFile(
+        bucket,
+        `${patientId}/${uniqueFilename}`,
+        file.buffer,
+        file.mimetype,
+      );
+    } catch (error) {
+      this.logger.error(`Upload failed: ${error.message}`);
+      throw new Error('Falha ao fazer upload do arquivo');
+    }
+
+    // Criar registro no banco
+    const exam = await this.prisma.exam.create({
+      data: {
+        patientId,
+        title: dto.title,
+        type: dto.type || 'OUTROS',
+        date: dto.date ? new Date(dto.date) : new Date(),
+        status: ExamStatus.AVAILABLE,
+        fileUrl: uploadResult.publicUrl,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        notes: dto.notes,
+        fileType: dto.fileType,
+        aiStatus: AiAnalysisStatus.PENDING,
+        createdByRole: 'PATIENT',
+        createdById: userId,
+      },
+    });
+
+    // Disparar análise IA de forma assíncrona
+    this.analyzeFileAsync(exam.id, uploadResult.path, file.mimetype, bucket);
+
+    return exam;
+  }
+
+  /**
+   * Análise assíncrona do arquivo com OpenAI Vision
+   */
+  private async analyzeFileAsync(
+    examId: string,
+    storagePath: string,
+    mimeType: string,
+    bucket: string,
+  ) {
+    // Marcar como processando
+    await this.prisma.exam.update({
+      where: { id: examId },
+      data: { aiStatus: AiAnalysisStatus.PROCESSING },
+    });
+
+    try {
+      // Se for PDF, pular análise (OCR não implementado)
+      if (mimeType === 'application/pdf') {
+        await this.prisma.exam.update({
+          where: { id: examId },
+          data: {
+            aiStatus: AiAnalysisStatus.SKIPPED,
+            aiSummary: 'Análise automática não disponível para PDFs.',
+          },
+        });
+        return;
+      }
+
+      // Baixar arquivo para análise
+      const fileBuffer = await this.storageService.downloadFile(bucket, storagePath);
+
+      // Chamar OpenAI Vision para análise
+      const aiSummary = await this.analyzeImageWithOpenAI(fileBuffer, mimeType);
+
+      // Atualizar com resultado
+      await this.prisma.exam.update({
+        where: { id: examId },
+        data: {
+          aiStatus: AiAnalysisStatus.COMPLETED,
+          aiSummary,
+        },
+      });
+
+      this.logger.log(`AI analysis completed for exam ${examId}`);
+    } catch (error) {
+      this.logger.error(`AI analysis failed for exam ${examId}: ${error.message}`);
+
+      await this.prisma.exam.update({
+        where: { id: examId },
+        data: {
+          aiStatus: AiAnalysisStatus.FAILED,
+          aiSummary: 'Falha na análise automática.',
+        },
+      });
+    }
+  }
+
+  /**
+   * Análise de imagem com OpenAI Vision
+   */
+  private async analyzeImageWithOpenAI(fileBuffer: Buffer, mimeType: string): Promise<string> {
+    const OpenAI = require('openai');
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const base64Image = fileBuffer.toString('base64');
+    const imageUrl = `data:${mimeType};base64,${base64Image}`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Você é um assistente médico especializado em análise de exames.
+Analise a imagem fornecida e forneça um resumo claro e conciso em português.
+Se for um exame de sangue ou similar, identifique valores fora do normal.
+Se for uma imagem médica (raio-x, ultrassom, etc), descreva o que observa.
+Se não conseguir identificar o tipo de exame, descreva o documento.
+Seja objetivo e use linguagem acessível ao paciente.
+IMPORTANTE: Sempre recomende que o paciente consulte seu médico para interpretação definitiva.`,
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Por favor, analise este exame/documento médico e forneça um resumo.',
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: imageUrl,
+                detail: 'high',
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 1000,
+    });
+
+    return response.choices[0]?.message?.content || 'Análise não disponível.';
+  }
+
+  /**
+   * Listar arquivos do paciente com filtro por tipo
+   */
+  async getPatientFiles(patientId: string, query: PatientFilesQueryDto) {
+    const { fileType, page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ExamWhereInput = {
+      patientId,
+      ...(fileType && { fileType }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.exam.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.exam.count({ where }),
+    ]);
+
+    return {
+      items,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Deletar arquivo do paciente (somente se criado por ele)
+   */
+  async deletePatientFile(patientId: string, examId: string) {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+    });
+
+    if (!exam) {
+      throw new NotFoundException('Arquivo não encontrado');
+    }
+
+    if (exam.patientId !== patientId) {
+      throw new ForbiddenException('Acesso negado');
+    }
+
+    // Verificar se foi criado pelo paciente
+    if (exam.createdByRole !== 'PATIENT') {
+      throw new ForbiddenException('Você não pode deletar arquivos criados pela clínica');
+    }
+
+    // Deletar do storage se existir URL
+    if (exam.fileUrl) {
+      try {
+        const bucket = exam.fileType === PatientFileType.EXAM ? 'exam-files' : 'patient-documents';
+        const path = `${patientId}/${exam.fileUrl.split('/').pop()}`;
+        await this.storageService.deleteFile(bucket, path);
+      } catch (error) {
+        this.logger.warn(`Failed to delete file from storage: ${error.message}`);
+      }
+    }
+
+    return this.prisma.exam.delete({
+      where: { id: examId },
+    });
   }
 }

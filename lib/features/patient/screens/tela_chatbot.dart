@@ -401,8 +401,8 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                       if (attachment.mimeType.startsWith('image/'))
                         _buildAttachmentImage(attachment),
                   ],
-                  // So renderizar texto se nao for fallback de imagem
-                  if (!_isImageFallbackText(message))
+                  // So renderizar texto se nao for fallback de imagem E tiver conteudo
+                  if (!_isImageFallbackText(message) && message.content.trim().isNotEmpty)
                     Text(
                       message.content,
                       style: TextStyle(
@@ -411,6 +411,16 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                         fontFamily: 'Inter',
                         fontWeight: FontWeight.w400,
                         height: 1.4,
+                      ),
+                    ),
+                  // Se conteudo vazio e sem imagem, mostrar erro generico
+                  if (message.content.trim().isEmpty && !message.hasAttachments)
+                    Text(
+                      'Mensagem indisponivel',
+                      style: TextStyle(
+                        color: _errorColor.withValues(alpha: 0.7),
+                        fontSize: 14,
+                        fontStyle: FontStyle.italic,
                       ),
                     ),
                   if (message.isError) ...[
@@ -618,14 +628,16 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
   /// Verifica se o texto da mensagem e apenas um fallback de imagem
   /// e deve ser ocultado quando a imagem for renderizada
   bool _isImageFallbackText(ChatMessage message) {
-    // Se nao tem attachments de imagem, mostrar texto normalmente
+    final content = message.content.trim();
+
+    // Se nao tem attachments de imagem
     final hasImageAttachment = message.attachments.any(
       (a) => a.mimeType.startsWith('image/'),
     );
-    if (!hasImageAttachment) return false;
-
-    // Verificar se content e fallback
-    final content = message.content.trim();
+    if (!hasImageAttachment) {
+      // Retorna true para esconder se conteudo vazio - fallback sera mostrado
+      return content.isEmpty;
+    }
 
     // Padroes de fallback a ocultar
     if (content.startsWith('[Imagem enviada:') && content.endsWith(']')) {

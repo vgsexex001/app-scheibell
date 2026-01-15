@@ -27,15 +27,19 @@ class ExameCompleto {
   factory ExameCompleto.fromJson(Map<String, dynamic> json) {
     return ExameCompleto(
       id: json['id'] as String,
-      nome: json['title'] as String,
-      data: DateTime.parse(json['date'] as String),
-      status: _parseStatus(json['status'] as String?),
-      analiseIA: json['result'] ?? json['notes'] ?? 'Resultado pendente',
+      nome: json['title'] as String? ?? 'Exame',
+      data: json['date'] != null ? DateTime.parse(json['date'] as String) : DateTime.now(),
+      status: _parseStatus(json['status'] as String?, json['aiStatus'] as String?),
+      analiseIA: json['aiSummary'] as String? ?? json['result'] as String? ?? json['notes'] as String? ?? 'Análise pendente',
       fileUrl: json['fileUrl'] as String?,
     );
   }
 
-  static StatusExame _parseStatus(String? status) {
+  static StatusExame _parseStatus(String? status, String? aiStatus) {
+    // Priorizar status da análise IA
+    if (aiStatus == 'PROCESSING') return StatusExame.alteracaoLeve;
+    if (aiStatus == 'FAILED') return StatusExame.precisaRevisao;
+
     switch (status) {
       case 'PENDING':
         return StatusExame.alteracaoLeve;
@@ -91,41 +95,6 @@ class _TelaExamesState extends State<TelaExames> {
   static const _botaoAgendar = Color(0xFF155DFC);
   static const _botaoPrincipal = Color(0xFF4F4A34);
 
-  // Dados mock (fallback)
-  final List<ExameCompleto> _examesMock = [
-    ExameCompleto(
-      id: '1',
-      nome: 'Hemograma completo',
-      data: DateTime(2024, 11, 5),
-      status: StatusExame.normal,
-      analiseIA: 'Todos os valores dentro da normalidade. Hemoglobina e leucócitos em níveis adequados.',
-    ),
-    ExameCompleto(
-      id: '2',
-      nome: 'Glicemia em jejum',
-      data: DateTime(2024, 11, 5),
-      status: StatusExame.normal,
-      analiseIA: 'Glicemia dentro da faixa normal (85 mg/dL).',
-    ),
-    ExameCompleto(
-      id: '3',
-      nome: 'Ultrassom abdominal',
-      data: DateTime(2024, 11, 3),
-      status: StatusExame.precisaRevisao,
-      analiseIA: 'Detectada pequena alteração na região hepática. Recomenda-se avaliação médica.',
-    ),
-    ExameCompleto(
-      id: '4',
-      nome: 'ECG',
-      data: DateTime(2024, 11, 2),
-      status: StatusExame.alteracaoLeve,
-      analiseIA: 'Ritmo sinusal normal com ligeira taquicardia. Acompanhamento recomendado.',
-    ),
-  ];
-
-  // Lista efetiva de exames (API ou mock)
-  List<ExameCompleto> get _exames => _examesApi.isNotEmpty ? _examesApi : _examesMock;
-
   @override
   void initState() {
     super.initState();
@@ -139,8 +108,10 @@ class _TelaExamesState extends State<TelaExames> {
     });
 
     try {
-      final examesData = await _apiService.getPatientExams();
-      final exames = examesData
+      // Usar novo endpoint que filtra por tipo EXAM
+      final response = await _apiService.getPatientFiles(fileType: 'EXAM');
+      final items = response['items'] as List<dynamic>? ?? [];
+      final exames = items
           .map((json) => ExameCompleto.fromJson(json as Map<String, dynamic>))
           .toList();
 
@@ -176,18 +147,18 @@ class _TelaExamesState extends State<TelaExames> {
                   )
                 : _erro != null && _examesApi.isEmpty
                     ? _buildEstadoErro()
-                    : _exames.isEmpty
+                    : _examesApi.isEmpty
                         ? _buildEstadoVazio()
                         : RefreshIndicator(
                             onRefresh: _carregarExames,
                             color: _botaoPrincipal,
                             child: ListView.builder(
                               padding: const EdgeInsets.all(24),
-                              itemCount: _exames.length,
+                              itemCount: _examesApi.length,
                               itemBuilder: (context, index) {
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 16),
-                                  child: _buildCardExame(_exames[index]),
+                                  child: _buildCardExame(_examesApi[index]),
                                 );
                               },
                             ),

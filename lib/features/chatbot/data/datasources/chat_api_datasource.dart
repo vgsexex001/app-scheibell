@@ -112,6 +112,21 @@ class ChatApiDatasource {
       final responseText = response['response'] as String? ?? '';
       final convId = response['conversationId'] as String? ?? '';
 
+      // Validar conteudo - se vazio, retornar mensagem de erro
+      if (responseText.trim().isEmpty) {
+        debugPrint('[CHAT] API retornou resposta vazia: $response');
+        return ChatApiResponse(
+          message: ChatMessageModel(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            content: 'Desculpe, nao consegui processar sua mensagem. Por favor, tente novamente.',
+            role: MessageRole.assistant,
+            timestamp: DateTime.now(),
+            isError: true,
+          ),
+          conversationId: convId,
+        );
+      }
+
       return ChatApiResponse(
         message: ChatMessageModel(
           id: DateTime.now().millisecondsSinceEpoch.toString(),

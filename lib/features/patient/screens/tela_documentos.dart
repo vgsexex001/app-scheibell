@@ -79,15 +79,17 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
     });
 
     try {
-      final data = await _apiService.getPatientExams();
-      final documentosApi = data.map((item) => _mapearDocumentoApi(item)).toList();
+      // Usar novo endpoint que filtra por tipo DOCUMENT
+      final response = await _apiService.getPatientFiles(fileType: 'DOCUMENT');
+      final items = response['items'] as List<dynamic>? ?? [];
+      final documentosApi = items.map((item) => _mapearDocumentoApi(item as Map<String, dynamic>)).toList();
 
       setState(() {
         _documentos = documentosApi;
         _isLoading = false;
       });
     } catch (e) {
-      print('Erro ao carregar documentos: $e');
+      debugPrint('Erro ao carregar documentos: $e');
       setState(() {
         _documentos = [];
         _isLoading = false;
@@ -97,36 +99,34 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
   }
 
   DocumentoCompleto _mapearDocumentoApi(Map<String, dynamic> item) {
-    // Mapear tipo da API para enum local
+    // Mapear tipo da API para enum local baseado no campo type ou título
     TipoDocumento tipo;
-    final tipoApi = item['type'] as String? ?? 'EXAM';
-    switch (tipoApi) {
-      case 'CONSENT':
-        tipo = TipoDocumento.termo;
-        break;
-      case 'REFERRAL':
-        tipo = TipoDocumento.encaminhamento;
-        break;
-      default:
-        tipo = TipoDocumento.exame;
+    final tipoApi = item['type'] as String? ?? '';
+    final titulo = (item['title'] as String? ?? '').toLowerCase();
+
+    if (tipoApi == 'CONSENT' || titulo.contains('termo') || titulo.contains('consent')) {
+      tipo = TipoDocumento.termo;
+    } else if (tipoApi == 'REFERRAL' || titulo.contains('encaminhamento') || titulo.contains('referral')) {
+      tipo = TipoDocumento.encaminhamento;
+    } else {
+      tipo = TipoDocumento.exame;
     }
 
     // Mapear status da API para enum local
     StatusDocumento status;
     final statusApi = item['status'] as String? ?? 'PENDING';
-    switch (statusApi) {
-      case 'APPROVED':
-      case 'COMPLETED':
-        status = StatusDocumento.aprovado;
-        break;
-      default:
-        status = StatusDocumento.pendente;
+    final aiStatusApi = item['aiStatus'] as String? ?? '';
+
+    if (statusApi == 'AVAILABLE' || statusApi == 'VIEWED' || aiStatusApi == 'COMPLETED') {
+      status = StatusDocumento.aprovado;
+    } else {
+      status = StatusDocumento.pendente;
     }
 
     return DocumentoCompleto(
       id: item['id'] as String,
-      nome: item['name'] as String? ?? item['title'] as String? ?? 'Documento',
-      data: DateTime.tryParse(item['date'] as String? ?? '') ?? DateTime.now(),
+      nome: item['title'] as String? ?? item['name'] as String? ?? 'Documento',
+      data: item['date'] != null ? DateTime.tryParse(item['date'] as String) ?? DateTime.now() : DateTime.now(),
       tipo: tipo,
       status: status,
       arquivoUrl: item['fileUrl'] as String?,

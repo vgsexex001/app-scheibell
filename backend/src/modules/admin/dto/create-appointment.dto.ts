@@ -4,7 +4,6 @@ import {
   IsDateString,
   IsEnum,
   IsOptional,
-  IsUUID,
   Matches,
   IsInt,
   Min,
@@ -17,7 +16,7 @@ import { AppointmentType, AppointmentStatus } from '@prisma/client';
  * POST /api/admin/appointments
  */
 export class CreateAppointmentDto {
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   patientId: string;
 

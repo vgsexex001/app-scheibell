@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../core/services/api_service.dart';
 import '../providers/calendar_provider.dart';
-import '../providers/clinic_dashboard_provider.dart';
 import '../models/calendar_appointment.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -1560,16 +1560,17 @@ class _CreateAppointmentModalState extends State<_CreateAppointmentModal> {
   Future<void> _loadPatients() async {
     setState(() => _isLoadingPatients = true);
     try {
-      final apiService = context.read<ClinicDashboardProvider>();
-      // Usar o provider para carregar os pacientes recentes como fallback
-      await apiService.loadRecentPatients(limit: 50);
-      final recentPatients = apiService.recentPatients;
+      final apiService = ApiService();
+      // Carregar todos os pacientes da clínica
+      final response = await apiService.getPatients(limit: 100);
+      final items = response['items'] as List? ?? [];
       setState(() {
-        _patients = recentPatients.map((p) => {
-          'id': p.id,
-          'name': p.name,
+        _patients = items.map((p) => {
+          'id': p['id'] ?? p['patientId'] ?? '',
+          'name': p['name'] ?? p['patientName'] ?? 'Paciente',
         }).toList();
       });
+      debugPrint('[CreateAppointment] Loaded ${_patients.length} patients');
     } catch (e) {
       debugPrint('[CreateAppointment] Error loading patients: $e');
     }

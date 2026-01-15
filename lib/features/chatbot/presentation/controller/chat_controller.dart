@@ -176,8 +176,17 @@ class ChatController extends ChangeNotifier {
         _conversationId = result.conversationId;
       }
 
-      // Adiciona resposta
-      _messages.add(result.message);
+      // Validar que mensagem AI tem conteudo antes de adicionar
+      if (result.message.content.trim().isNotEmpty) {
+        _messages.add(result.message);
+      } else {
+        // Mensagem vazia - adicionar erro ao inves de bolha vazia
+        debugPrint('[CHAT] Mensagem AI vazia ignorada');
+        _messages.add(ChatMessage.fromAssistant(
+          'Desculpe, ocorreu um erro ao processar sua mensagem.',
+          isError: true,
+        ));
+      }
 
       // Verifica se foi erro
       if (result.message.isError) {

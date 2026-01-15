@@ -667,6 +667,7 @@ export class AdminService {
     const appointment = await this.prisma.appointment.create({
       data: {
         patientId: dto.patientId,
+        clinicId: clinicId,
         title: dto.title,
         description: dto.description,
         date: new Date(dto.date),

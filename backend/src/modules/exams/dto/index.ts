@@ -1,6 +1,6 @@
 import { IsString, IsOptional, IsEnum, IsNumber, IsDateString, Min, Max, IsUUID } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { ExamStatus } from '@prisma/client';
+import { ExamStatus, PatientFileType, AiAnalysisStatus } from '@prisma/client';
 
 // ========== CREATE EXAM DTO ==========
 export class CreateExamDto {
@@ -151,4 +151,68 @@ export class ClinicExamStatsDto {
   totalPatients: number;
   examsThisMonth: number;
   examsLastMonth: number;
+}
+
+// ========== PATIENT UPLOAD FILE DTO ==========
+export class PatientUploadFileDto {
+  @IsString()
+  title: string;
+
+  @IsEnum(PatientFileType)
+  fileType: PatientFileType;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string; // Tipo do exame: HEMOGRAMA, ULTRASSOM, etc
+}
+
+// ========== PATIENT FILES QUERY DTO ==========
+export class PatientFilesQueryDto {
+  @IsOptional()
+  @IsEnum(PatientFileType)
+  fileType?: PatientFileType;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+// ========== EXAM WITH AI RESPONSE DTO ==========
+export class ExamWithAiResponseDto {
+  id: string;
+  patientId: string;
+  title: string;
+  type: string;
+  date: Date;
+  status: ExamStatus;
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  notes?: string;
+  result?: string;
+  fileType: PatientFileType;
+  aiStatus: AiAnalysisStatus;
+  aiSummary?: string;
+  createdByRole?: string;
+  createdById?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }

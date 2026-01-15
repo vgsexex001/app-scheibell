@@ -1063,6 +1063,63 @@ class ApiService {
     return response.data;
   }
 
+  // ==================== UPLOAD DE ARQUIVOS DO PACIENTE ====================
+
+  /// Upload de arquivo do paciente (exame ou documento)
+  /// fileType: 'EXAM' ou 'DOCUMENT'
+  Future<Map<String, dynamic>> uploadPatientFile({
+    required File file,
+    required String fileType,
+    required String title,
+    String? notes,
+    DateTime? date,
+    String? type, // Tipo do exame (HEMOGRAMA, ULTRASSOM, etc)
+  }) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(file.path, filename: file.path.split('/').last),
+      'fileType': fileType,
+      'title': title,
+      if (notes != null) 'notes': notes,
+      if (date != null) 'date': date.toIso8601String(),
+      if (type != null) 'type': type,
+    });
+
+    final response = await _dio.post(
+      '/exams/patient/upload',
+      data: formData,
+      options: Options(
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      ),
+    );
+    return response.data;
+  }
+
+  /// Lista arquivos do paciente com filtro por tipo
+  /// fileType: 'EXAM' | 'DOCUMENT' (opcional)
+  Future<Map<String, dynamic>> getPatientFiles({
+    String? fileType,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await get(
+      '/exams/patient/files',
+      queryParameters: {
+        if (fileType != null) 'fileType': fileType,
+        'page': page.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    return response.data;
+  }
+
+  /// Deleta arquivo do paciente (somente se criado por ele)
+  Future<Map<String, dynamic>> deletePatientFile(String fileId) async {
+    final response = await delete('/exams/patient/$fileId');
+    return response.data;
+  }
+
   // ==================== PROTOCOLO DE TREINO ====================
 
   /// Busca o protocolo de treino com as semanas e status

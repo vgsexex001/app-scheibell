@@ -77,6 +77,21 @@ enum ExamStatus {
   VIEWED          // Visualizado pelo paciente
 }
 
+// ==================== ARQUIVOS DO PACIENTE ====================
+
+enum PatientFileType {
+  EXAM            // Exame médico
+  DOCUMENT        // Documento geral (termo, atestado, etc)
+}
+
+enum AiAnalysisStatus {
+  PENDING         // Aguardando análise
+  PROCESSING      // Em análise
+  COMPLETED       // Análise concluída
+  FAILED          // Falha na análise
+  SKIPPED         // Não aplicável (PDF sem OCR)
+}
+
 // ==================== ALERTAS ====================
 
 enum AlertType {
@@ -214,6 +229,7 @@ model Clinic {
   alerts        Alert[]
   patientConnections PatientConnection[]
   schedules     ClinicSchedule[]
+  appointments  Appointment[]
 
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
@@ -318,6 +334,9 @@ model Appointment {
   patientId   String
   patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
+  clinicId    String
+  clinic      Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
   title       String
   description String?
   date        DateTime
@@ -379,12 +398,26 @@ model Exam {
   notes       String?                   // Observações do médico
   result      String?                   // Resultado resumido
 
+  // Tipo de arquivo (EXAM ou DOCUMENT)
+  fileType    PatientFileType @default(EXAM)
+
+  // Análise IA
+  aiStatus    AiAnalysisStatus @default(PENDING)
+  aiSummary   String?                   // Resumo gerado pela IA
+  aiJson      Json?                     // Resposta estruturada da IA
+
+  // Auditoria - quem criou
+  createdByRole String?                 // PATIENT, ADMIN, STAFF
+  createdById   String?                 // userId de quem criou
+
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   @@index([patientId])
   @@index([patientId, status])
   @@index([patientId, date])
+  @@index([patientId, fileType])
+  @@index([patientId, fileType, createdAt(sort: Desc)])
   @@map("exams")
 }
 

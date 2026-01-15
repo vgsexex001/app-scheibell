@@ -37,50 +37,6 @@ class TabPerfil {
   TabPerfil({required this.icone, required this.label});
 }
 
-class Documento {
-  final String id;
-  final String nome;
-  final DateTime data;
-  final String tipoArquivo; // 'PDF', 'DOC', 'IMG'
-  final String tamanho; // '2.3 MB', '1.1 MB', '850 KB'
-
-  Documento({
-    required this.id,
-    required this.nome,
-    required this.data,
-    required this.tipoArquivo,
-    required this.tamanho,
-  });
-}
-
-class Exame {
-  final String id;
-  final String nome;
-  final DateTime data;
-  final String status; // 'normal', 'disponivel', 'aguardando', 'atencao'
-
-  Exame({
-    required this.id,
-    required this.nome,
-    required this.data,
-    required this.status,
-  });
-}
-
-class Recurso {
-  final String id;
-  final String titulo;
-  final String tipo; // 'video', 'documento', 'tutorial', 'audio'
-  final String duracao; // '8 min', 'Leitura 5 min', '12 min'
-
-  Recurso({
-    required this.id,
-    required this.titulo,
-    required this.tipo,
-    required this.duracao,
-  });
-}
-
 class TelaPerfil extends StatefulWidget {
   const TelaPerfil({super.key});
 
@@ -122,6 +78,12 @@ class _TelaPerfilState extends State<TelaPerfil> {
   List<ContentItem> _recursosApi = [];
   bool _carregandoRecursos = true;
 
+  // Exames e Documentos carregados da API
+  List<Map<String, dynamic>> _examesApi = [];
+  List<Map<String, dynamic>> _documentosApi = [];
+  bool _carregandoExames = true;
+  bool _carregandoDocumentos = true;
+
   // Tab selecionada
   int _tabSelecionada = 0;
 
@@ -136,88 +98,14 @@ class _TelaPerfilState extends State<TelaPerfil> {
   // Lista de marcos da timeline
   late List<MarcoTimeline> _marcos;
 
-  // Lista de documentos (em produção viriam do backend)
-  final List<Documento> _documentos = [
-    Documento(
-      id: '1',
-      nome: 'Termo de Consentimento',
-      data: DateTime(2024, 11, 5),
-      tipoArquivo: 'PDF',
-      tamanho: '2.3 MB',
-    ),
-    Documento(
-      id: '2',
-      nome: 'Prescrição Médica',
-      data: DateTime(2024, 11, 10),
-      tipoArquivo: 'PDF',
-      tamanho: '1.1 MB',
-    ),
-    Documento(
-      id: '3',
-      nome: 'Orientações Pós-Operatórias',
-      data: DateTime(2024, 11, 10),
-      tipoArquivo: 'PDF',
-      tamanho: '850 KB',
-    ),
-    Documento(
-      id: '4',
-      nome: 'Atestado Médico',
-      data: DateTime(2024, 11, 15),
-      tipoArquivo: 'PDF',
-      tamanho: '540 KB',
-    ),
-  ];
-
-  // Lista de exames (em produção viriam do backend)
-  final List<Exame> _exames = [
-    Exame(
-      id: '1',
-      nome: 'Hemograma Completo',
-      data: DateTime(2024, 11, 10),
-      status: 'normal',
-    ),
-    Exame(
-      id: '2',
-      nome: 'Ultrassom',
-      data: DateTime(2024, 11, 15),
-      status: 'disponivel',
-    ),
-    Exame(
-      id: '3',
-      nome: 'Raio-X Pós-Op',
-      data: DateTime(2024, 11, 20),
-      status: 'aguardando',
-    ),
-  ];
-
-  // Lista de recursos (em produção viriam do backend)
-  final List<Recurso> _recursos = [
-    Recurso(
-      id: '1',
-      titulo: 'Vídeo: Cuidados com o curativo',
-      tipo: 'tutorial',
-      duracao: '8 min',
-    ),
-    Recurso(
-      id: '2',
-      titulo: 'Guia de Alimentação',
-      tipo: 'documento',
-      duracao: 'Leitura 5 min',
-    ),
-    Recurso(
-      id: '3',
-      titulo: 'Exercícios de Recuperação',
-      tipo: 'video',
-      duracao: '12 min',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
     _marcos = _calcularMarcos();
     _carregarDadosApi();
     _carregarRecursos();
+    _carregarExames();
+    _carregarDocumentos();
   }
 
   Future<void> _carregarDadosApi() async {
@@ -247,6 +135,44 @@ class _TelaPerfilState extends State<TelaPerfil> {
       if (mounted) {
         setState(() {
           _carregandoRecursos = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _carregarExames() async {
+    try {
+      final response = await _apiService.getPatientFiles(fileType: 'EXAM');
+      if (mounted) {
+        setState(() {
+          _examesApi = List<Map<String, dynamic>>.from(response['items'] ?? []);
+          _carregandoExames = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[PERFIL] Erro ao carregar exames: $e');
+      if (mounted) {
+        setState(() {
+          _carregandoExames = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _carregarDocumentos() async {
+    try {
+      final response = await _apiService.getPatientFiles(fileType: 'DOCUMENT');
+      if (mounted) {
+        setState(() {
+          _documentosApi = List<Map<String, dynamic>>.from(response['items'] ?? []);
+          _carregandoDocumentos = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[PERFIL] Erro ao carregar documentos: $e');
+      if (mounted) {
+        setState(() {
+          _carregandoDocumentos = false;
         });
       }
     }
@@ -694,11 +620,54 @@ class _TelaPerfilState extends State<TelaPerfil> {
           // Header: "Meus Exames" + "Ver todos >"
           _buildHeaderExames(),
           const SizedBox(height: 12),
-          // Lista de cards de exames
-          ..._exames.map((exame) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildCardExame(exame),
-          )),
+          // Conteúdo dinâmico
+          if (_carregandoExames)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(
+                  color: Color(0xFF4F4A34),
+                ),
+              ),
+            )
+          else if (_examesApi.isNotEmpty)
+            // Usar dados da API
+            ..._examesApi.map((exame) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildCardExameApi(exame),
+            ))
+          else
+            // Mensagem quando não há exames
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Column(
+                children: [
+                  Icon(Icons.science_outlined, size: 48, color: Color(0xFF9E9E9E)),
+                  SizedBox(height: 12),
+                  Text(
+                    'Nenhum exame encontrado',
+                    style: TextStyle(
+                      color: Color(0xFF4F4A34),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Seus exames aparecerão aqui',
+                    style: TextStyle(
+                      color: Color(0xFF9E9E9E),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -751,7 +720,11 @@ class _TelaPerfilState extends State<TelaPerfil> {
     );
   }
 
-  Widget _buildCardExame(Exame exame) {
+  Widget _buildCardExameApi(Map<String, dynamic> exame) {
+    final status = _mapApiStatusToLocal(exame['status'] as String?, exame['aiStatus'] as String?);
+    final title = exame['title'] as String? ?? 'Exame';
+    final date = exame['date'] != null ? DateTime.parse(exame['date']) : DateTime.now();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -761,7 +734,7 @@ class _TelaPerfilState extends State<TelaPerfil> {
         border: Border(
           left: BorderSide(
             width: 4,
-            color: _getCorBordaExame(exame.status),
+            color: _getCorBordaExame(status),
           ),
         ),
         boxShadow: [
@@ -780,7 +753,7 @@ class _TelaPerfilState extends State<TelaPerfil> {
       child: Row(
         children: [
           // Ícone circular com gradiente
-          _buildIconeExame(exame.status),
+          _buildIconeExame(status),
           const SizedBox(width: 12),
           // Nome e data do exame
           Expanded(
@@ -789,7 +762,7 @@ class _TelaPerfilState extends State<TelaPerfil> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  exame.nome,
+                  title,
                   style: const TextStyle(
                     color: _textoPrimario,
                     fontSize: 14,
@@ -807,7 +780,7 @@ class _TelaPerfilState extends State<TelaPerfil> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      _formatarDataExame(exame.data),
+                      _formatarDataExame(date),
                       style: const TextStyle(
                         color: _textoSecundario,
                         fontSize: 12,
@@ -817,27 +790,58 @@ class _TelaPerfilState extends State<TelaPerfil> {
                     ),
                   ],
                 ),
+                // Mostrar resumo da IA se disponível
+                if (exame['aiSummary'] != null && (exame['aiSummary'] as String).isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    (exame['aiSummary'] as String).length > 60
+                        ? '${(exame['aiSummary'] as String).substring(0, 60)}...'
+                        : exame['aiSummary'] as String,
+                    style: const TextStyle(
+                      color: _textoSecundario,
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           // Badge de status
-          _buildBadgeExame(exame.status),
+          _buildBadgeExame(status),
           const SizedBox(width: 8),
           // Ícone de download
-          GestureDetector(
-            onTap: () {
-              // TODO: Baixar/visualizar exame
-              debugPrint('Download exame: ${exame.nome}');
-            },
-            child: const Icon(
-              Icons.download_outlined,
-              size: 24,
-              color: _textoSecundario,
+          if (exame['fileUrl'] != null)
+            GestureDetector(
+              onTap: () {
+                debugPrint('Download exame: $title');
+              },
+              child: const Icon(
+                Icons.download_outlined,
+                size: 24,
+                color: _textoSecundario,
+              ),
             ),
-          ),
         ],
       ),
     );
+  }
+
+  String _mapApiStatusToLocal(String? status, String? aiStatus) {
+    // Mapear status da API para status local
+    if (aiStatus == 'PROCESSING') return 'aguardando';
+    if (aiStatus == 'FAILED') return 'atencao';
+
+    switch (status?.toUpperCase()) {
+      case 'PENDING':
+        return 'aguardando';
+      case 'AVAILABLE':
+        return 'disponivel';
+      case 'VIEWED':
+        return 'normal';
+      default:
+        return 'disponivel';
+    }
   }
 
   Widget _buildIconeExame(String status) {
@@ -970,11 +974,54 @@ class _TelaPerfilState extends State<TelaPerfil> {
           // Header: "Documentos" + "Ver todos >"
           _buildHeaderDocs(),
           const SizedBox(height: 12),
-          // Lista de cards
-          ..._documentos.map((doc) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildCardDocumento(doc),
-          )),
+          // Conteúdo dinâmico
+          if (_carregandoDocumentos)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(
+                  color: Color(0xFF4F4A34),
+                ),
+              ),
+            )
+          else if (_documentosApi.isNotEmpty)
+            // Usar dados da API
+            ..._documentosApi.map((doc) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildCardDocumentoApi(doc),
+            ))
+          else
+            // Mensagem quando não há documentos
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Column(
+                children: [
+                  Icon(Icons.description_outlined, size: 48, color: Color(0xFF9E9E9E)),
+                  SizedBox(height: 12),
+                  Text(
+                    'Nenhum documento encontrado',
+                    style: TextStyle(
+                      color: Color(0xFF4F4A34),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Seus documentos aparecerão aqui',
+                    style: TextStyle(
+                      color: Color(0xFF9E9E9E),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1027,120 +1074,6 @@ class _TelaPerfilState extends State<TelaPerfil> {
     );
   }
 
-  Widget _buildCardDocumento(Documento documento) {
-    // Cores do tema vermelho para documentos
-    const corBordaVermelha = Color(0xFFE53935);
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border(
-          left: BorderSide(
-            width: 4,
-            color: corBordaVermelha,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF212621).withOpacity(0.1),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-          BoxShadow(
-            color: const Color(0xFF212621).withOpacity(0.05),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Ícone circular vermelho com ícone de documento
-          _buildIconeDocumento(),
-          const SizedBox(width: 12),
-          // Nome e data
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  documento.nome,
-                  style: const TextStyle(
-                    color: _textoPrimario,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    height: 1.40,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.calendar_today_outlined,
-                      size: 14,
-                      color: _textoSecundario,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _formatarDataDocumento(documento.data),
-                      style: const TextStyle(
-                        color: _textoSecundario,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                        height: 1.50,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          // Info do arquivo (tipo + tamanho)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                documento.tipoArquivo,
-                style: const TextStyle(
-                  color: Color(0xFF9E9E9E),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                documento.tamanho,
-                style: const TextStyle(
-                  color: Color(0xFF9E9E9E),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          // Ícone de download
-          GestureDetector(
-            onTap: () {
-              // TODO: Baixar/visualizar documento
-              debugPrint('Download: ${documento.nome}');
-            },
-            child: const Icon(
-              Icons.download_outlined,
-              size: 24,
-              color: _textoSecundario,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildIconeDocumento() {
     return Container(
       width: 48,
@@ -1172,6 +1105,138 @@ class _TelaPerfilState extends State<TelaPerfil> {
         Icons.description_outlined,
         color: Colors.white,
         size: 24,
+      ),
+    );
+  }
+
+  Widget _buildCardDocumentoApi(Map<String, dynamic> documento) {
+    // Cores do tema vermelho para documentos
+    const corBordaVermelha = Color(0xFFE53935);
+    final title = documento['title'] as String? ?? 'Documento';
+    final date = documento['date'] != null ? DateTime.parse(documento['date']) : DateTime.now();
+    final mimeType = documento['mimeType'] as String? ?? '';
+    final fileSize = documento['fileSize'] as int? ?? 0;
+
+    // Determinar tipo do arquivo
+    String tipoArquivo = 'PDF';
+    if (mimeType.contains('image')) {
+      tipoArquivo = 'IMG';
+    } else if (mimeType.contains('word') || mimeType.contains('doc')) {
+      tipoArquivo = 'DOC';
+    }
+
+    // Formatar tamanho
+    String tamanho = '${(fileSize / 1024).toStringAsFixed(0)} KB';
+    if (fileSize > 1024 * 1024) {
+      tamanho = '${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: const Border(
+          left: BorderSide(
+            width: 4,
+            color: corBordaVermelha,
+          ),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF212621).withOpacity(0.1),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+          BoxShadow(
+            color: const Color(0xFF212621).withOpacity(0.05),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Ícone circular vermelho com ícone de documento
+          _buildIconeDocumento(),
+          const SizedBox(width: 12),
+          // Nome e data
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _textoPrimario,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.40,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      size: 14,
+                      color: _textoSecundario,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _formatarDataDocumento(date),
+                      style: const TextStyle(
+                        color: _textoSecundario,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        height: 1.50,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Info do arquivo (tipo + tamanho)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                tipoArquivo,
+                style: const TextStyle(
+                  color: Color(0xFF9E9E9E),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                tamanho,
+                style: const TextStyle(
+                  color: Color(0xFF9E9E9E),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          // Ícone de download
+          if (documento['fileUrl'] != null)
+            GestureDetector(
+              onTap: () {
+                debugPrint('Download: $title');
+              },
+              child: const Icon(
+                Icons.download_outlined,
+                size: 24,
+                color: _textoSecundario,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1210,11 +1275,37 @@ class _TelaPerfilState extends State<TelaPerfil> {
               child: _buildCardRecursoApi(recurso),
             ))
           else
-            // Fallback para dados mock se API não retornar nada
-            ..._recursos.map((recurso) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _buildCardRecurso(recurso),
-            )),
+            // Mensagem quando não há recursos
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Column(
+                children: [
+                  Icon(Icons.grid_view_outlined, size: 48, color: Color(0xFF9E9E9E)),
+                  SizedBox(height: 12),
+                  Text(
+                    'Nenhum recurso encontrado',
+                    style: TextStyle(
+                      color: Color(0xFF4F4A34),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Recursos educativos aparecerão aqui',
+                    style: TextStyle(
+                      color: Color(0xFF9E9E9E),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1364,85 +1455,6 @@ class _TelaPerfilState extends State<TelaPerfil> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildCardRecurso(Recurso recurso) {
-    // Cor marrom para borda esquerda
-    const corBordaMarrom = Color(0xFF4F4A34);
-
-    return GestureDetector(
-      onTap: () {
-        // TODO: Abrir recurso (vídeo, documento, etc)
-        debugPrint('Abrir recurso: ${recurso.titulo}');
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.only(top: 16, left: 16, bottom: 16, right: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: const Border(
-            left: BorderSide(
-              width: 4,
-              color: corBordaMarrom,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF212621).withOpacity(0.1),
-              blurRadius: 3,
-              offset: const Offset(0, 1),
-            ),
-            BoxShadow(
-              color: const Color(0xFF212621).withOpacity(0.05),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Ícone circular com gradiente vertical
-            _buildIconeRecurso(recurso.tipo),
-            const SizedBox(width: 12),
-            // Título e informações
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Título do recurso
-                  Text(
-                    recurso.titulo,
-                    style: const TextStyle(
-                      color: _textoPrimario,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      height: 1.40,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // Badge de tipo + duração
-                  Row(
-                    children: [
-                      _buildBadgeRecurso(recurso.tipo),
-                      const SizedBox(width: 8),
-                      _buildDuracaoRecurso(recurso.duracao),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // Seta/chevron à direita
-            const Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: Color(0xFF4F4A34),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

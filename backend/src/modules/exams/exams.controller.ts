@@ -11,18 +11,26 @@ import {
   Request,
   BadRequestException,
   Patch,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ExamsService } from './exams.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Request as ExpressRequest } from 'express';
-import { ExamStatus } from '@prisma/client';
+import { ExamStatus, PatientFileType } from '@prisma/client';
 import {
   CreateExamDto,
   UpdateExamDto,
   AttachFileDto,
   ExamListQueryDto,
+  PatientUploadFileDto,
+  PatientFilesQueryDto,
 } from './dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
@@ -97,6 +105,56 @@ export class ExamsController {
   ) {
     const patientId = this.getPatientId(req);
     return this.examsService.markAsViewed(patientId, examId);
+  }
+
+  // ========== ROTAS DE UPLOAD DO PACIENTE ==========
+
+  // POST /api/exams/patient/upload - Upload de arquivo (exame ou documento)
+  @Post('patient/upload')
+  @Roles('PATIENT')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPatientFile(
+    @Request() req: AuthenticatedRequest,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new FileTypeValidator({
+            fileType: /(jpeg|jpg|png|heic|heif|pdf)$/i,
+          }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+    @Body() dto: PatientUploadFileDto,
+  ) {
+    const patientId = this.getPatientId(req);
+    const userId = req.user.sub;
+
+    return this.examsService.uploadPatientFile(patientId, userId, file, dto);
+  }
+
+  // GET /api/exams/patient/files - Listar arquivos do paciente (exames e documentos)
+  @Get('patient/files')
+  @Roles('PATIENT')
+  async getPatientFiles(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: PatientFilesQueryDto,
+  ) {
+    const patientId = this.getPatientId(req);
+    return this.examsService.getPatientFiles(patientId, query);
+  }
+
+  // DELETE /api/exams/patient/:id - Deletar arquivo próprio
+  @Delete('patient/:id')
+  @Roles('PATIENT')
+  async deletePatientFile(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') examId: string,
+  ) {
+    const patientId = this.getPatientId(req);
+    await this.examsService.deletePatientFile(patientId, examId);
+    return { success: true };
   }
 
   // ========== ROTAS DO STAFF/ADMIN ==========
