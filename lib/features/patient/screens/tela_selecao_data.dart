@@ -106,7 +106,7 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
     });
 
     try {
-      // Converte o tipo de string para AppointmentType
+      // Converte o tipo da tela para AppointmentType usando o apiValue
       final tipo = AppointmentType.fromApi(widget.tipoAgendamento);
 
       // Usa o AppointmentProvider para criar o agendamento

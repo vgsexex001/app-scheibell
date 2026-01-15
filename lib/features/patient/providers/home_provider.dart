@@ -419,7 +419,8 @@ class HomeProvider extends ChangeNotifier {
   Future<void> _carregarConsultas() async {
     _sectionLoading = _sectionLoading.copyWith(consultas: true);
     try {
-      final consultas = await _apiService.getUpcomingAppointments(limit: 2);
+      // Carrega 3 consultas para exibir na Home
+      final consultas = await _apiService.getUpcomingAppointments(limit: 3);
       _consultas = consultas.cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('Erro ao carregar consultas: $e');

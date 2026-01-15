@@ -345,6 +345,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
             runSpacing: 8,
             children: const [
               _ConsultationTypeLegend(
+                icon: Icons.medical_services_outlined,
+                color: Color(0xFF495565),
+                label: 'Consulta',
+              ),
+              _ConsultationTypeLegend(
                 icon: Icons.person_add_outlined,
                 color: Color(0xFF7C3AED),
                 label: 'Primeira Consulta',
@@ -352,17 +357,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
               _ConsultationTypeLegend(
                 icon: Icons.event_repeat_outlined,
                 color: Color(0xFF155CFB),
-                label: 'Retorno 7d',
-              ),
-              _ConsultationTypeLegend(
-                icon: Icons.replay_outlined,
-                color: Color(0xFF00A63E),
-                label: 'Retorno 30d',
+                label: 'Retorno',
               ),
               _ConsultationTypeLegend(
                 icon: Icons.healing_outlined,
                 color: Color(0xFFE7000B),
                 label: 'Pós-Operatório',
+              ),
+              _ConsultationTypeLegend(
+                icon: Icons.content_cut_outlined,
+                color: Color(0xFF0891B2),
+                label: 'Retirada de Splint',
+              ),
+              _ConsultationTypeLegend(
+                icon: Icons.accessibility_new_outlined,
+                color: Color(0xFFEC4899),
+                label: 'Fisioterapia',
               ),
               _ConsultationTypeLegend(
                 icon: Icons.search_outlined,
@@ -976,16 +986,23 @@ class _AppointmentCard extends StatelessWidget {
       case 'FIRST_CONSULTATION':
         return 'Primeira Consulta';
       case 'RETURN_7D':
-      case 'RETURN_VISIT':
         return 'Retorno 7 dias';
+      case 'RETURN_VISIT':
+        return 'Retorno';
       case 'RETURN_30D':
         return 'Retorno 30 dias';
       case 'POST_OP':
         return 'Pós-Operatório';
+      case 'SPLINT_REMOVAL':
+        return 'Retirada de Splint';
       case 'EVALUATION':
         return 'Avaliação';
+      case 'PHYSIOTHERAPY':
+        return 'Fisioterapia';
       case 'TELEMEDICINE':
         return 'Telemedicina';
+      case 'EXAM':
+        return 'Exame';
       case 'CONSULTATION':
         return 'Consulta';
       default:
@@ -998,16 +1015,23 @@ class _AppointmentCard extends StatelessWidget {
       case 'FIRST_CONSULTATION':
         return const Color(0xFF7C3AED);
       case 'RETURN_7D':
+        return const Color(0xFF155CFB);
       case 'RETURN_VISIT':
         return const Color(0xFF155CFB);
       case 'RETURN_30D':
         return const Color(0xFF00A63E);
       case 'POST_OP':
         return const Color(0xFFE7000B);
+      case 'SPLINT_REMOVAL':
+        return const Color(0xFF0891B2);
       case 'EVALUATION':
         return const Color(0xFFD08700);
+      case 'PHYSIOTHERAPY':
+        return const Color(0xFFEC4899);
       case 'TELEMEDICINE':
         return const Color(0xFF059669);
+      case 'EXAM':
+        return const Color(0xFF8B5CF6);
       case 'CONSULTATION':
         return const Color(0xFF495565);
       default:
@@ -1020,16 +1044,23 @@ class _AppointmentCard extends StatelessWidget {
       case 'FIRST_CONSULTATION':
         return Icons.person_add_outlined;
       case 'RETURN_7D':
+        return Icons.event_repeat_outlined;
       case 'RETURN_VISIT':
         return Icons.event_repeat_outlined;
       case 'RETURN_30D':
         return Icons.replay_outlined;
       case 'POST_OP':
         return Icons.healing_outlined;
+      case 'SPLINT_REMOVAL':
+        return Icons.content_cut_outlined;
       case 'EVALUATION':
         return Icons.search_outlined;
+      case 'PHYSIOTHERAPY':
+        return Icons.accessibility_new_outlined;
       case 'TELEMEDICINE':
         return Icons.videocam_outlined;
+      case 'EXAM':
+        return Icons.biotech_outlined;
       case 'CONSULTATION':
         return Icons.medical_services_outlined;
       default:
@@ -1223,12 +1254,17 @@ class _AppointmentDetailModalState extends State<_AppointmentDetailModal> {
   ];
 
   final List<Map<String, dynamic>> _consultationTypes = [
+    {'value': 'CONSULTATION', 'label': 'Consulta', 'icon': Icons.medical_services_outlined, 'color': const Color(0xFF495565)},
     {'value': 'FIRST_CONSULTATION', 'label': 'Primeira Consulta', 'icon': Icons.person_add_outlined, 'color': const Color(0xFF7C3AED)},
     {'value': 'RETURN_VISIT', 'label': 'Retorno', 'icon': Icons.event_repeat_outlined, 'color': const Color(0xFF155CFB)},
+    {'value': 'RETURN_7D', 'label': 'Retorno 7 dias', 'icon': Icons.event_repeat_outlined, 'color': const Color(0xFF155CFB)},
+    {'value': 'RETURN_30D', 'label': 'Retorno 30 dias', 'icon': Icons.replay_outlined, 'color': const Color(0xFF00A63E)},
+    {'value': 'POST_OP', 'label': 'Pós-Operatório', 'icon': Icons.healing_outlined, 'color': const Color(0xFFE7000B)},
+    {'value': 'SPLINT_REMOVAL', 'label': 'Retirada de Splint', 'icon': Icons.content_cut_outlined, 'color': const Color(0xFF0891B2)},
     {'value': 'EVALUATION', 'label': 'Avaliação', 'icon': Icons.search_outlined, 'color': const Color(0xFFD08700)},
-    {'value': 'CONSULTATION', 'label': 'Consulta', 'icon': Icons.medical_services_outlined, 'color': const Color(0xFF495565)},
-    {'value': 'PHYSIOTHERAPY', 'label': 'Fisioterapia', 'icon': Icons.healing_outlined, 'color': const Color(0xFFE7000B)},
-    {'value': 'EXAM', 'label': 'Exame', 'icon': Icons.biotech_outlined, 'color': const Color(0xFF059669)},
+    {'value': 'PHYSIOTHERAPY', 'label': 'Fisioterapia', 'icon': Icons.accessibility_new_outlined, 'color': const Color(0xFFEC4899)},
+    {'value': 'TELEMEDICINE', 'label': 'Telemedicina', 'icon': Icons.videocam_outlined, 'color': const Color(0xFF059669)},
+    {'value': 'EXAM', 'label': 'Exame', 'icon': Icons.biotech_outlined, 'color': const Color(0xFF8B5CF6)},
   ];
 
   @override
@@ -1529,9 +1565,15 @@ class _CreateAppointmentModalState extends State<_CreateAppointmentModal> {
 
   final List<Map<String, dynamic>> _typeOptions = [
     {'value': 'CONSULTATION', 'label': 'Consulta'},
+    {'value': 'FIRST_CONSULTATION', 'label': 'Primeira Consulta'},
     {'value': 'RETURN_VISIT', 'label': 'Retorno'},
+    {'value': 'RETURN_7D', 'label': 'Retorno 7 dias'},
+    {'value': 'RETURN_30D', 'label': 'Retorno 30 dias'},
+    {'value': 'POST_OP', 'label': 'Pós-Operatório'},
+    {'value': 'SPLINT_REMOVAL', 'label': 'Retirada de Splint'},
     {'value': 'EVALUATION', 'label': 'Avaliação'},
     {'value': 'PHYSIOTHERAPY', 'label': 'Fisioterapia'},
+    {'value': 'TELEMEDICINE', 'label': 'Telemedicina'},
     {'value': 'EXAM', 'label': 'Exame'},
     {'value': 'OTHER', 'label': 'Outro'},
   ];

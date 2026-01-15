@@ -43,8 +43,14 @@ class ConsultaCard extends StatelessWidget {
     const tipos = {
       'CONSULTATION': 'Consulta',
       'RETURN_VISIT': 'Retorno',
+      'RETURN_7D': 'Retorno 7 dias',
+      'RETURN_30D': 'Retorno 30 dias',
+      'FIRST_CONSULTATION': 'Primeira Consulta',
       'EVALUATION': 'Avaliação',
       'PHYSIOTHERAPY': 'Fisioterapia',
+      'POST_OP': 'Pós-Operatório',
+      'SPLINT_REMOVAL': 'Retirada de Splint',
+      'TELEMEDICINE': 'Telemedicina',
       'EXAM': 'Exame',
       'OTHER': 'Outro',
     };

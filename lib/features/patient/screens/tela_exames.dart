@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../core/services/api_service.dart';
 
 enum StatusExame {
@@ -54,7 +57,9 @@ class ExameCompleto {
 }
 
 class TelaExames extends StatefulWidget {
-  const TelaExames({super.key});
+  final bool embedded;
+
+  const TelaExames({super.key, this.embedded = false});
 
   @override
   State<TelaExames> createState() => _TelaExamesState();
@@ -63,11 +68,13 @@ class TelaExames extends StatefulWidget {
 class _TelaExamesState extends State<TelaExames> {
   // API Service
   final ApiService _apiService = ApiService();
+  final ImagePicker _imagePicker = ImagePicker();
 
   // Estado
   List<ExameCompleto> _examesApi = [];
   bool _carregando = true;
   String? _erro;
+  bool _enviando = false;
 
   // Cores
   static const _gradientStart = Color(0xFFA49E86);
@@ -121,15 +128,29 @@ class _TelaExamesState extends State<TelaExames> {
       });
     } catch (e) {
       debugPrint('Erro ao carregar exames: $e');
-      setState(() {
-        _erro = e.toString();
-        _carregando = false;
-      });
+      // Tratar 404 como lista vazia (sem exames)
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('404') || errorStr.contains('not found')) {
+        setState(() {
+          _examesApi = [];
+          _carregando = false;
+        });
+      } else {
+        setState(() {
+          _erro = e.toString();
+          _carregando = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Se está embutido no perfil, retorna apenas o conteúdo sem Scaffold
+    if (widget.embedded) {
+      return _buildConteudo();
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
@@ -138,37 +159,81 @@ class _TelaExamesState extends State<TelaExames> {
           _buildHeader(),
 
           // Conteúdo principal
-          Expanded(
-            child: _carregando
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: _botaoPrincipal,
-                    ),
-                  )
-                : _erro != null && _examesApi.isEmpty
-                    ? _buildEstadoErro()
-                    : _examesApi.isEmpty
-                        ? _buildEstadoVazio()
-                        : RefreshIndicator(
-                            onRefresh: _carregarExames,
-                            color: _botaoPrincipal,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.all(24),
-                              itemCount: _examesApi.length,
-                              itemBuilder: (context, index) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: _buildCardExame(_examesApi[index]),
-                                );
-                              },
-                            ),
-                          ),
-          ),
+          Expanded(child: _buildConteudo()),
 
           // Botão Adicionar exame
           _buildBotaoAdicionar(),
         ],
       ),
+    );
+  }
+
+  Widget _buildConteudo() {
+    // Quando embedded, não usar Expanded pois SingleChildScrollView tem height unbounded
+    if (widget.embedded) {
+      return Column(
+        children: [
+          const SizedBox(height: 16),
+          _buildBotaoAdicionar(),
+          const SizedBox(height: 8),
+          _carregando
+              ? const Padding(
+                  padding: EdgeInsets.all(48),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: _botaoPrincipal,
+                    ),
+                  ),
+                )
+              : _erro != null && _examesApi.isEmpty
+                  ? _buildEstadoErro()
+                  : _examesApi.isEmpty
+                      ? _buildEstadoVazio()
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(24),
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _examesApi.length,
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _buildCardExame(_examesApi[index]),
+                            );
+                          },
+                        ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: _carregando
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: _botaoPrincipal,
+                  ),
+                )
+              : _erro != null && _examesApi.isEmpty
+                  ? _buildEstadoErro()
+                  : _examesApi.isEmpty
+                      ? _buildEstadoVazio()
+                      : RefreshIndicator(
+                          onRefresh: _carregarExames,
+                          color: _botaoPrincipal,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(24),
+                            itemCount: _examesApi.length,
+                            itemBuilder: (context, index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: _buildCardExame(_examesApi[index]),
+                              );
+                            },
+                          ),
+                        ),
+        ),
+      ],
     );
   }
 
@@ -661,22 +726,25 @@ class _TelaExamesState extends State<TelaExames> {
             _buildOpcaoAdicionar(
               icone: Icons.camera_alt_outlined,
               titulo: 'Tirar foto',
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
+                await _tirarFoto();
               },
             ),
             _buildOpcaoAdicionar(
               icone: Icons.photo_library_outlined,
               titulo: 'Escolher da galeria',
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
+                await _escolherDaGaleria();
               },
             ),
             _buildOpcaoAdicionar(
               icone: Icons.upload_file_outlined,
               titulo: 'Importar PDF',
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
+                await _importarPdf();
               },
             ),
             SizedBox(height: MediaQuery.of(context).padding.bottom),
@@ -684,6 +752,139 @@ class _TelaExamesState extends State<TelaExames> {
         ),
       ),
     );
+  }
+
+  Future<void> _tirarFoto() async {
+    try {
+      final XFile? foto = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (foto != null) {
+        await _processarArquivo(foto.path, foto.name);
+      }
+    } catch (e) {
+      debugPrint('Erro ao tirar foto: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao acessar câmera: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _escolherDaGaleria() async {
+    try {
+      final XFile? imagem = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (imagem != null) {
+        await _processarArquivo(imagem.path, imagem.name);
+      }
+    } catch (e) {
+      debugPrint('Erro ao escolher da galeria: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao acessar galeria: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importarPdf() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+      if (result != null && result.files.single.path != null) {
+        await _processarArquivo(
+          result.files.single.path!,
+          result.files.single.name,
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao importar PDF: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao importar PDF: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _processarArquivo(String caminho, String nomeArquivo) async {
+    // Mostrar diálogo para informar título do exame
+    final tituloController = TextEditingController();
+    final titulo = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Novo exame'),
+        content: TextField(
+          controller: tituloController,
+          decoration: const InputDecoration(
+            labelText: 'Título do exame',
+            hintText: 'Ex: Hemograma completo',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (tituloController.text.isNotEmpty) {
+                Navigator.pop(context, tituloController.text);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _botaoPrincipal,
+            ),
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+
+    if (titulo == null || titulo.isEmpty) return;
+
+    setState(() => _enviando = true);
+
+    try {
+      // Upload do arquivo via API
+      final arquivo = File(caminho);
+      await _apiService.uploadPatientFile(
+        file: arquivo,
+        title: titulo,
+        fileType: 'EXAM',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Exame enviado com sucesso! Análise IA em andamento...'),
+            backgroundColor: Color(0xFF00C950),
+          ),
+        );
+        // Recarregar lista
+        await _carregarExames();
+      }
+    } catch (e) {
+      debugPrint('Erro ao enviar exame: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao enviar exame: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _enviando = false);
+      }
+    }
   }
 
   Widget _buildOpcaoAdicionar({

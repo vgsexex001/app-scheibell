@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../features/agenda/domain/entities/appointment.dart';
 import 'tela_selecao_data.dart';
+import 'tela_todos_agendamentos.dart';
 
 /// Tela principal de agendamento - exibe os tipos de agendamento disponíveis
 /// Esta é a tela que aparece quando o usuário clica em "Agenda" no bottom nav
@@ -236,6 +237,11 @@ class TelaAgendar extends StatelessWidget {
 
           const SizedBox(height: 16),
 
+          // Card Ver todos os agendamentos
+          _buildCardVerTodosAgendamentos(context),
+
+          const SizedBox(height: 16),
+
           // Card informativo
           _buildCardInformativo(),
 
@@ -349,6 +355,96 @@ class TelaAgendar extends StatelessWidget {
                         fontWeight: FontWeight.w500,
                         height: 1.33,
                       ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Seta
+            const Icon(
+              Icons.chevron_right,
+              color: Color(0xFF9CA3AF),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardVerTodosAgendamentos(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const TelaTodosAgendamentos(),
+          ),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: _fundoConteudo,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Ícone com gradiente
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [_gradientStart, _gradientEnd],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF212621).withOpacity(0.1),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.calendar_view_month,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            // Textos
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ver todos os agendamentos',
+                    style: TextStyle(
+                      color: _textoPrimario,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.40,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Visualize seu calendário completo',
+                    style: TextStyle(
+                      color: _textoSecundario,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      height: 1.50,
                     ),
                   ),
                 ],

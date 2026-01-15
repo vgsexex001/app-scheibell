@@ -911,6 +911,62 @@ class ApiService {
     return response.data;
   }
 
+  // ==================== EVENTOS EXTERNOS ====================
+
+  /// Lista eventos externos do paciente
+  Future<List<dynamic>> getExternalEvents() async {
+    final response = await get(ApiConfig.externalEventsEndpoint);
+    return response.data as List<dynamic>;
+  }
+
+  /// Cria um evento externo
+  Future<Map<String, dynamic>> createExternalEvent({
+    required String title,
+    required String date,
+    required String time,
+    String? location,
+    String? notes,
+  }) async {
+    final response = await post(
+      ApiConfig.externalEventsEndpoint,
+      data: {
+        'title': title,
+        'date': date,
+        'time': time,
+        if (location != null) 'location': location,
+        if (notes != null) 'notes': notes,
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza um evento externo
+  Future<Map<String, dynamic>> updateExternalEvent(
+    String id, {
+    String? title,
+    String? date,
+    String? time,
+    String? location,
+    String? notes,
+  }) async {
+    final response = await put(
+      '${ApiConfig.externalEventsEndpoint}/$id',
+      data: {
+        if (title != null) 'title': title,
+        if (date != null) 'date': date,
+        if (time != null) 'time': time,
+        if (location != null) 'location': location,
+        if (notes != null) 'notes': notes,
+      },
+    );
+    return response.data;
+  }
+
+  /// Exclui um evento externo
+  Future<void> deleteExternalEvent(String id) async {
+    await delete('${ApiConfig.externalEventsEndpoint}/$id');
+  }
+
   // ==================== MEDICAÇÕES ====================
 
   /// Registra que uma medicação foi tomada

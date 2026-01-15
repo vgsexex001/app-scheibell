@@ -1,8 +1,10 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'tela_videos.dart';
 
 // ========== MODELOS ==========
 class Video {
@@ -46,7 +48,9 @@ class ContatoEmergencia {
 }
 
 class TelaRecursos extends StatefulWidget {
-  const TelaRecursos({super.key});
+  final bool embedded;
+
+  const TelaRecursos({super.key, this.embedded = false});
 
   @override
   State<TelaRecursos> createState() => _TelaRecursosState();
@@ -309,6 +313,11 @@ class _TelaRecursosState extends State<TelaRecursos> {
 
   @override
   Widget build(BuildContext context) {
+    // Se está embutido no perfil, retorna apenas o conteúdo sem Scaffold
+    if (widget.embedded) {
+      return _buildConteudo(context);
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
@@ -317,31 +326,33 @@ class _TelaRecursosState extends State<TelaRecursos> {
           _buildHeader(context),
 
           // Conteúdo scrollável
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Card de Emergência (destaque)
-                  _buildCardEmergencia(context),
-                  const SizedBox(height: 32),
+          Expanded(child: _buildConteudo(context)),
+        ],
+      ),
+    );
+  }
 
-                  // Seção: Biblioteca de Vídeos
-                  _buildSecaoBibliotecaVideos(),
-                  const SizedBox(height: 32),
+  Widget _buildConteudo(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Card de Emergência (destaque)
+          _buildCardEmergencia(context),
+          const SizedBox(height: 32),
 
-                  // Seção: Orientações em PDF
-                  _buildSecaoOrientacoesPdf(),
-                  const SizedBox(height: 32),
+          // Seção: Biblioteca de Vídeos
+          _buildSecaoBibliotecaVideos(context),
+          const SizedBox(height: 32),
 
-                  // Seção: Guia da Cidade
-                  _buildSecaoGuiaCidade(context),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          ),
+          // Seção: Orientações em PDF
+          _buildSecaoOrientacoesPdf(),
+          const SizedBox(height: 32),
+
+          // Seção: Guia da Cidade
+          _buildSecaoGuiaCidade(context),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -549,34 +560,60 @@ class _TelaRecursosState extends State<TelaRecursos> {
   }
 
   // ========== SEÇÃO: BIBLIOTECA DE VÍDEOS ==========
-  Widget _buildSecaoBibliotecaVideos() {
+  Widget _buildSecaoBibliotecaVideos(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Título da seção
-        const Row(
-          children: [
-            Icon(
-              Icons.play_circle_outline,
-              color: _corTextoPrincipal,
-              size: 20,
-            ),
-            SizedBox(width: 8),
-            Text(
-              'Biblioteca de Vídeos',
-              style: TextStyle(
-                color: _corTextoPrincipal,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                height: 1.50,
+        // Título da seção com "ver mais"
+        GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const TelaVideos(),
               ),
-            ),
-          ],
+            );
+          },
+          child: Row(
+            children: [
+              const Icon(
+                Icons.play_circle_outline,
+                color: _corTextoPrincipal,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Biblioteca de Vídeos',
+                  style: TextStyle(
+                    color: _corTextoPrincipal,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    height: 1.50,
+                  ),
+                ),
+              ),
+              const Text(
+                'ver mais',
+                style: TextStyle(
+                  color: _corTextoSecundario,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.arrow_forward_ios,
+                color: _corTextoSecundario,
+                size: 14,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
 
-        // Lista de vídeos
-        ..._videos.map((video) => Padding(
+        // Mostrar apenas os 2 primeiros vídeos como preview
+        ..._videos.take(2).map((video) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: _buildCardVideo(video),
             )),
@@ -985,6 +1022,12 @@ class _TelaRecursosState extends State<TelaRecursos> {
                           myLocationButtonEnabled: false,
                           zoomControlsEnabled: false,
                           mapToolbarEnabled: false,
+                          // Permite gestos no mapa mesmo dentro de scroll
+                          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                            Factory<OneSequenceGestureRecognizer>(
+                              () => EagerGestureRecognizer(),
+                            ),
+                          },
                         )
                       : _buildMapPlaceholder(),
                 ),
