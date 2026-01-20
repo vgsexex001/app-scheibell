@@ -1,6 +1,6 @@
 workflows:
   ios-workflow:
-    name: iOS Release Build
+    name: iOS Release Build (Unsigned)
     max_build_duration: 60
     instance_type: mac_mini_m1
     environment:
@@ -9,24 +9,20 @@ workflows:
       vars:
         PROD: "true"
     scripts:
-      - name: Set up code signing settings on Xcode project
-        script: |
-          xcode-project use-profiles
       - name: Get Flutter packages
         script: |
           flutter packages pub get
-      - name: Build iOS
+      - name: Build iOS (without codesigning)
         script: |
           flutter build ios --release --no-codesign --dart-define=PROD=true
-      - name: Build unsigned IPA
+      - name: Create unsigned IPA
         script: |
           cd build/ios/iphoneos
-          mkdir Payload
+          mkdir -p Payload
           cp -r Runner.app Payload
           zip -r ../../../app-release-unsigned.ipa Payload
     artifacts:
       - app-release-unsigned.ipa
-      - "**/*.ipa"
 
   android-workflow:
     name: Android Release Build
