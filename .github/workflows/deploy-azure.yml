@@ -49,6 +49,35 @@ jobs:
           cp -r prisma deploy/
           cp package.json deploy/
           cp package-lock.json deploy/
+          # Criar arquivo para desativar build do Oryx
+          echo "SCM_DO_BUILD_DURING_DEPLOYMENT=false" > deploy/.deployment
+          # Criar web.config para Azure
+          cat > deploy/web.config << 'WEBCONFIG'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <system.webServer>
+              <handlers>
+                <add name="iisnode" path="dist/main.js" verb="*" modules="iisnode"/>
+              </handlers>
+              <rewrite>
+                <rules>
+                  <rule name="NodeInspector" patternSyntax="ECMAScript" stopProcessing="true">
+                    <match url="^dist/main.js\/debug[\/]?" />
+                  </rule>
+                  <rule name="StaticContent">
+                    <action type="Rewrite" url="public{REQUEST_URI}"/>
+                  </rule>
+                  <rule name="DynamicContent">
+                    <conditions>
+                      <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="True"/>
+                    </conditions>
+                    <action type="Rewrite" url="dist/main.js"/>
+                  </rule>
+                </rules>
+              </rewrite>
+            </system.webServer>
+          </configuration>
+          WEBCONFIG
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
