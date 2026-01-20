@@ -7,6 +7,9 @@ workflows:
       flutter: stable
       xcode: latest
     scripts:
+      - name: Create .env file
+        script: |
+          cp .env.production .env
       - name: Get Flutter packages
         script: |
           flutter pub get
@@ -44,6 +47,9 @@ workflows:
     environment:
       flutter: stable
     scripts:
+      - name: Create .env file
+        script: |
+          cp .env.production .env
       - name: Get Flutter packages
         script: |
           flutter pub get
