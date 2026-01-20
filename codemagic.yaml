@@ -6,8 +6,6 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
-      vars:
-        PROD: "true"
     scripts:
       - name: Get Flutter packages
         script: |
@@ -28,18 +26,16 @@ workflows:
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            -allowProvisioningUpdates \
-            FLUTTER_BUILD_MODE=release \
-            DART_DEFINES="$(echo -n 'PROD=true' | base64)" \
+            IPHONEOS_DEPLOYMENT_TARGET=14.0 \
             build
       - name: Create unsigned IPA
         script: |
-          cd build/ios/iphoneos
+          cd ios/build/Release-iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload
-          zip -r ../../../app-release-unsigned.ipa Payload
+          zip -r ../../app-release-unsigned.ipa Payload
     artifacts:
-      - app-release-unsigned.ipa
+      - ios/app-release-unsigned.ipa
 
   android-workflow:
     name: Android Release Build
@@ -47,14 +43,12 @@ workflows:
     instance_type: linux_x2
     environment:
       flutter: stable
-      vars:
-        PROD: "true"
     scripts:
       - name: Get Flutter packages
         script: |
           flutter pub get
       - name: Build APK
         script: |
-          flutter build apk --release --dart-define=PROD=true
+          flutter build apk --release
     artifacts:
       - build/**/app-release.apk
