@@ -5,8 +5,8 @@ import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 class ApiConfig {
   // ==================== CONFIGURAÇÃO DE AMBIENTE ====================
 
-  /// URL de produção (Google Cloud Run)
-  static const String _productionUrl = 'https://app-scheibell-api-936902782519.southamerica-east1.run.app/api';
+  /// URL de produção (Azure Web App)
+  static const String _productionUrl = 'https://api-scheibell-gfcbeddudegvbkcw.brazilsouth-01.azurewebsites.net/api';
 
   /// Forçar uso de produção (defina via --dart-define=PROD=true)
   static const bool _forceProd = bool.fromEnvironment('PROD', defaultValue: false);

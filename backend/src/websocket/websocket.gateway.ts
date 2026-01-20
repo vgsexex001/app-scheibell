@@ -24,7 +24,7 @@ const getAllowedOrigins = () => {
     'http://localhost:3000',
     'http://localhost:8080',
     'http://10.0.2.2:3000',
-    'https://app-scheibell-api-936902782519.southamerica-east1.run.app',
+    'https://api-scheibell-gfcbeddudegvbkcw.brazilsouth-01.azurewebsites.net',
   ];
 };
 
