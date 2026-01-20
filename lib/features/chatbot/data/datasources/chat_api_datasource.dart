@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/services/api_service.dart';
 import '../models/chat_message_model.dart';
 import '../../domain/entities/chat_message.dart';
@@ -321,6 +322,154 @@ class ChatApiDatasource {
     return size <= maxFileSizeBytes;
   }
 
+  // ==================== AUDIO UPLOAD & TRANSCRIPTION ====================
+
+  /// Faz upload de uma mensagem de audio para o chat
+  /// [audioFile] - Arquivo de audio (m4a, aac, mp3, wav)
+  /// [conversationId] - ID da conversa (opcional)
+  /// [durationSeconds] - Duracao do audio em segundos
+  Future<UploadAudioResponse> uploadAudio(
+    File audioFile, {
+    String? conversationId,
+    int? durationSeconds,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final fileName = audioFile.path.split(Platform.pathSeparator).last;
+    final fileSize = await audioFile.length();
+
+    debugPrint('[ChatAPI] uploadAudio START');
+    debugPrint('[ChatAPI] file: $fileName, size: ${(fileSize / 1024).toStringAsFixed(1)}KB');
+    debugPrint('[ChatAPI] duration: ${durationSeconds}s');
+    debugPrint('[ChatAPI] endpoint: /chat/audio');
+
+    try {
+      // Determina o contentType baseado na extensão
+      final extension = fileName.split('.').last.toLowerCase();
+      String contentType = 'audio/m4a'; // default
+      switch (extension) {
+        case 'm4a':
+          contentType = 'audio/m4a';
+          break;
+        case 'mp4':
+          contentType = 'audio/mp4';
+          break;
+        case 'mp3':
+          contentType = 'audio/mpeg';
+          break;
+        case 'wav':
+          contentType = 'audio/wav';
+          break;
+        case 'aac':
+          contentType = 'audio/aac';
+          break;
+        default:
+          contentType = 'audio/m4a';
+      }
+
+      debugPrint('[ChatAPI] contentType: $contentType');
+
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          audioFile.path,
+          filename: fileName,
+          contentType: DioMediaType.parse(contentType),
+        ),
+        if (conversationId != null) 'conversationId': conversationId,
+        if (durationSeconds != null) 'durationSeconds': durationSeconds.toString(),
+      });
+
+      final response = await _apiService.post(
+        '/chat/audio',
+        data: formData,
+      );
+
+      stopwatch.stop();
+      debugPrint('[ChatAPI] uploadAudio SUCCESS in ${stopwatch.elapsedMilliseconds}ms');
+      debugPrint('[ChatAPI] response: ${response.data}');
+
+      return UploadAudioResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      stopwatch.stop();
+      debugPrint('[ChatAPI] uploadAudio FAILED in ${stopwatch.elapsedMilliseconds}ms');
+      debugPrint('[ChatAPI] error type: ${e.type}');
+      debugPrint('[ChatAPI] error message: ${e.message}');
+      throw _handleDioError(e);
+    } catch (e) {
+      stopwatch.stop();
+      debugPrint('[ChatAPI] uploadAudio ERROR in ${stopwatch.elapsedMilliseconds}ms: $e');
+      if (e is ChatApiException) rethrow;
+      throw ChatApiException(
+        message: 'Erro ao fazer upload do audio: ${e.toString()}',
+        errorType: 'unknown',
+      );
+    }
+  }
+
+  /// Solicita transcricao de um audio
+  /// [attachmentId] - ID do anexo de audio a ser transcrito
+  Future<TranscribeAudioResponse> transcribeAudio({
+    required String attachmentId,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+
+    debugPrint('[ChatAPI] transcribeAudio START');
+    debugPrint('[ChatAPI] attachmentId: $attachmentId');
+    debugPrint('[ChatAPI] endpoint: /chat/audio/transcribe');
+
+    try {
+      final response = await _apiService.post(
+        '/chat/audio/transcribe',
+        data: {
+          'attachmentId': attachmentId,
+        },
+      );
+
+      stopwatch.stop();
+      debugPrint('[ChatAPI] transcribeAudio SUCCESS in ${stopwatch.elapsedMilliseconds}ms');
+
+      return TranscribeAudioResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      stopwatch.stop();
+      debugPrint('[ChatAPI] transcribeAudio FAILED in ${stopwatch.elapsedMilliseconds}ms');
+      debugPrint('[ChatAPI] error type: ${e.type}');
+      debugPrint('[ChatAPI] error message: ${e.message}');
+      throw _handleDioError(e);
+    } catch (e) {
+      stopwatch.stop();
+      debugPrint('[ChatAPI] transcribeAudio ERROR in ${stopwatch.elapsedMilliseconds}ms: $e');
+      if (e is ChatApiException) rethrow;
+      throw ChatApiException(
+        message: 'Erro ao transcrever audio: ${e.toString()}',
+        errorType: 'unknown',
+      );
+    }
+  }
+
+  /// Valida se o arquivo e um audio valido
+  /// Aceita extensoes comuns de audio: m4a, aac, mp3, wav, mp4, mpeg, ogg, webm
+  bool isValidAudioFile(File file) {
+    final extension = file.path.toLowerCase().split('.').last;
+    return ['m4a', 'aac', 'mp3', 'wav', 'mp4', 'mpeg', 'ogg', 'webm', '3gp', 'flac'].contains(extension);
+  }
+
+  /// Retorna o tamanho maximo permitido para upload de audio (25MB)
+  int get maxAudioFileSizeBytes => 25 * 1024 * 1024;
+
+  /// Verifica se o arquivo de audio esta dentro do limite de tamanho
+  Future<bool> isAudioFileSizeValid(File file) async {
+    final size = await file.length();
+    return size <= maxAudioFileSizeBytes;
+  }
+
+  /// Retorna a URL para servir um arquivo de audio
+  String getAudioFileUrl(String attachmentId) {
+    return '${ApiConfig.baseUrl}/chat/audio/$attachmentId/file';
+  }
+
   // ==================== HUMAN HANDOFF ====================
 
   /// Solicita transferencia para atendimento humano
@@ -566,4 +715,68 @@ class ConversationStatusResponse {
       handoffAt != null ? DateTime.parse(handoffAt!) : null;
   DateTime? get closedDateTime =>
       closedAt != null ? DateTime.parse(closedAt!) : null;
+}
+
+// ==================== AUDIO RESPONSE CLASSES ====================
+
+/// Resposta do upload de audio
+class UploadAudioResponse {
+  final String id;
+  final String conversationId;
+  final String messageId;
+  final String originalName;
+  final String mimeType;
+  final int sizeBytes;
+  final int? durationSeconds;
+  final String status;
+  final DateTime createdAt;
+
+  UploadAudioResponse({
+    required this.id,
+    required this.conversationId,
+    required this.messageId,
+    required this.originalName,
+    required this.mimeType,
+    required this.sizeBytes,
+    this.durationSeconds,
+    required this.status,
+    required this.createdAt,
+  });
+
+  factory UploadAudioResponse.fromJson(Map<String, dynamic> json) {
+    return UploadAudioResponse(
+      id: json['id'] as String,
+      conversationId: json['conversationId'] as String,
+      messageId: json['messageId'] as String,
+      originalName: json['originalName'] as String,
+      mimeType: json['mimeType'] as String,
+      sizeBytes: json['sizeBytes'] as int,
+      durationSeconds: json['durationSeconds'] as int?,
+      status: json['status'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+}
+
+/// Resposta da transcricao de audio
+class TranscribeAudioResponse {
+  final String attachmentId;
+  final String transcription;
+  final String transcribedAt;
+
+  TranscribeAudioResponse({
+    required this.attachmentId,
+    required this.transcription,
+    required this.transcribedAt,
+  });
+
+  factory TranscribeAudioResponse.fromJson(Map<String, dynamic> json) {
+    return TranscribeAudioResponse(
+      attachmentId: json['attachmentId'] as String,
+      transcription: json['transcription'] as String,
+      transcribedAt: json['transcribedAt'] as String,
+    );
+  }
+
+  DateTime get transcribedDateTime => DateTime.parse(transcribedAt);
 }

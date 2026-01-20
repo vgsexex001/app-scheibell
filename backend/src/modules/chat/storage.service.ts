@@ -137,6 +137,14 @@ export class StorageService {
   }
 
   /**
+   * Validate file mime type for audio
+   * Aceita qualquer tipo que comece com audio/
+   */
+  isValidAudioMimeType(mimeType: string): boolean {
+    return mimeType.toLowerCase().startsWith('audio/');
+  }
+
+  /**
    * Get file extension from mime type
    */
   private getExtensionFromMimeType(mimeType: string): string {
@@ -145,7 +153,65 @@ export class StorageService {
       'image/png': '.png',
       'image/heic': '.heic',
       'image/heif': '.heif',
+      'audio/m4a': '.m4a',
+      'audio/mp4': '.m4a',
+      'audio/aac': '.aac',
+      'audio/mpeg': '.mp3',
+      'audio/mp3': '.mp3',
+      'audio/wav': '.wav',
+      'audio/x-m4a': '.m4a',
+      'audio/x-wav': '.wav',
     };
     return mimeToExt[mimeType.toLowerCase()] || '.bin';
+  }
+
+  /**
+   * Read audio file as buffer for transcription
+   * Supports both local files and remote URLs (Supabase Storage)
+   */
+  async readAudioFile(storagePath: string): Promise<Buffer> {
+    // Check if it's a URL (Supabase Storage)
+    if (storagePath.startsWith('http://') || storagePath.startsWith('https://')) {
+      this.logger.log(`Downloading audio from URL: ${storagePath}`);
+      try {
+        const response = await fetch(storagePath);
+        if (!response.ok) {
+          throw new Error(`Failed to download audio: HTTP ${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        const maxSize = 25 * 1024 * 1024; // 25MB (Whisper limit)
+        if (buffer.length > maxSize) {
+          throw new Error(
+            `Audio file too large for transcription: ${(buffer.length / 1024 / 1024).toFixed(2)}MB (max: 25MB)`,
+          );
+        }
+
+        this.logger.log(`Downloaded audio: ${(buffer.length / 1024).toFixed(1)}KB`);
+        return buffer;
+      } catch (error) {
+        this.logger.error(`Failed to download audio from URL: ${error.message}`);
+        throw new Error(`Failed to download audio file: ${error.message}`);
+      }
+    }
+
+    // Local file
+    const fullPath = path.join(this.uploadDir, storagePath);
+
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`File not found: ${storagePath}`);
+    }
+
+    const stats = await fs.promises.stat(fullPath);
+    const maxSize = 25 * 1024 * 1024; // 25MB (Whisper limit)
+    if (stats.size > maxSize) {
+      throw new Error(
+        `Audio file too large for transcription: ${(stats.size / 1024 / 1024).toFixed(2)}MB (max: 25MB)`,
+      );
+    }
+
+    this.logger.log(`Reading audio file: ${storagePath} (${(stats.size / 1024).toFixed(1)}KB)`);
+    return fs.promises.readFile(fullPath);
   }
 }

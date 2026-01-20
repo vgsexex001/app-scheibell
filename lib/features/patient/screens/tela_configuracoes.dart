@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/progress_provider.dart';
 import '../../../core/services/api_service.dart';
 import '../providers/recovery_provider.dart';
 import '../providers/home_provider.dart';
@@ -910,6 +911,7 @@ class _TelaConfiguracoesState extends State<TelaConfiguracoes> {
               // Limpar dados dos providers ANTES do logout
               recoveryProvider.reset();
               homeProvider.reset();
+              context.read<ProgressProvider>().reset();
 
               // Fazer logout - AuthProvider navega automaticamente
               // REMOVIDO: Navigator.pushNamedAndRemoveUntil() duplicado

@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsUUID, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, IsBoolean, IsNumber } from 'class-validator';
 
 export class SendMessageDto {
   @IsString()
@@ -82,6 +82,15 @@ export class SendHumanMessageDto {
   @IsString()
   @IsNotEmpty()
   message: string;
+
+  // Campos opcionais para mensagem de áudio
+  @IsOptional()
+  @IsString()
+  audioUrl?: string;
+
+  @IsOptional()
+  @IsNumber()
+  audioDuration?: number;
 }
 
 export class CloseConversationDto {
@@ -116,4 +125,40 @@ export class ConversationStatusDto {
   mode: string;
   handoffAt?: string;
   closedAt?: string;
+}
+
+// ==================== AUDIO MESSAGE DTOs ====================
+
+export class UploadAudioDto {
+  @IsOptional()
+  @IsString()
+  conversationId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  durationSeconds?: number;
+}
+
+export class AudioAttachmentResponseDto {
+  id: string;
+  conversationId: string;
+  messageId: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSeconds?: number;
+  status: string;
+  createdAt: Date;
+}
+
+export class TranscribeAudioDto {
+  @IsUUID()
+  @IsNotEmpty()
+  attachmentId: string;
+}
+
+export class TranscribeAudioResponseDto {
+  attachmentId: string;
+  transcription: string;
+  transcribedAt: string;
 }

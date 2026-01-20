@@ -45,10 +45,32 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Deep Links para Supabase OAuth -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>io.supabase.appscheibell</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.supabase.appscheibell</string>
+			</array>
+		</dict>
+	</array>
 	<!-- Permissões de localização -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Este app precisa acessar sua localização para mostrar lugares próximos no mapa.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Este app precisa acessar sua localização para mostrar lugares próximos no mapa.</string>
+	<!-- Permissões de microfone para gravação de áudio -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Este app precisa acessar o microfone para gravar mensagens de áudio no chat.</string>
+	<!-- Configuração para reprodução de áudio -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

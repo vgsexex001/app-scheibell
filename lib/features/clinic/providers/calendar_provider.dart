@@ -14,6 +14,7 @@ class CalendarProvider extends ChangeNotifier {
   DateTime _currentMonth = DateTime.now();
   DateTime _selectedDate = DateTime.now();
   String _statusFilter = 'ALL';
+  String? _typeFilter; // Filtro por tipo de atendimento (null = todos)
 
   // Getters
   List<CalendarAppointment> get appointments => _appointments;
@@ -22,6 +23,7 @@ class CalendarProvider extends ChangeNotifier {
   DateTime get currentMonth => _currentMonth;
   DateTime get selectedDate => _selectedDate;
   String get statusFilter => _statusFilter;
+  String? get typeFilter => _typeFilter;
 
   // Contadores
   int get totalCount => _appointments.length;
@@ -41,8 +43,18 @@ class CalendarProvider extends ChangeNotifier {
       filtered = filtered.where((a) => a.status == _statusFilter).toList();
     }
 
+    if (_typeFilter != null) {
+      filtered = filtered.where((a) => a.consultationType == _typeFilter).toList();
+    }
+
     filtered.sort((a, b) => a.time.compareTo(b.time));
     return filtered;
+  }
+
+  /// Retorna agendamentos filtrados por tipo (se filtro ativo)
+  List<CalendarAppointment> get filteredAppointments {
+    if (_typeFilter == null) return _appointments;
+    return _appointments.where((a) => a.consultationType == _typeFilter).toList();
   }
 
   /// Retorna status dos agendamentos para um dia específico
@@ -69,6 +81,12 @@ class CalendarProvider extends ChangeNotifier {
   /// Define o filtro de status
   void setStatusFilter(String filter) {
     _statusFilter = filter;
+    notifyListeners();
+  }
+
+  /// Define o filtro de tipo de atendimento
+  void setTypeFilter(String? type) {
+    _typeFilter = type;
     notifyListeners();
   }
 

@@ -67,25 +67,29 @@ class ClinicDashboardProvider extends ChangeNotifier {
   /// Carrega todos os dados do dashboard
   Future<void> loadDashboard() async {
     _error = null;
+    // Marca todos como loading de uma vez para evitar múltiplas notificações
+    _isLoadingSummary = true;
+    _isLoadingPending = true;
+    _isLoadingRecovery = true;
+    _isLoadingAlerts = true;
     notifyListeners();
 
     await Future.wait([
-      loadSummary(),
-      loadPendingAppointments(),
-      loadRecoveryPatients(),
-      loadAlerts(),
+      _loadSummaryInternal(),
+      _loadPendingAppointmentsInternal(),
+      _loadRecoveryPatientsInternal(),
+      _loadAlertsInternal(),
     ]);
+
+    // Notifica uma única vez após todos os carregamentos
+    notifyListeners();
   }
 
-  /// Carrega o resumo (indicadores)
-  Future<void> loadSummary() async {
-    _isLoadingSummary = true;
-    notifyListeners();
-
+  /// Carrega o resumo (indicadores) - versão interna sem notifyListeners
+  Future<void> _loadSummaryInternal() async {
     try {
       final data = await _apiService.getAdminDashboardSummary();
       _summary = DashboardSummary.fromJson(data);
-      _error = null;
     } on DioException catch (e) {
       final apiError = _apiService.mapDioError(e);
       _error = apiError.message;
@@ -95,15 +99,20 @@ class ClinicDashboardProvider extends ChangeNotifier {
       debugPrint('[ClinicDashboardProvider] Erro inesperado: $e');
     } finally {
       _isLoadingSummary = false;
-      notifyListeners();
     }
   }
 
-  /// Carrega consultas pendentes de aprovação
-  Future<void> loadPendingAppointments({int page = 1, int limit = 10}) async {
-    _isLoadingPending = true;
+  /// Carrega o resumo (indicadores)
+  Future<void> loadSummary() async {
+    _isLoadingSummary = true;
     notifyListeners();
 
+    await _loadSummaryInternal();
+    notifyListeners();
+  }
+
+  /// Carrega consultas pendentes - versão interna sem notifyListeners
+  Future<void> _loadPendingAppointmentsInternal({int page = 1, int limit = 10}) async {
     try {
       final data = await _apiService.getAdminPendingAppointments(
         page: page,
@@ -113,7 +122,6 @@ class ClinicDashboardProvider extends ChangeNotifier {
       _pendingAppointments = response.items;
       _pendingPage = response.page;
       _pendingTotal = response.total;
-      _error = null;
     } on DioException catch (e) {
       final apiError = _apiService.mapDioError(e);
       _error = apiError.message;
@@ -124,8 +132,16 @@ class ClinicDashboardProvider extends ChangeNotifier {
       debugPrint('[ClinicDashboardProvider] Erro inesperado: $e');
     } finally {
       _isLoadingPending = false;
-      notifyListeners();
     }
+  }
+
+  /// Carrega consultas pendentes de aprovação
+  Future<void> loadPendingAppointments({int page = 1, int limit = 10}) async {
+    _isLoadingPending = true;
+    notifyListeners();
+
+    await _loadPendingAppointmentsInternal(page: page, limit: limit);
+    notifyListeners();
   }
 
   /// Aprova uma consulta
@@ -209,11 +225,8 @@ class ClinicDashboardProvider extends ChangeNotifier {
     }
   }
 
-  /// Carrega pacientes em recuperação
-  Future<void> loadRecoveryPatients({int page = 1, int limit = 10}) async {
-    _isLoadingRecovery = true;
-    notifyListeners();
-
+  /// Carrega pacientes em recuperação - versão interna sem notifyListeners
+  Future<void> _loadRecoveryPatientsInternal({int page = 1, int limit = 10}) async {
     try {
       final data = await _apiService.getAdminRecoveryPatients(
         page: page,
@@ -223,7 +236,6 @@ class ClinicDashboardProvider extends ChangeNotifier {
       _recoveryPatients = response.items;
       _recoveryPage = response.page;
       _recoveryTotal = response.total;
-      _error = null;
     } on DioException catch (e) {
       final apiError = _apiService.mapDioError(e);
       _error = apiError.message;
@@ -234,15 +246,20 @@ class ClinicDashboardProvider extends ChangeNotifier {
       debugPrint('[ClinicDashboardProvider] Erro inesperado: $e');
     } finally {
       _isLoadingRecovery = false;
-      notifyListeners();
     }
   }
 
-  /// Carrega alertas
-  Future<void> loadAlerts({int page = 1, int limit = 10, String? status}) async {
-    _isLoadingAlerts = true;
+  /// Carrega pacientes em recuperação
+  Future<void> loadRecoveryPatients({int page = 1, int limit = 10}) async {
+    _isLoadingRecovery = true;
     notifyListeners();
 
+    await _loadRecoveryPatientsInternal(page: page, limit: limit);
+    notifyListeners();
+  }
+
+  /// Carrega alertas - versão interna sem notifyListeners
+  Future<void> _loadAlertsInternal({int page = 1, int limit = 10, String? status}) async {
     try {
       final data = await _apiService.getAdminAlerts(
         page: page,
@@ -253,7 +270,6 @@ class ClinicDashboardProvider extends ChangeNotifier {
       _alerts = response.items;
       _alertsPage = response.page;
       _alertsTotal = response.total;
-      _error = null;
     } on DioException catch (e) {
       final apiError = _apiService.mapDioError(e);
       _error = apiError.message;
@@ -263,8 +279,16 @@ class ClinicDashboardProvider extends ChangeNotifier {
       debugPrint('[ClinicDashboardProvider] Erro inesperado: $e');
     } finally {
       _isLoadingAlerts = false;
-      notifyListeners();
     }
+  }
+
+  /// Carrega alertas
+  Future<void> loadAlerts({int page = 1, int limit = 10, String? status}) async {
+    _isLoadingAlerts = true;
+    notifyListeners();
+
+    await _loadAlertsInternal(page: page, limit: limit, status: status);
+    notifyListeners();
   }
 
   /// Resolve um alerta

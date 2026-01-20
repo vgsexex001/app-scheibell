@@ -105,6 +105,11 @@ export class ExamListQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value as PatientFileType)
+  @IsEnum(PatientFileType)
+  fileType?: PatientFileType;
 }
 
 // ========== EXAM RESPONSE DTO ==========
@@ -158,6 +163,7 @@ export class PatientUploadFileDto {
   @IsString()
   title: string;
 
+  @Transform(({ value }) => value as PatientFileType)
   @IsEnum(PatientFileType)
   fileType: PatientFileType;
 
@@ -194,6 +200,31 @@ export class PatientFilesQueryDto {
   limit?: number = 20;
 }
 
+// ========== ADMIN UPLOAD FILE DTO ==========
+export class AdminUploadFileDto {
+  @IsString()
+  patientId: string;
+
+  @IsString()
+  title: string;
+
+  @Transform(({ value }) => value as PatientFileType)
+  @IsEnum(PatientFileType)
+  fileType: PatientFileType;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string; // Tipo do exame: HEMOGRAMA, ULTRASSOM, etc
+}
+
 // ========== EXAM WITH AI RESPONSE DTO ==========
 export class ExamWithAiResponseDto {
   id: string;
@@ -215,4 +246,34 @@ export class ExamWithAiResponseDto {
   createdById?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// ========== APPROVE EXAM DTO ==========
+export class ApproveExamDto {
+  @IsString()
+  status: string; // 'normal', 'mild_alteration', 'needs_review', 'critical'
+
+  @IsString()
+  analysis: string; // Texto aprovado para o paciente
+}
+
+// ========== PENDING REVIEW QUERY DTO ==========
+export class PendingReviewQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+
+  @IsOptional()
+  @Transform(({ value }) => value as PatientFileType)
+  @IsEnum(PatientFileType)
+  fileType?: PatientFileType;
 }

@@ -100,26 +100,9 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
     }
 
     if (success) {
-      // Redirecionar baseado no role do usuário
-      final role = authProvider.userRole;
-      String route;
-
-      switch (role) {
-        case UserRole.clinicAdmin:
-        case UserRole.clinicStaff:
-          route = '/clinic-dashboard';
-          break;
-        case UserRole.thirdParty:
-          route = '/third-party-home';
-          break;
-        case UserRole.patient:
-        default:
-          route = '/home';
-          break;
-      }
-
-      debugPrint('[LOGIN] Navegando para: $route');
-      Navigator.pushReplacementNamed(context, route);
+      // Navega para o GateScreen que vai verificar onboarding e redirecionar corretamente
+      debugPrint('[LOGIN] Navegando para /gate para verificar onboarding');
+      Navigator.pushReplacementNamed(context, '/gate');
     } else {
       debugPrint('[LOGIN] Falha: ${authProvider.errorMessage}');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -518,10 +501,19 @@ class _TelaLoginFormState extends State<TelaLoginForm> {
     );
   }
 
-  void _loginComGoogle() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Login com Google - Em desenvolvimento')),
-    );
+  Future<void> _loginComGoogle() async {
+    final authProvider = context.read<AuthProvider>();
+
+    final success = await authProvider.signInWithGoogle();
+
+    if (!mounted) return;
+
+    if (!success && authProvider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authProvider.errorMessage!)),
+      );
+    }
+    // Se sucesso, a navegação é feita pelo callback OAuth no AuthProvider
   }
 
   void _loginComFacebook() {

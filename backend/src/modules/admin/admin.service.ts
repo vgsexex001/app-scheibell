@@ -18,6 +18,23 @@ import {
 } from './dto';
 import { AppointmentType } from '@prisma/client';
 
+// Mapa de tradução para tipos de agendamento
+const APPOINTMENT_TYPE_LABELS: Record<string, string> = {
+  CONSULTATION: 'Consulta',
+  RETURN_VISIT: 'Retorno',
+  EVALUATION: 'Avaliação',
+  SPLINT_REMOVAL: 'Retirada de Splint',
+  PHYSIOTHERAPY: 'Fisioterapia',
+  EXAM: 'Exame',
+  SURGERY: 'Cirurgia',
+  OTHER: 'Outro',
+};
+
+function getAppointmentTypeLabel(type: string | null): string {
+  if (!type) return 'Consulta';
+  return APPOINTMENT_TYPE_LABELS[type] || type;
+}
+
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -184,7 +201,7 @@ export class AdminService {
         id: apt.id,
         patientId: apt.patientId,
         patientName: apt.patient.user?.name || apt.patient.name || 'Paciente',
-        procedureType: apt.patient.surgeryType || apt.title,
+        procedureType: getAppointmentTypeLabel(apt.type),
         startsAt: `${date.toISOString().split('T')[0]}T${apt.time}:00-03:00`,
         displayDate: date.toLocaleDateString('pt-BR'),
         displayTime: apt.time,
@@ -537,7 +554,7 @@ export class AdminService {
       id: apt.id,
       patientId: apt.patientId,
       patientName: apt.patient.user?.name || apt.patient.name || 'Paciente',
-      procedureType: apt.patient.surgeryType || apt.title,
+      procedureType: getAppointmentTypeLabel(apt.type),
       consultationType: apt.type || 'CONSULTATION',
       date: new Date(apt.date).toISOString().split('T')[0],
       time: apt.time,
@@ -590,7 +607,7 @@ export class AdminService {
       id: apt.id,
       patientId: apt.patientId,
       patientName: apt.patient.user?.name || apt.patient.name || 'Paciente',
-      procedureType: apt.patient.surgeryType || apt.title,
+      procedureType: getAppointmentTypeLabel(apt.type),
       time: apt.time,
       status: apt.status,
     }));

@@ -8,3 +8,4 @@ export 'consulta_card.dart';
 export 'acao_rapida_card.dart';
 export 'tarefa_card.dart';
 export 'score_card.dart';
+export 'home_timeline_widget.dart';

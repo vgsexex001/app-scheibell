@@ -472,6 +472,17 @@ export class HomeService {
     return { success: true, progress };
   }
 
+  /**
+   * Busca progresso de todos os videos do paciente
+   */
+  async getVideoProgress(patientId: string) {
+    const progress = await this.prisma.videoProgress.findMany({
+      where: { patientId },
+    });
+
+    return progress;
+  }
+
   async createTask(patientId: string, clinicId: string, dto: CreateTaskDto) {
     const task = await this.prisma.patientTask.create({
       data: {

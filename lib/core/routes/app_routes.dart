@@ -18,6 +18,7 @@ import '../../shared/screens/tela_onboarding.dart';
 import '../../shared/screens/tela_onboarding2.dart';
 import '../../shared/screens/tela_onboarding3.dart';
 import '../../shared/screens/tela_onboarding4.dart';
+import '../../shared/screens/tela_verificar_otp.dart';
 // Patient screens
 import '../../features/patient/screens/main_navigation_screen.dart';
 import '../../features/patient/screens/tela_chatbot.dart';
@@ -48,6 +49,9 @@ import '../../features/clinic/screens/patient_detail_screen.dart';
 import '../../features/clinic/screens/calendar_screen.dart';
 import '../../features/clinic/screens/settings_screen.dart';
 import '../../features/clinic/screens/chat_screen.dart';
+import '../../features/clinic/screens/clinic_media_library_screen.dart';
+import '../../features/clinic/screens/clinic_schedule_settings_screen.dart';
+import '../../features/clinic/screens/add_patient_magic_link_screen.dart';
 // Third party screens
 import '../../features/third_party/screens/third_party_home_screen.dart';
 import '../../features/third_party/screens/third_party_chat_screen.dart';
@@ -67,6 +71,8 @@ class AppRoutes {
   static const String onboarding2 = '/onboarding2';
   static const String onboarding3 = '/onboarding3';
   static const String onboarding4 = '/onboarding4';
+  static const String verificarOTP = '/verificar-otp';
+  static const String addPatientMagicLink = '/add-patient-magic-link';
 
   // Patient routes
   static const String home = '/home';
@@ -99,6 +105,8 @@ class AppRoutes {
   static const String clinicCalendar = '/clinic-calendar';
   static const String clinicSettings = '/clinic-settings';
   static const String clinicChat = '/clinic-chat';
+  static const String clinicMediaLibrary = '/clinic-media-library';
+  static const String clinicScheduleSettings = '/clinic-schedule-settings';
 
   // Third party routes
   static const String thirdPartyHome = '/third-party-home';
@@ -117,6 +125,7 @@ class AppRoutes {
       novaSenha: (context) => const TelaNovaSenha(),
       criarConta: (context) => const TelaCriarConta(),
       verificarEmailCadastro: (context) => const TelaVerificarEmailCadastro(),
+      // Onboarding routes (sem guard - GateScreen já verifica autenticação antes de redirecionar)
       onboarding: (context) => const TelaOnboarding(),
       onboarding2: (context) => const TelaOnboarding2(),
       onboarding3: (context) => const TelaOnboarding3(),
@@ -186,6 +195,9 @@ class AppRoutes {
         create: (_) => AdminChatController()..addWelcomeMessage(),
         child: const ChatScreen(),
       ),
+      clinicMediaLibrary: (context) => const ClinicMediaLibraryScreen(),
+      clinicScheduleSettings: (context) => const ClinicScheduleSettingsScreen(),
+      addPatientMagicLink: (context) => const AddPatientMagicLinkScreen(),
 
       // Third party routes
       thirdPartyHome: (context) => const ThirdPartyHomeScreen(),
@@ -199,6 +211,14 @@ class AppRoutes {
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     // Handle routes that need arguments
     switch (settings.name) {
+      case verificarOTP:
+        final args = settings.arguments as Map<String, dynamic>;
+        return MaterialPageRoute(
+          builder: (context) => TelaVerificarOTP(
+            email: args['email'] as String,
+            type: args['type'] as OTPType,
+          ),
+        );
       case agenda:
         final args = settings.arguments as Map<String, dynamic>?;
         return MaterialPageRoute(

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MulterModule } from '@nestjs/platform-express';
+import * as multer from 'multer';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { StorageService } from './storage.service';
@@ -15,8 +16,9 @@ import { QueueModule } from '../queue/queue.module';
     AuthModule,
     QueueModule,
     MulterModule.register({
+      storage: multer.memoryStorage(), // Armazena em memória para ter acesso ao buffer
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB
+        fileSize: 25 * 1024 * 1024, // 25MB para áudios
       },
     }),
   ],

@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
+import '../../core/services/secure_storage_service.dart';
 
 class TelaOnboarding3 extends StatelessWidget {
   const TelaOnboarding3({super.key});
+
+  Future<void> _skipOnboarding(BuildContext context) async {
+    final secureStorage = SecureStorageService();
+    await secureStorage.setOnboardingCompleted();
+    if (context.mounted) {
+      Navigator.pushReplacementNamed(context, '/home');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +58,7 @@ class TelaOnboarding3 extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: TextButton(
-                        onPressed: () => Navigator.pushReplacementNamed(context, '/home'),
+                        onPressed: () => _skipOnboarding(context),
                         child: const Text(
                           'Pular',
                           style: TextStyle(

@@ -1,8 +1,22 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../../../core/services/api_service.dart';
+
+/// Converte URLs de localhost para 10.0.2.2 no emulador Android
+String _fixImageUrl(String url) {
+  if (url.isEmpty) return url;
+  if (kIsWeb) return url;
+  if (Platform.isAndroid) {
+    return url.replaceAll('localhost', '10.0.2.2');
+  }
+  return url;
+}
 
 // ========== ENUMS E MODELOS ==========
 
@@ -24,6 +38,9 @@ class DocumentoCompleto {
   final TipoDocumento tipo;
   final StatusDocumento status;
   final String? arquivoUrl;
+  final bool enviadoPelaClinica;
+  final String? observacoesMedico;
+  final DateTime? dataAprovacao;
 
   DocumentoCompleto({
     required this.id,
@@ -32,7 +49,46 @@ class DocumentoCompleto {
     required this.tipo,
     required this.status,
     this.arquivoUrl,
+    this.enviadoPelaClinica = false,
+    this.observacoesMedico,
+    this.dataAprovacao,
   });
+
+  factory DocumentoCompleto.fromJson(Map<String, dynamic> json) {
+    final createdByRole = json['createdByRole'] as String?;
+    final isFromClinic = createdByRole == 'CLINIC_ADMIN' || createdByRole == 'CLINIC_STAFF';
+
+    return DocumentoCompleto(
+      id: json['id'] as String,
+      nome: json['title'] as String? ?? 'Documento',
+      data: json['date'] != null ? DateTime.parse(json['date'] as String) : DateTime.now(),
+      tipo: _parseTipo(json['type'] as String?),
+      status: _parseStatus(json['status'] as String?),
+      arquivoUrl: json['fileUrl'] as String?,
+      enviadoPelaClinica: isFromClinic,
+    );
+  }
+
+  static TipoDocumento _parseTipo(String? type) {
+    switch (type?.toUpperCase()) {
+      case 'TERMO':
+        return TipoDocumento.termo;
+      case 'ENCAMINHAMENTO':
+        return TipoDocumento.encaminhamento;
+      default:
+        return TipoDocumento.exame;
+    }
+  }
+
+  static StatusDocumento _parseStatus(String? status) {
+    switch (status) {
+      case 'AVAILABLE':
+      case 'VIEWED':
+        return StatusDocumento.aprovado;
+      default:
+        return StatusDocumento.pendente;
+    }
+  }
 }
 
 class TelaDocumentos extends StatefulWidget {
@@ -97,20 +153,11 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
       });
     } catch (e) {
       debugPrint('Erro ao carregar documentos: $e');
-      // Tratar 404 como lista vazia (sem documentos)
-      final errorStr = e.toString().toLowerCase();
-      if (errorStr.contains('404') || errorStr.contains('not found')) {
-        setState(() {
-          _documentos = [];
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _documentos = [];
-          _isLoading = false;
-          _erro = 'Não foi possível carregar os documentos.';
-        });
-      }
+      // Tratar qualquer erro como lista vazia para evitar mensagens de erro
+      setState(() {
+        _documentos = [];
+        _isLoading = false;
+      });
     }
   }
 
@@ -139,6 +186,20 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
       status = StatusDocumento.pendente;
     }
 
+    // Verificar se foi enviado pela clínica
+    final createdByRole = item['createdByRole'] as String?;
+    final isFromClinic = createdByRole == 'CLINIC_ADMIN' || createdByRole == 'CLINIC_STAFF';
+
+    // Observações do médico - mostra se o documento foi aprovado
+    // O campo aiSummary contém as observações escritas pelo médico ao aprovar
+    final aiSummary = item['aiSummary'] as String?;
+    final isApproved = statusApi == 'AVAILABLE';
+    final observacoes = isApproved ? aiSummary : null;
+
+    // Data de aprovação
+    final approvedAtStr = item['approvedAt'] as String?;
+    final dataAprovacao = approvedAtStr != null ? DateTime.tryParse(approvedAtStr) : null;
+
     return DocumentoCompleto(
       id: item['id'] as String,
       nome: item['title'] as String? ?? item['name'] as String? ?? 'Documento',
@@ -146,6 +207,9 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
       tipo: tipo,
       status: status,
       arquivoUrl: item['fileUrl'] as String?,
+      enviadoPelaClinica: isFromClinic,
+      observacoesMedico: observacoes,
+      dataAprovacao: dataAprovacao,
     );
   }
 
@@ -195,9 +259,6 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
     if (widget.embedded) {
       return Column(
         children: [
-          const SizedBox(height: 16),
-          _buildBotaoAdicionar(),
-          const SizedBox(height: 8),
           _buildBarraFiltros(),
           _isLoading
               ? const Padding(
@@ -271,6 +332,9 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
                             );
                           },
                         ),
+          const SizedBox(height: 8),
+          _buildBotaoAdicionar(),
+          const SizedBox(height: 16),
         ],
       );
     }
@@ -808,77 +872,162 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: _corBordaFiltros,
-          width: 1,
+          color: documento.enviadoPelaClinica ? const Color(0xFF4F4A34) : _corBordaFiltros,
+          width: documento.enviadoPelaClinica ? 2 : 1,
         ),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Emoji do tipo
-          SizedBox(
-            width: 34,
-            child: Text(
-              _getEmoji(documento.tipo),
-              style: const TextStyle(
-                fontSize: 30,
-                height: 1.20,
+          // Badge "Enviado pela clínica"
+          if (documento.enviadoPelaClinica) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4F4A34),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.local_hospital, color: Colors.white, size: 12),
+                  SizedBox(width: 4),
+                  Text(
+                    'Enviado pela clínica',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 12),
+            const SizedBox(height: 8),
+          ],
 
-          // Conteúdo principal
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Linha 1: Nome + Badge
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Emoji do tipo
+              SizedBox(
+                width: 34,
+                child: Text(
+                  _getEmoji(documento.tipo),
+                  style: const TextStyle(
+                    fontSize: 30,
+                    height: 1.20,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Conteúdo principal
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            documento.nome,
-                            style: const TextStyle(
-                              color: _corTextoPrincipal,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              height: 1.43,
-                            ),
+                    // Linha 1: Nome + Badge
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                documento.nome,
+                                style: const TextStyle(
+                                  color: _corTextoPrincipal,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.43,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _formatarData(documento.data),
+                                style: const TextStyle(
+                                  color: _corTextoSecundario,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.33,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _formatarData(documento.data),
-                            style: const TextStyle(
-                              color: _corTextoSecundario,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              height: 1.33,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        _buildBadgeStatus(documento.status),
+                      ],
                     ),
-                    _buildBadgeStatus(documento.status),
-                  ],
-                ),
-                const SizedBox(height: 12),
 
-                // Linha 2: Botões de ação
+                    // Observações do médico (se houver)
+                    if (documento.observacoesMedico != null && documento.observacoesMedico!.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F9FF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.medical_information,
+                                  color: const Color(0xFF3B82F6),
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Observações da equipe médica',
+                                    style: const TextStyle(
+                                      color: Color(0xFF1E40AF),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                if (documento.dataAprovacao != null)
+                                  Text(
+                                    _formatarDataHora(documento.dataAprovacao!),
+                                    style: TextStyle(
+                                      color: const Color(0xFF1E40AF).withOpacity(0.7),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              documento.observacoesMedico!,
+                              style: const TextStyle(
+                                color: Color(0xFF1E3A5F),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+
+                    // Linha 2: Botões de ação
                 Row(
                   children: [
                     // Botão Visualizar (expansível)
                     Expanded(
                       child: GestureDetector(
-                        onTap: () {
-                          // TODO: Abrir visualizador de documento
-                          debugPrint('Visualizar: ${documento.nome}');
-                        },
+                        onTap: () => _visualizarDocumento(documento),
                         child: Container(
                           height: 32,
                           decoration: BoxDecoration(
@@ -916,10 +1065,7 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
 
                     // Botão Compartilhar (ícone)
                     GestureDetector(
-                      onTap: () {
-                        // TODO: Compartilhar documento
-                        debugPrint('Compartilhar: ${documento.nome}');
-                      },
+                      onTap: () => _compartilharDocumento(documento),
                       child: Container(
                         width: 38,
                         height: 32,
@@ -942,10 +1088,7 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
 
                     // Botão Download (ícone)
                     GestureDetector(
-                      onTap: () {
-                        // TODO: Baixar documento
-                        debugPrint('Download: ${documento.nome}');
-                      },
+                      onTap: () => _baixarDocumento(documento),
                       child: Container(
                         width: 38,
                         height: 32,
@@ -968,6 +1111,8 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
                 ),
               ],
             ),
+          ),
+            ],
           ),
         ],
       ),
@@ -1034,5 +1179,283 @@ class _TelaDocumentosState extends State<TelaDocumentos> {
       'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
     ];
     return '${data.day} ${meses[data.month - 1]} ${data.year}';
+  }
+
+  String _formatarDataHora(DateTime data) {
+    const meses = [
+      'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+      'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
+    ];
+    final hora = data.hour.toString().padLeft(2, '0');
+    final minuto = data.minute.toString().padLeft(2, '0');
+    return '${data.day} ${meses[data.month - 1]} ${data.year} às $hora:$minuto';
+  }
+
+  // ========== FUNCOES DE ACAO ==========
+
+  void _visualizarDocumento(DocumentoCompleto documento) {
+    if (documento.arquivoUrl == null || documento.arquivoUrl!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Documento sem arquivo disponível')),
+      );
+      return;
+    }
+
+    final fixedUrl = _fixImageUrl(documento.arquivoUrl!);
+    final isPdf = documento.nome.toLowerCase().endsWith('.pdf') ||
+        (documento.arquivoUrl?.toLowerCase().endsWith('.pdf') ?? false);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+            maxWidth: MediaQuery.of(context).size.width * 0.95,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [_corGradienteInicio, _corGradienteFim],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      _getEmoji(documento.tipo),
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            documento.nome,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            _formatarData(documento.data),
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Flexible(
+                child: isPdf
+                    ? _buildPdfViewer(fixedUrl)
+                    : _buildImageViewer(fixedUrl),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageViewer(String fileUrl) {
+    return InteractiveViewer(
+      panEnabled: true,
+      boundaryMargin: const EdgeInsets.all(20),
+      minScale: 0.5,
+      maxScale: 4,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        child: Image.network(
+          fileUrl,
+          fit: BoxFit.contain,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                            loadingProgress.expectedTotalBytes!
+                        : null,
+                    color: _corGradienteInicio,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Carregando documento...',
+                    style: TextStyle(color: _corTextoSecundario, fontSize: 14),
+                  ),
+                ],
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.broken_image, color: _corTextoSecundario, size: 48),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Erro ao carregar documento',
+                    style: TextStyle(color: _corTextoSecundario, fontSize: 14),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPdfViewer(String fileUrl) {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.picture_as_pdf, color: Color(0xFFE7000B), size: 64),
+          const SizedBox(height: 16),
+          const Text(
+            'Documento PDF',
+            style: TextStyle(
+              color: _corTextoPrincipal,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Toque em "Baixar" para salvar o arquivo',
+            style: TextStyle(color: _corTextoSecundario, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _baixarDocumento(DocumentoCompleto documento) async {
+    if (documento.arquivoUrl == null || documento.arquivoUrl!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Documento sem arquivo disponível')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Baixando documento...')),
+    );
+
+    try {
+      final fixedUrl = _fixImageUrl(documento.arquivoUrl!);
+      final response = await http.get(Uri.parse(fixedUrl));
+
+      if (response.statusCode == 200) {
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = documento.nome.replaceAll(RegExp(r'[^\w\s\-\.]'), '_');
+        final extension = documento.arquivoUrl!.split('.').last.split('?').first;
+        final filePath = '${directory.path}/$fileName.$extension';
+
+        final file = File(filePath);
+        await file.writeAsBytes(response.bodyBytes);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Documento salvo: $fileName.$extension'),
+              backgroundColor: _corBadgeAprovado,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Erro ao baixar: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Erro ao baixar documento: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao baixar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _compartilharDocumento(DocumentoCompleto documento) async {
+    if (documento.arquivoUrl == null || documento.arquivoUrl!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Documento sem arquivo disponível')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Preparando para compartilhar...')),
+    );
+
+    try {
+      final fixedUrl = _fixImageUrl(documento.arquivoUrl!);
+      final response = await http.get(Uri.parse(fixedUrl));
+
+      if (response.statusCode == 200) {
+        final directory = await getTemporaryDirectory();
+        final fileName = documento.nome.replaceAll(RegExp(r'[^\w\s\-\.]'), '_');
+        final extension = documento.arquivoUrl!.split('.').last.split('?').first;
+        final filePath = '${directory.path}/$fileName.$extension';
+
+        final file = File(filePath);
+        await file.writeAsBytes(response.bodyBytes);
+
+        await Share.shareXFiles(
+          [XFile(filePath)],
+          text: 'Documento: ${documento.nome}',
+        );
+      } else {
+        throw Exception('Erro ao baixar arquivo');
+      }
+    } catch (e) {
+      debugPrint('Erro ao compartilhar: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao compartilhar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

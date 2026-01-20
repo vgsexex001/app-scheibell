@@ -7,6 +7,8 @@ import '../../../core/config/api_config.dart';
 import '../../../core/services/api_service.dart';
 import '../../chatbot/presentation/controller/chat_controller.dart';
 import '../../chatbot/domain/entities/chat_message.dart';
+import '../../chatbot/presentation/widgets/audio_recorder_widget.dart';
+import '../../chatbot/presentation/widgets/audio_player_widget.dart';
 
 class TelaChatbot extends StatefulWidget {
   const TelaChatbot({super.key});
@@ -37,6 +39,8 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
   final ImagePicker _imagePicker = ImagePicker();
   late AnimationController _animationController;
   bool _mostrarTooltipSuporte = true;
+  File? _selectedImage; // Imagem selecionada para preview
+  bool _isRecordingAudio = false; // Estado de gravacao de audio
 
   final List<String> _perguntasRapidas = [
     'O que posso comer?',
@@ -106,28 +110,156 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
     _scrollParaFim();
   }
 
-  Future<void> _pickImage() async {
-    final XFile? image = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 85,
-    );
-
-    if (image != null && mounted) {
-      final chatController = context.read<ChatController>();
-      final file = File(image.path);
-
-      // Valida e faz upload + analise
-      final isValid = await chatController.setImageToSend(file);
-      if (isValid) {
-        await chatController.sendMessageWithImage(
-          text: _textController.text.isNotEmpty ? _textController.text : null,
+  /// Envia mensagem de audio
+  Future<void> _enviarAudio(File audioFile, int durationSeconds) async {
+    final chatController = context.read<ChatController>();
+    try {
+      await chatController.sendAudioMessage(audioFile, durationSeconds);
+      _scrollParaFim();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao enviar audio: $e'),
+            backgroundColor: _errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
         );
-        _textController.clear();
-        _scrollParaFim();
       }
     }
+  }
+
+  /// Mostrar opções de imagem (câmera ou galeria)
+  void _showImageOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Enviar imagem',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: _textPrimary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Opção: Câmera
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _primaryDark.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.camera_alt, color: _primaryDark),
+              ),
+              title: const Text('Tirar foto'),
+              subtitle: const Text('Usar a câmera do dispositivo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            // Opção: Galeria
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _primaryDark.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.photo_library, color: _primaryDark),
+              ),
+              title: const Text('Escolher da galeria'),
+              subtitle: const Text('Selecionar foto existente'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+
+      if (image != null && mounted) {
+        setState(() {
+          _selectedImage = File(image.path);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao capturar imagem: $e'),
+            backgroundColor: _errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Envia a imagem selecionada junto com o texto (se houver)
+  Future<void> _enviarComImagem() async {
+    if (_selectedImage == null) return;
+
+    final chatController = context.read<ChatController>();
+    final file = _selectedImage!;
+
+    // Limpa o preview antes de enviar
+    setState(() {
+      _selectedImage = null;
+    });
+
+    // Valida e faz upload + analise
+    final isValid = await chatController.setImageToSend(file);
+    if (isValid) {
+      await chatController.sendMessageWithImage(
+        text: _textController.text.isNotEmpty ? _textController.text : null,
+      );
+      _textController.clear();
+      _scrollParaFim();
+    }
+  }
+
+  /// Remove a imagem selecionada
+  void _removerImagemSelecionada() {
+    setState(() {
+      _selectedImage = null;
+    });
   }
 
   @override
@@ -237,6 +369,10 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
                 ),
                 onSelected: (value) {
                   if (value == 'limpar') {
+                    setState(() {
+                      _selectedImage = null;
+                      _mostrarTooltipSuporte = true;
+                    });
                     chatController.clearHistory();
                   }
                 },
@@ -395,11 +531,14 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Renderizar imagens se existirem attachments
+                  // Renderizar attachments (imagens e audios)
                   if (message.hasAttachments) ...[
-                    for (final attachment in message.attachments)
-                      if (attachment.mimeType.startsWith('image/'))
+                    for (final attachment in message.attachments) ...[
+                      if (attachment.isImage)
                         _buildAttachmentImage(attachment),
+                      if (attachment.isAudio)
+                        _buildAudioPlayer(attachment, isBot),
+                    ],
                   ],
                   // So renderizar texto se nao for fallback de imagem E tiver conteudo
                   if (!_isImageFallbackText(message) && message.content.trim().isNotEmpty)
@@ -458,17 +597,54 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
             left: isBot ? 12 : 0,
             right: isBot ? 0 : 12,
           ),
-          child: Text(
-            _formatTime(message.timestamp),
-            style: const TextStyle(
-              color: _textTertiary,
-              fontSize: 11,
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w400,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: isBot ? MainAxisAlignment.start : MainAxisAlignment.end,
+            children: [
+              Text(
+                _formatTime(message.timestamp),
+                style: const TextStyle(
+                  color: _textTertiary,
+                  fontSize: 11,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+              // Status de leitura para mensagens do usuário
+              if (!isBot) ...[
+                const SizedBox(width: 4),
+                _buildMessageStatusIcon(message),
+              ],
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  /// Constrói o ícone de status da mensagem (enviado/entregue/lido)
+  Widget _buildMessageStatusIcon(ChatMessage message) {
+    // Verifica se foi lido (readAt não é nulo)
+    if (message.readAt != null) {
+      return const Icon(
+        Icons.done_all,
+        size: 14,
+        color: Color(0xFF3B82F6), // Azul para lido
+      );
+    }
+    // Verifica se foi entregue (deliveredAt não é nulo)
+    if (message.deliveredAt != null) {
+      return const Icon(
+        Icons.done_all,
+        size: 14,
+        color: _textTertiary, // Cinza para entregue
+      );
+    }
+    // Default: enviado (1 check)
+    return const Icon(
+      Icons.check,
+      size: 14,
+      color: _textTertiary,
     );
   }
 
@@ -557,6 +733,40 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
     );
   }
 
+  /// Constroi o player de audio para mensagens
+  Widget _buildAudioPlayer(ChatAttachment attachment, bool isBot) {
+    // Usa URL do Supabase se disponível, senão fallback para endpoint do backend
+    final audioUrl = attachment.audioPlayableUrl ??
+        '${ApiConfig.baseUrl}/chat/audio/${attachment.id}/file';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: AudioPlayerWidget(
+        audioUrl: audioUrl,
+        durationSeconds: attachment.durationSeconds,
+        transcription: attachment.transcription,
+        isFromUser: !isBot,
+        primaryColor: _primaryDark,
+        onTranscriptionRequested: attachment.transcription == null
+            ? () async {
+                final chatController = context.read<ChatController>();
+                final transcription =
+                    await chatController.requestTranscription(attachment.id);
+                if (transcription != null && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Transcricao: $transcription'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 5),
+                    ),
+                  );
+                }
+              }
+            : null,
+      ),
+    );
+  }
+
   void _showImageDialog(String imageUrl, String? localPath) {
     showDialog(
       context: context,
@@ -587,60 +797,90 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
 
   /// Widget para mensagens de sistema (handoff, etc)
   Widget _buildSystemMessage(ChatMessage message) {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: _humanModeColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _humanModeColor.withOpacity(0.2),
-          ),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _humanModeColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _humanModeColor.withValues(alpha: 0.2),
+          width: 1,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.info_outline,
-              size: 16,
+      ),
+      child: Row(
+        children: [
+          // Ícone
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
               color: _humanModeColor,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                message.content,
-                style: const TextStyle(
-                  color: _humanModeColor,
-                  fontSize: 13,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w500,
+            child: const Icon(
+              Icons.support_agent,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Texto
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Conversa transferida',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: _humanModeColor,
+                  ),
                 ),
-                textAlign: TextAlign.center,
-              ),
+                const SizedBox(height: 4),
+                Text(
+                  message.content.isNotEmpty
+                      ? message.content
+                      : 'Um membro da equipe irá responder em breve.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: _textSecondary,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  /// Verifica se o texto da mensagem e apenas um fallback de imagem
-  /// e deve ser ocultado quando a imagem for renderizada
+  /// Verifica se o texto da mensagem e apenas um fallback de imagem/audio
+  /// e deve ser ocultado quando o attachment for renderizado
   bool _isImageFallbackText(ChatMessage message) {
     final content = message.content.trim();
 
-    // Se nao tem attachments de imagem
+    // Verifica se tem attachments de imagem ou audio
     final hasImageAttachment = message.attachments.any(
       (a) => a.mimeType.startsWith('image/'),
     );
-    if (!hasImageAttachment) {
+    final hasAudioAttachment = message.hasAudioAttachment;
+
+    if (!hasImageAttachment && !hasAudioAttachment) {
       // Retorna true para esconder se conteudo vazio - fallback sera mostrado
       return content.isEmpty;
     }
 
-    // Padroes de fallback a ocultar
+    // Padroes de fallback a ocultar (imagem)
     if (content.startsWith('[Imagem enviada:') && content.endsWith(']')) {
+      return true;
+    }
+
+    // Padroes de fallback a ocultar (audio)
+    if (content == '[Mensagem de audio]' || content == '[Mensagem de áudio]') {
+      return true;
+    }
+    if (content.startsWith('[Audio transcrito]:') || content.startsWith('[Áudio transcrito]:')) {
       return true;
     }
 
@@ -992,24 +1232,20 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: _borderChip,
+            color: _primaryDark,
             width: 1,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
         ),
         child: Text(
           question,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.visible,
           style: const TextStyle(
-            color: _textPrimary,
+            color: _primaryDark,
             fontSize: 13,
             fontFamily: 'Inter',
             fontWeight: FontWeight.w400,
@@ -1019,136 +1255,255 @@ class _TelaChatbotState extends State<TelaChatbot> with TickerProviderStateMixin
     );
   }
 
+  /// Widget de preview da imagem selecionada
+  Widget _buildImagePreview() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: _inputBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _borderChip, width: 1),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              _selectedImage!,
+              width: 80,
+              height: 80,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+        // Botão remover no canto superior direito
+        Positioned(
+          top: -6,
+          right: -6,
+          child: GestureDetector(
+            onTap: _removerImagemSelecionada,
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: _errorColor,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(
+                Icons.close,
+                size: 14,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildInputArea() {
     return Consumer<ChatController>(
       builder: (context, chatController, _) {
         final isLoading = chatController.isLoading;
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, -2),
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Perguntas rápidas (fora do container branco, transparentes)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: _buildQuickQuestionsSection(),
+            ),
+            // Container branco para o campo de texto e preview da imagem
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildQuickQuestionsSection(),
-              const SizedBox(height: 12),
-              Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Botao de anexo de imagem
-                  GestureDetector(
-                    onTap: (isLoading || chatController.isUploading || chatController.isAnalyzing)
-                        ? null
-                        : _pickImage,
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: _inputBackground,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: (chatController.isUploading || chatController.isAnalyzing)
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(_primaryDark),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.camera_alt_outlined,
-                              size: 20,
-                              color: _textTertiary,
-                            ),
+                  // Preview da imagem (dentro do container branco, alinhado à esquerda)
+                  if (_selectedImage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildImagePreview(),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: _inputBackground,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: TextField(
-                        controller: _textController,
-                        enabled: !isLoading,
-                        decoration: InputDecoration(
-                          hintText: isLoading
-                              ? 'Aguarde a resposta...'
-                              : 'Digite sua mensagem...',
-                          hintStyle: const TextStyle(
-                            color: _textTertiary,
-                            fontSize: 14,
-                            fontFamily: 'Inter',
+                  // Input row - sempre visivel
+                  Row(
+                    children: [
+                      // Widget de gravacao de audio (quando ativo) - substitui camera e texto
+                      if (_isRecordingAudio) ...[
+                        Expanded(
+                          child: AudioRecorderWidget(
+                            primaryColor: _primaryDark,
+                            onAudioRecorded: (audioFile, durationSeconds) {
+                              setState(() {
+                                _isRecordingAudio = false;
+                              });
+                              _enviarAudio(audioFile, durationSeconds);
+                            },
+                            onRecordingStarted: () {
+                              // Ja esta em modo de gravacao
+                            },
+                            onRecordingCancelled: () {
+                              setState(() {
+                                _isRecordingAudio = false;
+                              });
+                            },
                           ),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
                         ),
-                        style: const TextStyle(
-                          color: _textPrimary,
-                          fontSize: 14,
-                          fontFamily: 'Inter',
-                        ),
-                        onSubmitted: isLoading ? null : (_) => _enviarMensagem(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: isLoading ? null : _enviarMensagem,
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: (_textController.text.isEmpty || isLoading)
-                            ? _primaryDark.withOpacity(0.5)
-                            : _primaryDark,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: Padding(
-                                padding: EdgeInsets.all(12),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.send,
-                              size: 20,
-                              color: Colors.white,
+                      ] else ...[
+                        // Botao de câmera/galeria
+                        GestureDetector(
+                          onTap: (isLoading || chatController.isUploading || chatController.isAnalyzing)
+                              ? null
+                              : _showImageOptions,
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: _inputBackground,
+                              borderRadius: BorderRadius.circular(22),
                             ),
+                            child: (chatController.isUploading || chatController.isAnalyzing)
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(_primaryDark),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.camera_alt_outlined,
+                                    size: 20,
+                                    color: _primaryDark,
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Campo de texto
+                        Expanded(
+                          child: Container(
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: _inputBackground,
+                              borderRadius: BorderRadius.circular(22),
+                            ),
+                            child: Center(
+                              child: TextField(
+                                controller: _textController,
+                                enabled: !isLoading,
+                                textAlignVertical: TextAlignVertical.center,
+                                decoration: InputDecoration(
+                                  hintText: isLoading
+                                      ? 'Aguarde a resposta...'
+                                      : 'Digite sua mensagem...',
+                                  hintStyle: const TextStyle(
+                                    color: _textTertiary,
+                                    fontSize: 14,
+                                    fontFamily: 'Inter',
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  isDense: true,
+                                ),
+                                style: const TextStyle(
+                                  color: _textPrimary,
+                                  fontSize: 14,
+                                  fontFamily: 'Inter',
+                                ),
+                                onSubmitted: isLoading ? null : (_) => _enviarMensagem(),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Botao de microfone (quando nao ha texto e nao esta carregando)
+                        if (_textController.text.isEmpty && _selectedImage == null && !isLoading)
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _isRecordingAudio = true;
+                              });
+                            },
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: _inputBackground,
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              child: const Icon(
+                                Icons.mic,
+                                size: 20,
+                                color: _primaryDark,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        // Botao de enviar (sempre visivel)
+                        GestureDetector(
+                          onTap: (isLoading || (_textController.text.isEmpty && _selectedImage == null))
+                              ? null
+                              : (_selectedImage != null ? _enviarComImagem : _enviarMensagem),
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: (_textController.text.isEmpty && _selectedImage == null || isLoading)
+                                  ? _primaryDark.withValues(alpha: 0.5)
+                                  : _primaryDark,
+                              borderRadius: BorderRadius.circular(22),
+                            ),
+                            child: isLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.send,
+                                    size: 20,
+                                    color: Colors.white,
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Respostas geradas por IA - Para emergencias, ligue para a clinica',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _textTertiary,
+                      fontSize: 11,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              const Text(
-                'Respostas geradas por IA - Para emergencias, ligue para a clinica',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _textTertiary,
-                  fontSize: 11,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
@@ -1206,6 +1561,31 @@ class TooltipArrowRightPainter extends CustomPainter {
     path.close();
 
     canvas.drawPath(path.shift(const Offset(1, 0)), shadowPaint);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Painter para desenhar triângulo apontando para baixo (seta do balão)
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+
+  _TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    path.moveTo(0, 0);
+    path.lineTo(size.width, 0);
+    path.lineTo(size.width / 2, size.height);
+    path.close();
+
     canvas.drawPath(path, paint);
   }
 

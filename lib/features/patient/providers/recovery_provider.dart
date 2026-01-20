@@ -1,12 +1,17 @@
 import 'package:flutter/foundation.dart';
 import '../../../core/services/content_service.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/recovery_content_service.dart';
 import '../../../core/utils/recovery_calculator.dart';
 
 /// Provider para gerenciar o estado da tela de recuperação
 class RecoveryProvider extends ChangeNotifier {
   final ContentService _contentService = ContentService();
   final ApiService _apiService = ApiService();
+  final RecoveryContentService _recoveryContentService = RecoveryContentService();
+
+  // Flag para usar Supabase diretamente
+  bool _usandoSupabase = true;
 
   // Estados de carregamento
   bool _isLoading = false;
@@ -46,6 +51,25 @@ class RecoveryProvider extends ChangeNotifier {
   // Flag para saber se já carregou dados da API
   bool _hasLoadedFromApi = false;
 
+  // ==================== DADOS DO SUPABASE ====================
+  // Sintomas do Supabase
+  List<Map<String, dynamic>> _sintomasNormaisSupabase = [];
+  List<Map<String, dynamic>> _sintomasAvisarSupabase = [];
+  List<Map<String, dynamic>> _sintomasEmergenciaSupabase = [];
+
+  // Cuidados do Supabase
+  List<Map<String, dynamic>> _cuidadosSupabase = [];
+
+  // Atividades do Supabase
+  List<Map<String, dynamic>> _atividadesPermitidasSupabase = [];
+  List<Map<String, dynamic>> _atividadesEvitarSupabase = [];
+  List<Map<String, dynamic>> _atividadesProibidasSupabase = [];
+
+  // Dieta do Supabase
+  List<Map<String, dynamic>> _dietaRecomendadaSupabase = [];
+  List<Map<String, dynamic>> _dietaEvitarSupabase = [];
+  List<Map<String, dynamic>> _dietaProibidaSupabase = [];
+
   // Getters
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -68,6 +92,19 @@ class RecoveryProvider extends ChangeNotifier {
   List<ContentItem> get medicamentos => _medicamentos;
   List<ContentItem> get treinos => _treinos;
 
+  // Getters do Supabase
+  bool get usandoSupabase => _usandoSupabase;
+  List<Map<String, dynamic>> get sintomasNormaisSupabase => _sintomasNormaisSupabase;
+  List<Map<String, dynamic>> get sintomasAvisarSupabase => _sintomasAvisarSupabase;
+  List<Map<String, dynamic>> get sintomasEmergenciaSupabase => _sintomasEmergenciaSupabase;
+  List<Map<String, dynamic>> get cuidadosSupabase => _cuidadosSupabase;
+  List<Map<String, dynamic>> get atividadesPermitidasSupabase => _atividadesPermitidasSupabase;
+  List<Map<String, dynamic>> get atividadesEvitarSupabase => _atividadesEvitarSupabase;
+  List<Map<String, dynamic>> get atividadesProibidasSupabase => _atividadesProibidasSupabase;
+  List<Map<String, dynamic>> get dietaRecomendadaSupabase => _dietaRecomendadaSupabase;
+  List<Map<String, dynamic>> get dietaEvitarSupabase => _dietaEvitarSupabase;
+  List<Map<String, dynamic>> get dietaProibidaSupabase => _dietaProibidaSupabase;
+
   // Getters do protocolo de treino
   Map<String, dynamic>? get trainingProtocol => _trainingProtocol;
   List<Map<String, dynamic>> get semanasProtocolo => _semanasProtocolo;
@@ -87,40 +124,13 @@ class RecoveryProvider extends ChangeNotifier {
       // Carregar protocolo de treino PRIMEIRO (prioridade para a tela de treino)
       await _loadTrainingProtocol();
 
-      // Carregar outros dados em paralelo para melhor performance
-      final results = await Future.wait([
-        _contentService.getSymptomsByCategory(),
-        _contentService.getCareItems(),
-        _contentService.getActivitiesByCategory(),
-        _contentService.getDietByCategory(),
-        _contentService.getMedications(),
-        _contentService.getTrainingItems(),
-      ]);
-
-      // Processar sintomas
-      final symptoms = results[0] as Map<ContentCategory, List<ContentItem>>;
-      _sintomasNormais = symptoms[ContentCategory.normal] ?? [];
-      _sintomasAvisar = symptoms[ContentCategory.warning] ?? [];
-      _sintomasEmergencia = symptoms[ContentCategory.emergency] ?? [];
-
-      // Processar cuidados
-      _cuidados = results[1] as List<ContentItem>;
-
-      // Processar atividades
-      final activities = results[2] as Map<ContentCategory, List<ContentItem>>;
-      _atividadesPermitidas = activities[ContentCategory.allowed] ?? [];
-      _atividadesEvitar = activities[ContentCategory.restricted] ?? [];
-      _atividadesProibidas = activities[ContentCategory.prohibited] ?? [];
-
-      // Processar dieta
-      final diet = results[3] as Map<ContentCategory, List<ContentItem>>;
-      _dietaRecomendada = diet[ContentCategory.allowed] ?? [];
-      _dietaEvitar = diet[ContentCategory.restricted] ?? [];
-      _dietaProibida = diet[ContentCategory.prohibited] ?? [];
-
-      // Processar medicamentos e treinos
-      _medicamentos = results[4] as List<ContentItem>;
-      _treinos = results[5] as List<ContentItem>;
+      if (_usandoSupabase) {
+        // Usar Supabase diretamente
+        await _loadFromSupabase();
+      } else {
+        // Usar API backend (fallback)
+        await _loadFromApi();
+      }
 
       _hasLoadedFromApi = true;
     } catch (e) {
@@ -132,6 +142,89 @@ class RecoveryProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Carrega dados do Supabase
+  Future<void> _loadFromSupabase() async {
+    debugPrint('RecoveryProvider: Carregando dados do Supabase...');
+
+    // Carregar em paralelo
+    final results = await Future.wait([
+      _recoveryContentService.getSintomasPorSeveridade(),
+      _recoveryContentService.getCuidados(),
+      _recoveryContentService.getAtividadesPorClassificacao(),
+      _recoveryContentService.getDietaPorClassificacao(),
+      _recoveryContentService.getDiasPosOperatorio(),
+    ]);
+
+    // Processar sintomas
+    final symptoms = results[0] as Map<String, List<Map<String, dynamic>>>;
+    _sintomasNormaisSupabase = symptoms['NORMAL'] ?? [];
+    _sintomasAvisarSupabase = symptoms['WARNING'] ?? [];
+    _sintomasEmergenciaSupabase = symptoms['EMERGENCY'] ?? [];
+
+    // Processar cuidados
+    _cuidadosSupabase = results[1] as List<Map<String, dynamic>>;
+
+    // Processar atividades
+    final activities = results[2] as Map<String, List<Map<String, dynamic>>>;
+    _atividadesPermitidasSupabase = activities['ALLOWED'] ?? [];
+    _atividadesEvitarSupabase = activities['RESTRICTED'] ?? [];
+    _atividadesProibidasSupabase = activities['PROHIBITED'] ?? [];
+
+    // Processar dieta
+    final diet = results[3] as Map<String, List<Map<String, dynamic>>>;
+    _dietaRecomendadaSupabase = diet['ALLOWED'] ?? [];
+    _dietaEvitarSupabase = diet['RESTRICTED'] ?? [];
+    _dietaProibidaSupabase = diet['PROHIBITED'] ?? [];
+
+    // Dias pós-operatório
+    _diasDesdeCirurgia = results[4] as int;
+
+    debugPrint('RecoveryProvider: Dados do Supabase carregados com sucesso!');
+    debugPrint('Sintomas: ${_sintomasNormaisSupabase.length} normais, ${_sintomasAvisarSupabase.length} avisos, ${_sintomasEmergenciaSupabase.length} emergências');
+    debugPrint('Cuidados: ${_cuidadosSupabase.length}');
+    debugPrint('Atividades: ${_atividadesPermitidasSupabase.length} permitidas, ${_atividadesEvitarSupabase.length} evitar, ${_atividadesProibidasSupabase.length} proibidas');
+    debugPrint('Dieta: ${_dietaRecomendadaSupabase.length} recomendada, ${_dietaEvitarSupabase.length} evitar, ${_dietaProibidaSupabase.length} proibida');
+  }
+
+  /// Carrega dados da API backend (fallback)
+  Future<void> _loadFromApi() async {
+    debugPrint('RecoveryProvider: Carregando dados da API backend...');
+
+    final results = await Future.wait([
+      _contentService.getSymptomsByCategory(),
+      _contentService.getCareItems(),
+      _contentService.getActivitiesByCategory(),
+      _contentService.getDietByCategory(),
+      _contentService.getMedications(),
+      _contentService.getTrainingItems(),
+    ]);
+
+    // Processar sintomas
+    final symptoms = results[0] as Map<ContentCategory, List<ContentItem>>;
+    _sintomasNormais = symptoms[ContentCategory.normal] ?? [];
+    _sintomasAvisar = symptoms[ContentCategory.warning] ?? [];
+    _sintomasEmergencia = symptoms[ContentCategory.emergency] ?? [];
+
+    // Processar cuidados
+    _cuidados = results[1] as List<ContentItem>;
+
+    // Processar atividades
+    final activities = results[2] as Map<ContentCategory, List<ContentItem>>;
+    _atividadesPermitidas = activities[ContentCategory.allowed] ?? [];
+    _atividadesEvitar = activities[ContentCategory.restricted] ?? [];
+    _atividadesProibidas = activities[ContentCategory.prohibited] ?? [];
+
+    // Processar dieta
+    final diet = results[3] as Map<ContentCategory, List<ContentItem>>;
+    _dietaRecomendada = diet[ContentCategory.allowed] ?? [];
+    _dietaEvitar = diet[ContentCategory.restricted] ?? [];
+    _dietaProibida = diet[ContentCategory.prohibited] ?? [];
+
+    // Processar medicamentos e treinos
+    _medicamentos = results[4] as List<ContentItem>;
+    _treinos = results[5] as List<ContentItem>;
   }
 
   /// Carrega o protocolo de treino com as semanas da API
@@ -155,6 +248,16 @@ class RecoveryProvider extends ChangeNotifier {
         // Usar RecoveryCalculator para converter status da API
         final estado = RecoveryCalculator.apiStatusToInternal(weekMap['status'] as String?);
 
+        // Processar exercícios personalizados
+        final customExercises = (weekMap['customExercises'] as List<dynamic>?)
+            ?.map((e) => {
+                  'id': e['id'],
+                  'name': e['name'],
+                  'description': e['description'],
+                  'isCustom': true,
+                })
+            .toList() ?? [];
+
         return {
           'numero': weekMap['weekNumber'] as int,
           'titulo': weekMap['title'] as String,
@@ -167,8 +270,9 @@ class RecoveryProvider extends ChangeNotifier {
           'fcDetalhe': weekMap['heartRateLabel'] as String? ?? '',
           'podeFazer': List<String>.from(weekMap['canDo'] ?? []),
           'aindaProibido': List<String>.from(weekMap['avoid'] ?? []),
-          'criteriosSeguranca': <String>[],
+          'criteriosSeguranca': List<String>.from(weekMap['safetyCriteria'] ?? []),
           'icone': estado == 0 ? 'check' : (estado == 1 ? 'fitness' : 'lock'),
+          'exerciciosPersonalizados': customExercises,
         };
       }).toList();
 
@@ -187,8 +291,16 @@ class RecoveryProvider extends ChangeNotifier {
     await loadAllContent();
   }
 
-  /// Retorna true se há dados disponíveis (da API ou fallback)
+  /// Retorna true se há dados disponíveis (da API, Supabase ou fallback)
   bool get hasData {
+    if (_usandoSupabase) {
+      return _sintomasNormaisSupabase.isNotEmpty ||
+          _sintomasAvisarSupabase.isNotEmpty ||
+          _sintomasEmergenciaSupabase.isNotEmpty ||
+          _cuidadosSupabase.isNotEmpty ||
+          _atividadesPermitidasSupabase.isNotEmpty ||
+          _dietaRecomendadaSupabase.isNotEmpty;
+    }
     return _sintomasNormais.isNotEmpty ||
         _sintomasAvisar.isNotEmpty ||
         _sintomasEmergencia.isNotEmpty ||
@@ -231,6 +343,18 @@ class RecoveryProvider extends ChangeNotifier {
     _semanaAtual = 1;
     _diasDesdeCirurgia = 0;
     _fcBasal = 65;
+
+    // Limpar dados do Supabase
+    _sintomasNormaisSupabase = [];
+    _sintomasAvisarSupabase = [];
+    _sintomasEmergenciaSupabase = [];
+    _cuidadosSupabase = [];
+    _atividadesPermitidasSupabase = [];
+    _atividadesEvitarSupabase = [];
+    _atividadesProibidasSupabase = [];
+    _dietaRecomendadaSupabase = [];
+    _dietaEvitarSupabase = [];
+    _dietaProibidaSupabase = [];
 
     notifyListeners();
   }

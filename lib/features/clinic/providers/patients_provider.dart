@@ -559,6 +559,74 @@ class PatientsProvider extends ChangeNotifier {
     await loadPatientHistory(patientId);
   }
 
+  // ==================== ATUALIZAÇÃO DO PACIENTE ====================
+
+  /// Atualiza informações da cirurgia do paciente
+  Future<bool> updateSurgeryInfo(
+    String patientId, {
+    String? surgeryType,
+    DateTime? surgeryDate,
+    String? surgeon,
+  }) async {
+    _isOperating = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final data = <String, dynamic>{};
+      if (surgeryType != null) data['surgeryType'] = surgeryType;
+      if (surgeryDate != null) data['surgeryDate'] = surgeryDate.toIso8601String();
+      if (surgeon != null) data['surgeon'] = surgeon;
+
+      await _apiService.updatePatient(patientId, data);
+
+      // Atualiza a lista local se o paciente está carregado
+      if (_selectedPatient != null && _selectedPatient!.id == patientId) {
+        final surgeryDateStr = surgeryDate?.toIso8601String() ?? _selectedPatient!.surgeryDate;
+        _selectedPatient = PatientDetail(
+          id: _selectedPatient!.id,
+          name: _selectedPatient!.name,
+          email: _selectedPatient!.email,
+          phone: _selectedPatient!.phone,
+          birthDate: _selectedPatient!.birthDate,
+          cpf: _selectedPatient!.cpf,
+          address: _selectedPatient!.address,
+          surgeryType: surgeryType ?? _selectedPatient!.surgeryType,
+          surgeryDate: surgeryDateStr,
+          surgeon: surgeon ?? _selectedPatient!.surgeon,
+          dayPostOp: _selectedPatient!.dayPostOp,
+          weekPostOp: _selectedPatient!.weekPostOp,
+          adherenceRate: _selectedPatient!.adherenceRate,
+          bloodType: _selectedPatient!.bloodType,
+          weightKg: _selectedPatient!.weightKg,
+          heightCm: _selectedPatient!.heightCm,
+          emergencyContact: _selectedPatient!.emergencyContact,
+          emergencyPhone: _selectedPatient!.emergencyPhone,
+          allergies: _selectedPatient!.allergies,
+          medicalNotes: _selectedPatient!.medicalNotes,
+          upcomingAppointments: _selectedPatient!.upcomingAppointments,
+          pastAppointments: _selectedPatient!.pastAppointments,
+          recentAlerts: _selectedPatient!.recentAlerts,
+        );
+      }
+
+      debugPrint('[PatientsProvider] Informações da cirurgia atualizadas');
+      return true;
+    } on DioException catch (e) {
+      final apiError = _apiService.mapDioError(e);
+      _error = apiError.message;
+      debugPrint('[PatientsProvider] Erro ao atualizar cirurgia: $_error');
+      return false;
+    } catch (e) {
+      _error = 'Erro ao atualizar informações da cirurgia';
+      debugPrint('[PatientsProvider] Erro: $e');
+      return false;
+    } finally {
+      _isOperating = false;
+      notifyListeners();
+    }
+  }
+
   // ==================== CONSULTAS ====================
 
   /// Cria uma consulta para o paciente

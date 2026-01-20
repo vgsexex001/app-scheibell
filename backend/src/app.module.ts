@@ -21,8 +21,10 @@ import { WebsocketModule } from './websocket/websocket.module';
 import { ExternalEventsModule } from './modules/external-events/external-events.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { QueueModule } from './modules/queue/queue.module';
-// TEMPORARIAMENTE DESABILITADO - Precisa de migration no Prisma
-// import { HomeModule } from './modules/home/home.module';
+import { SchedulesModule } from './modules/schedules/schedules.module';
+import { TranscriptionModule } from './modules/transcription/transcription.module';
+import { HomeModule } from './modules/home/home.module';
+import { VideosModule } from './modules/videos/videos.module';
 
 @Module({
   imports: [
@@ -67,7 +69,10 @@ import { QueueModule } from './modules/queue/queue.module';
     ExternalEventsModule,
     StorageModule,
     QueueModule,
-    // HomeModule, // TEMPORARIAMENTE DESABILITADO
+    SchedulesModule,
+    TranscriptionModule,
+    HomeModule,
+    VideosModule,
   ],
   controllers: [],
   providers: [

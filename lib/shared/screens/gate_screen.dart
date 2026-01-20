@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/branding_provider.dart';
+import '../../core/providers/progress_provider.dart';
 import '../../core/models/user_model.dart';
+import '../../core/services/secure_storage_service.dart';
 
 class GateScreen extends StatefulWidget {
   const GateScreen({super.key});
@@ -15,6 +17,7 @@ class _GateScreenState extends State<GateScreen> {
   // Mutex flags para garantir execução única
   bool _isInitialized = false;
   bool _hasNavigated = false;
+  final SecureStorageService _secureStorage = SecureStorageService();
 
   @override
   void initState() {
@@ -63,6 +66,7 @@ class _GateScreenState extends State<GateScreen> {
     if (authProvider.isAuthenticated && authProvider.user != null) {
       _loadBrandingAndRedirect(authProvider.user!);
     } else {
+      // Não autenticado - vai para tela de Welcome/Login
       _navigateToLogin();
     }
   }
@@ -75,6 +79,28 @@ class _GateScreenState extends State<GateScreen> {
     }
 
     if (!mounted) return;
+
+    // Inicializa ProgressProvider para pacientes
+    if (user.role == UserRole.patient) {
+      final progressProvider = context.read<ProgressProvider>();
+      progressProvider.initialize(user.surgeryDate, user.createdAt);
+      debugPrint('[GATE] ProgressProvider inicializado - dias: ${progressProvider.daysSinceStart}, semana: ${progressProvider.currentWeek}');
+    }
+
+    if (!mounted) return;
+
+    // Se é paciente, verifica se precisa mostrar onboarding
+    if (user.role == UserRole.patient) {
+      final isOnboardingCompleted = await _secureStorage.isOnboardingCompleted();
+      debugPrint('[GATE] Onboarding completado: $isOnboardingCompleted');
+
+      if (!isOnboardingCompleted) {
+        // Paciente logado mas ainda não viu onboarding
+        _navigateToOnboarding();
+        return;
+      }
+    }
+
     _redirectBasedOnRole(user.role);
   }
 
@@ -98,8 +124,13 @@ class _GateScreenState extends State<GateScreen> {
   }
 
   void _navigateToLogin() {
-    debugPrint('[GATE] Navegando para login');
+    debugPrint('[GATE] Navegando para login (Welcome)');
     Navigator.of(context).pushReplacementNamed('/');
+  }
+
+  void _navigateToOnboarding() {
+    debugPrint('[GATE] Navegando para onboarding (paciente logado)');
+    Navigator.of(context).pushReplacementNamed('/onboarding');
   }
 
   @override

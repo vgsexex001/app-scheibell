@@ -88,15 +88,27 @@ export class AppointmentsService {
     }
 
     // VALIDACAO 2: Verificar se a clínica funciona neste dia da semana
-    const dayOfWeek = appointmentDate.getDay();
-    const clinicSchedule = await this.prisma.clinicSchedule.findUnique({
+    // IMPORTANTE: Usar getUTCDay() para evitar problemas de timezone
+    // A data vem como "2026-01-19" que é interpretada como meia-noite UTC
+    const dayOfWeek = appointmentDate.getUTCDay();
+    // Primeiro tenta buscar schedule específico do tipo de atendimento
+    let clinicSchedule = await this.prisma.clinicSchedule.findFirst({
       where: {
-        clinicId_dayOfWeek: {
-          clinicId: patient.clinicId,
-          dayOfWeek: dayOfWeek,
-        },
+        clinicId: patient.clinicId,
+        dayOfWeek: dayOfWeek,
+        appointmentType: dto.type,
       },
     });
+    // Se não encontrou, busca schedule geral (legado)
+    if (!clinicSchedule) {
+      clinicSchedule = await this.prisma.clinicSchedule.findFirst({
+        where: {
+          clinicId: patient.clinicId,
+          dayOfWeek: dayOfWeek,
+          appointmentType: null,
+        },
+      });
+    }
 
     if (!clinicSchedule || !clinicSchedule.isActive) {
       const dayNames = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
@@ -156,13 +168,18 @@ export class AppointmentsService {
       },
     });
 
-    if (appointmentsOnDay >= clinicSchedule.maxSlots) {
+    // Calcular maxSlots baseado no horário de funcionamento e duração do slot
+    const maxSlots = this.calculateMaxSlots(clinicSchedule);
+    if (appointmentsOnDay >= maxSlots) {
       throw new BadRequestException(
         'Este dia já está lotado. Por favor, escolha outra data.'
       );
     }
 
     // Todas as validacoes passaram - criar o agendamento
+    // Salvar a duração do slot no momento da criação
+    const appointmentDuration = clinicSchedule.slotDuration;
+
     const appointment = await this.prisma.appointment.create({
       data: {
         patientId,
@@ -171,6 +188,7 @@ export class AppointmentsService {
         description: dto.description,
         date: appointmentDate,
         time: dto.time,
+        duration: appointmentDuration, // Duração em minutos
         type: dto.type,
         location: dto.location,
         notes: dto.notes,
@@ -310,19 +328,30 @@ export class AppointmentsService {
    * Lista horários disponíveis para uma data específica
    * GET /api/appointments/available-slots?date=2024-01-15&clinicId=xxx
    */
-  async getAvailableSlots(clinicId: string, dateStr: string) {
+  async getAvailableSlots(clinicId: string, dateStr: string, appointmentType?: string) {
     const date = new Date(dateStr);
-    const dayOfWeek = date.getDay();
+    // IMPORTANTE: Usar getUTCDay() para evitar problemas de timezone
+    const dayOfWeek = date.getUTCDay();
 
-    // Buscar configuração de horário da clínica
-    const schedule = await this.prisma.clinicSchedule.findUnique({
+    // Buscar configuração de horário da clínica (primeiro por tipo, depois geral)
+    let schedule = await this.prisma.clinicSchedule.findFirst({
       where: {
-        clinicId_dayOfWeek: {
-          clinicId,
-          dayOfWeek,
-        },
+        clinicId,
+        dayOfWeek,
+        appointmentType: appointmentType as any ?? null,
       },
     });
+
+    // Se não encontrou por tipo, tenta buscar schedule geral
+    if (!schedule && appointmentType) {
+      schedule = await this.prisma.clinicSchedule.findFirst({
+        where: {
+          clinicId,
+          dayOfWeek,
+          appointmentType: null,
+        },
+      });
+    }
 
     if (!schedule || !schedule.isActive) {
       return {
@@ -356,15 +385,46 @@ export class AppointmentsService {
         status: { notIn: [AppointmentStatus.CANCELLED] },
         deletedAt: null,
       },
-      select: { time: true },
+      select: { time: true, type: true },
     });
 
-    const bookedTimes = new Set(existingAppointments.map(a => a.time));
+    // Calcular todos os slots ocupados considerando a duração de cada consulta
+    const bookedSlots = new Set<string>();
+    const slotDurationMinutes = schedule.slotDuration;
+
+    for (const apt of existingAppointments) {
+      // Buscar a duração específica do tipo de atendimento
+      const aptSchedule = await this.prisma.clinicSchedule.findFirst({
+        where: {
+          clinicId,
+          appointmentType: apt.type,
+        },
+        select: { slotDuration: true },
+      });
+
+      const aptDuration = aptSchedule?.slotDuration || slotDurationMinutes;
+      const [aptHour, aptMinute] = apt.time.split(':').map(Number);
+      const aptStartMinutes = aptHour * 60 + aptMinute;
+      const aptEndMinutes = aptStartMinutes + aptDuration;
+
+      // Marcar todos os slots que são ocupados por esta consulta
+      for (const slotTime of allSlots) {
+        const [slotHour, slotMinute] = slotTime.split(':').map(Number);
+        const slotStartMinutes = slotHour * 60 + slotMinute;
+        const slotEndMinutes = slotStartMinutes + slotDurationMinutes;
+
+        // Um slot está ocupado se há sobreposição com a consulta existente
+        // Sobreposição: início do slot < fim da consulta E fim do slot > início da consulta
+        if (slotStartMinutes < aptEndMinutes && slotEndMinutes > aptStartMinutes) {
+          bookedSlots.add(slotTime);
+        }
+      }
+    }
 
     // Marcar slots disponíveis/ocupados
     const slots = allSlots.map(time => ({
       time,
-      available: !bookedTimes.has(time),
+      available: !bookedSlots.has(time),
     }));
 
     const availableCount = slots.filter(s => s.available).length;
@@ -377,9 +437,9 @@ export class AppointmentsService {
       slotDuration: schedule.slotDuration,
       totalSlots: allSlots.length,
       availableSlots: availableCount,
-      bookedSlots: bookedTimes.size,
-      maxSlots: schedule.maxSlots,
-      isFull: availableCount === 0 || existingAppointments.length >= schedule.maxSlots,
+      bookedSlots: bookedSlots.size,
+      maxSlots: allSlots.length,
+      isFull: availableCount === 0 || existingAppointments.length >= allSlots.length,
       slots,
     };
   }
@@ -406,13 +466,37 @@ export class AppointmentsService {
   }
 
   /**
+   * Calcula o número máximo de slots baseado no horário de funcionamento
+   */
+  private calculateMaxSlots(schedule: { openTime: string; closeTime: string; slotDuration: number; breakStart?: string | null; breakEnd?: string | null }): number {
+    const [openHour, openMinute] = schedule.openTime.split(':').map(Number);
+    const [closeHour, closeMinute] = schedule.closeTime.split(':').map(Number);
+
+    let totalMinutes = (closeHour * 60 + closeMinute) - (openHour * 60 + openMinute);
+
+    // Subtrair tempo de intervalo se existir
+    if (schedule.breakStart && schedule.breakEnd) {
+      const [breakStartHour, breakStartMinute] = schedule.breakStart.split(':').map(Number);
+      const [breakEndHour, breakEndMinute] = schedule.breakEnd.split(':').map(Number);
+      const breakMinutes = (breakEndHour * 60 + breakEndMinute) - (breakStartHour * 60 + breakStartMinute);
+      totalMinutes -= breakMinutes;
+    }
+
+    return Math.floor(totalMinutes / schedule.slotDuration);
+  }
+
+  /**
    * Lista dias disponíveis em um período (para calendario)
    * GET /api/appointments/available-days?startDate=2024-01-01&endDate=2024-01-31&clinicId=xxx
    */
-  async getAvailableDays(clinicId: string, startDateStr: string, endDateStr: string) {
-    // Buscar configuração de horários da clínica
+  async getAvailableDays(clinicId: string, startDateStr: string, endDateStr: string, appointmentType?: string) {
+    // Buscar configuração de horários da clínica (filtrar por tipo se fornecido)
     const schedules = await this.prisma.clinicSchedule.findMany({
-      where: { clinicId, isActive: true },
+      where: {
+        clinicId,
+        isActive: true,
+        ...(appointmentType ? { appointmentType: appointmentType as any } : {}),
+      },
     });
 
     const activeDays = new Set(schedules.map(s => s.dayOfWeek));
@@ -429,7 +513,7 @@ export class AppointmentsService {
       remainingSlots?: number;
     }> = [];
 
-    // Contar agendamentos por dia no período
+    // Contar agendamentos por dia no período (filtrar por tipo se fornecido)
     const appointments = await this.prisma.appointment.findMany({
       where: {
         patient: { clinicId },
@@ -439,6 +523,7 @@ export class AppointmentsService {
         },
         status: { notIn: [AppointmentStatus.CANCELLED] },
         deletedAt: null,
+        ...(appointmentType ? { type: appointmentType as any } : {}),
       },
       select: { date: true },
     });
@@ -456,7 +541,8 @@ export class AppointmentsService {
     today.setHours(0, 0, 0, 0);
 
     while (current <= endDate) {
-      const dayOfWeek = current.getDay();
+      // IMPORTANTE: Usar getUTCDay() para evitar problemas de timezone
+      const dayOfWeek = current.getUTCDay();
       const dateStr = current.toISOString().split('T')[0];
       const schedule = scheduleMap.get(dayOfWeek);
       const bookedCount = appointmentsByDay.get(dateStr) || 0;
@@ -464,7 +550,8 @@ export class AppointmentsService {
       // Disponível se: clínica funciona, não é passado, não está lotado
       const isOpen = activeDays.has(dayOfWeek);
       const isPast = current < today;
-      const isFull = schedule ? bookedCount >= schedule.maxSlots : true;
+      const maxSlots = schedule ? this.calculateMaxSlots(schedule) : 0;
+      const isFull = schedule ? bookedCount >= maxSlots : true;
 
       days.push({
         date: dateStr,
@@ -472,7 +559,7 @@ export class AppointmentsService {
         available: isOpen && !isPast && !isFull,
         openTime: schedule?.openTime,
         closeTime: schedule?.closeTime,
-        remainingSlots: schedule ? Math.max(0, schedule.maxSlots - bookedCount) : 0,
+        remainingSlots: schedule ? Math.max(0, maxSlots - bookedCount) : 0,
       });
 
       current.setDate(current.getDate() + 1);

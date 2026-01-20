@@ -170,29 +170,59 @@ Informações sobre pós-operatório comum:
       },
     });
 
-    // ASYNC: Enfileirar job para processamento assíncrono
-    // O processor irá chamar OpenAI e enviar a resposta via WebSocket
-    const jobId = await this.queueService.enqueue(JobType.CHAT_AI_REPLY, {
-      conversationId: conversation.id,
-      userMessageId: userMessage.id,
-      patientId,
-      messageContent: dto.message,
-      patientContext: patientContext ? {
-        name: patientContext.user?.name || patientContext.name || 'Paciente',
-        surgeryType: patientContext.surgeryType || undefined,
-        surgeryDate: patientContext.surgeryDate?.toISOString() || undefined,
-      } : undefined,
-    });
+    // SÍNCRONO: Chamar OpenAI diretamente e retornar resposta
+    // Isso é mais simples e funciona melhor para o fluxo atual do Flutter
+    try {
+      // Prepara histórico de mensagens para contexto
+      const historyMessages: ChatMessage[] = [
+        { role: 'system', content: this.systemPrompt },
+        ...conversation.messages.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+        { role: 'user', content: dto.message },
+      ];
 
-    console.log(`[Chat] Message enqueued for async processing. Job ID: ${jobId}`);
+      // Chama OpenAI
+      const aiResponse = await this.callOpenAI(historyMessages);
 
-    // Retorna imediatamente ao cliente
-    // A resposta da IA será enviada via WebSocket quando o job for processado
-    return {
-      response: null, // Resposta será enviada via WebSocket
-      conversationId: conversation.id,
-      mode: conversation.mode,
-    };
+      // Salva resposta da IA no banco
+      const aiMessage = await this.prisma.chatMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: 'assistant',
+          content: aiResponse,
+          senderType: 'ai',
+        },
+      });
+
+      console.log(`[Chat] AI response saved for conversation ${conversation.id}`);
+
+      // Emitir resposta via WebSocket também (para manter compatibilidade)
+      this.websocketService.notifyNewMessage(conversation.id, {
+        id: aiMessage.id,
+        conversationId: conversation.id,
+        role: 'assistant',
+        content: aiResponse,
+        senderType: 'ai',
+        createdAt: aiMessage.createdAt.toISOString(),
+      });
+
+      return {
+        response: aiResponse,
+        conversationId: conversation.id,
+        mode: conversation.mode,
+      };
+    } catch (error) {
+      console.error('[Chat] Error calling OpenAI:', error);
+      // Em caso de erro, retorna resposta local
+      const localResponse = this.getLocalResponse(dto.message);
+      return {
+        response: localResponse,
+        conversationId: conversation.id,
+        mode: conversation.mode,
+      };
+    }
   }
 
   private async callOpenAI(messages: ChatMessage[]): Promise<string> {
@@ -817,6 +847,101 @@ Informações sobre pós-operatório comum:
   }
 
   /**
+   * Admin: Get ALL patient conversations for a clinic (for Clínico tab)
+   * Returns all conversations with their last message
+   */
+  async getAllPatientConversations(
+    clinicId: string,
+    page: number = 1,
+    limit: number = 50,
+  ) {
+    const skip = (page - 1) * limit;
+
+    // Buscar todos os pacientes da clínica que têm conversa
+    const [conversations, total] = await Promise.all([
+      this.prisma.chatConversation.findMany({
+        where: {
+          patient: { clinicId },
+        },
+        include: {
+          patient: {
+            include: { user: { select: { name: true } } },
+          },
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.chatConversation.count({
+        where: { patient: { clinicId } },
+      }),
+    ]);
+
+    const items = conversations.map((conv) => {
+      const lastMessage = conv.messages[0];
+      const patient = conv.patient;
+
+      // Calcula dias pós-operatório
+      let daysPostOp = 0;
+      if (patient.surgeryDate) {
+        const surgeryDate = new Date(patient.surgeryDate);
+        const today = new Date();
+        daysPostOp = Math.floor((today.getTime() - surgeryDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysPostOp < 0) daysPostOp = 0;
+      }
+
+      // Conta mensagens não lidas do paciente
+      // (mensagens do paciente que ainda não foram "vistas" pelo admin)
+      // Por ora, simplificamos como 0 - pode ser melhorado depois
+      const unreadCount = 0;
+
+      return {
+        id: patient.id, // Usa patientId como id para a lista
+        conversationId: conv.id,
+        patientName: patient.user?.name || patient.name || 'Paciente',
+        name: patient.user?.name || patient.name || 'Paciente',
+        procedure: patient.surgeryType || 'Consulta',
+        daysPostOp,
+        lastMessage: lastMessage?.content || '',
+        lastMessageTime: lastMessage
+          ? this.formatMessageTime(lastMessage.createdAt)
+          : '',
+        unreadCount,
+        mode: conv.mode,
+        status: null, // Status será analisado no frontend
+      };
+    });
+
+    return items;
+  }
+
+  /**
+   * Formata horário da mensagem para exibição
+   */
+  private formatMessageTime(date: Date): string {
+    const now = new Date();
+    const messageDate = new Date(date);
+    const diffMs = now.getTime() - messageDate.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      // Hoje: mostra hora
+      return `${messageDate.getHours().toString().padStart(2, '0')}:${messageDate.getMinutes().toString().padStart(2, '0')}`;
+    } else if (diffDays === 1) {
+      return 'Ontem';
+    } else if (diffDays < 7) {
+      const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      return days[messageDate.getDay()];
+    } else {
+      return `${messageDate.getDate().toString().padStart(2, '0')}/${(messageDate.getMonth() + 1).toString().padStart(2, '0')}`;
+    }
+  }
+
+  /**
    * Admin: Get conversations in HUMAN mode for a clinic
    */
   async getHumanConversations(
@@ -917,6 +1042,264 @@ Informações sobre pós-operatório comum:
       })),
       createdAt: conversation.createdAt.toISOString(),
       updatedAt: conversation.updatedAt.toISOString(),
+    };
+  }
+
+  /**
+   * Admin: Start or get conversation with patient by patientId
+   */
+  async startConversationWithPatient(patientId: string, clinicId: string) {
+    // Verificar se paciente pertence à clínica
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      include: { user: { select: { name: true } } },
+    });
+
+    if (!patient) {
+      throw new NotFoundException('Paciente não encontrado.');
+    }
+
+    if (patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a este paciente.');
+    }
+
+    // Buscar conversa existente ou criar nova
+    let conversation = await this.prisma.chatConversation.findFirst({
+      where: { patientId },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          include: { attachments: true },
+        },
+      },
+    });
+
+    if (!conversation) {
+      const newConversation = await this.prisma.chatConversation.create({
+        data: {
+          patientId,
+          mode: 'HUMAN', // Já começa em modo humano pois é o admin iniciando
+        },
+        include: {
+          messages: {
+            orderBy: { createdAt: 'asc' },
+            include: { attachments: true },
+          },
+        },
+      });
+      conversation = newConversation;
+    }
+
+    return {
+      id: conversation.id,
+      mode: conversation.mode,
+      patientId: conversation.patientId,
+      patientName: patient.user?.name || patient.name || 'Paciente',
+      messages: conversation.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        senderId: m.senderId,
+        senderType: m.senderType,
+        createdAt: m.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /**
+   * Admin: Get patient conversation by patientId
+   */
+  async getPatientConversation(patientId: string, clinicId: string) {
+    // Verificar se paciente pertence à clínica
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      include: { user: { select: { name: true } } },
+    });
+
+    if (!patient) {
+      throw new NotFoundException('Paciente não encontrado.');
+    }
+
+    if (patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a este paciente.');
+    }
+
+    // Buscar conversa existente
+    const conversation = await this.prisma.chatConversation.findFirst({
+      where: { patientId },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          include: { attachments: true },
+        },
+      },
+    });
+
+    if (!conversation) {
+      // Retorna estrutura vazia em vez de erro
+      return {
+        id: null,
+        mode: null,
+        patientId,
+        patientName: patient.user?.name || patient.name || 'Paciente',
+        messages: [],
+      };
+    }
+
+    return {
+      id: conversation.id,
+      mode: conversation.mode,
+      patientId: conversation.patientId,
+      patientName: patient.user?.name || patient.name || 'Paciente',
+      messages: conversation.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        senderId: m.senderId,
+        senderType: m.senderType,
+        createdAt: m.createdAt.toISOString(),
+        attachments: m.attachments?.map((a) => ({
+          id: a.id,
+          type: a.type,
+          mimeType: a.mimeType,
+          durationSeconds: a.durationSeconds,
+          transcription: a.transcription,
+          storagePath: a.storagePath,
+        })) || [],
+      })),
+    };
+  }
+
+  /**
+   * Admin: Send message to patient by patientId (creates conversation if needed)
+   * Supports text and/or audio messages (audioUrl + audioDuration)
+   */
+  async sendMessageToPatient(
+    patientId: string,
+    staffUserId: string,
+    clinicId: string,
+    message: string,
+    audioUrl?: string,
+    audioDuration?: number,
+  ) {
+    // Verificar se paciente pertence à clínica
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+    });
+
+    if (!patient) {
+      throw new NotFoundException('Paciente não encontrado.');
+    }
+
+    if (patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a este paciente.');
+    }
+
+    // Buscar conversa existente ou criar nova
+    let conversation = await this.prisma.chatConversation.findFirst({
+      where: { patientId },
+    });
+
+    if (!conversation) {
+      conversation = await this.prisma.chatConversation.create({
+        data: {
+          patientId,
+          mode: 'HUMAN', // Já começa em modo humano pois é o admin iniciando
+        },
+      });
+    } else if (conversation.mode !== 'HUMAN') {
+      // Se conversa existe mas não está em modo humano, atualiza para HUMAN
+      conversation = await this.prisma.chatConversation.update({
+        where: { id: conversation.id },
+        data: { mode: 'HUMAN', handoffAt: new Date() },
+      });
+    }
+
+    // Buscar nome do staff
+    const staffUser = await this.prisma.user.findUnique({
+      where: { id: staffUserId },
+      select: { name: true },
+    });
+
+    // Determina o conteúdo da mensagem
+    const isAudioMessage = !!audioUrl;
+    const messageContent = isAudioMessage ? '[Mensagem de áudio]' : message;
+
+    // Criar mensagem
+    const chatMessage = await this.prisma.chatMessage.create({
+      data: {
+        conversationId: conversation.id,
+        role: 'assistant',
+        content: messageContent,
+        senderId: staffUserId,
+        senderType: 'staff',
+      },
+    });
+
+    // Se é mensagem de áudio, criar attachment
+    let attachment = null;
+    if (isAudioMessage) {
+      attachment = await this.prisma.chatAttachment.create({
+        data: {
+          conversationId: conversation.id,
+          messageId: chatMessage.id,
+          type: 'AUDIO',
+          originalName: `audio_${Date.now()}.m4a`,
+          storagePath: audioUrl, // URL do Supabase Storage
+          mimeType: 'audio/m4a',
+          sizeBytes: 0, // Não temos o tamanho exato aqui
+          durationSeconds: audioDuration ? Math.round(audioDuration) : null,
+          status: 'COMPLETED',
+        },
+      });
+      console.log(`[Chat] Created audio attachment: ${attachment.id} for message ${chatMessage.id}`);
+    }
+
+    // Atualizar timestamp da conversa
+    await this.prisma.chatConversation.update({
+      where: { id: conversation.id },
+      data: { updatedAt: new Date() },
+    });
+
+    console.log(`[Chat] Staff ${staffUserId} sent ${isAudioMessage ? 'audio' : 'text'} message to patient ${patientId}`);
+
+    // Emitir mensagem via WebSocket
+    this.websocketService.notifyNewMessage(conversation.id, {
+      id: chatMessage.id,
+      conversationId: conversation.id,
+      role: chatMessage.role,
+      content: chatMessage.content,
+      senderId: chatMessage.senderId,
+      senderType: chatMessage.senderType,
+      senderName: staffUser?.name || 'Equipe',
+      createdAt: chatMessage.createdAt.toISOString(),
+      attachments: attachment ? [{
+        id: attachment.id,
+        type: attachment.type,
+        mimeType: attachment.mimeType,
+        durationSeconds: attachment.durationSeconds,
+        storagePath: attachment.storagePath,
+      }] : undefined,
+    });
+
+    return {
+      message: {
+        id: chatMessage.id,
+        role: chatMessage.role,
+        content: chatMessage.content,
+        senderId: chatMessage.senderId,
+        senderType: chatMessage.senderType,
+        createdAt: chatMessage.createdAt.toISOString(),
+        attachments: attachment ? [{
+          id: attachment.id,
+          type: attachment.type,
+          mimeType: attachment.mimeType,
+          durationSeconds: attachment.durationSeconds,
+          storagePath: attachment.storagePath,
+        }] : undefined,
+      },
+      conversationId: conversation.id,
+      senderName: staffUser?.name || 'Equipe',
     };
   }
 
@@ -1066,5 +1449,560 @@ Informações sobre pós-operatório comum:
       mode: newMode,
       closedAt: now.toISOString(),
     };
+  }
+
+  /**
+   * Marca conversa como lida pelo admin/staff
+   * Nota: Atualiza metadados da conversa para indicar que foi visualizada
+   */
+  async markConversationAsRead(
+    conversationId: string,
+    staffUserId: string,
+    clinicId: string,
+  ) {
+    // Verificar conversa e permissão
+    const conversation = await this.prisma.chatConversation.findUnique({
+      where: { id: conversationId },
+      include: { patient: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversa não encontrada.');
+    }
+
+    if (conversation.patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a esta conversa.');
+    }
+
+    const now = new Date();
+
+    // Atualizar updatedAt da conversa como marcador de leitura
+    await this.prisma.chatConversation.update({
+      where: { id: conversationId },
+      data: {
+        updatedAt: now,
+      },
+    });
+
+    console.log(`[Chat] Conversation ${conversationId} marked as read by staff ${staffUserId}`);
+
+    return { success: true, readAt: now.toISOString() };
+  }
+
+  /**
+   * Limpa todas as mensagens da conversa de um paciente
+   * Remove as mensagens mas mantém a conversa para histórico
+   */
+  async clearPatientConversation(patientId: string, clinicId: string) {
+    // Verificar paciente e permissão
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+    });
+
+    if (!patient) {
+      throw new NotFoundException('Paciente não encontrado.');
+    }
+
+    if (patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado a este paciente.');
+    }
+
+    // Buscar conversa do paciente
+    const conversation = await this.prisma.chatConversation.findFirst({
+      where: { patientId },
+      include: {
+        messages: {
+          include: { attachments: true },
+        },
+      },
+    });
+
+    if (!conversation) {
+      // Se não existe conversa, não há o que limpar
+      return { success: true, deletedMessages: 0 };
+    }
+
+    // Coletar IDs de anexos para deletar arquivos
+    const attachmentIds = conversation.messages
+      .flatMap((m) => m.attachments)
+      .map((a) => a.id);
+
+    // Deletar anexos primeiro (por causa da FK)
+    if (attachmentIds.length > 0) {
+      await this.prisma.chatAttachment.deleteMany({
+        where: { id: { in: attachmentIds } },
+      });
+    }
+
+    // Deletar todas as mensagens da conversa
+    const deleteResult = await this.prisma.chatMessage.deleteMany({
+      where: { conversationId: conversation.id },
+    });
+
+    // Resetar modo da conversa para IA
+    await this.prisma.chatConversation.update({
+      where: { id: conversation.id },
+      data: {
+        mode: 'AI',
+        handoffAt: null,
+        closedAt: null,
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(`[Chat] Cleared ${deleteResult.count} messages from patient ${patientId} conversation`);
+
+    return {
+      success: true,
+      deletedMessages: deleteResult.count,
+      deletedAttachments: attachmentIds.length,
+    };
+  }
+
+  // ==================== AUDIO MESSAGE METHODS ====================
+
+  /**
+   * Upload an audio attachment for a conversation
+   */
+  async uploadAudioAttachment(
+    patientId: string,
+    clinicId: string,
+    file: Express.Multer.File,
+    conversationId?: string,
+    durationSeconds?: number,
+  ): Promise<{
+    id: string;
+    conversationId: string;
+    messageId: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    durationSeconds?: number;
+    status: string;
+    createdAt: Date;
+  }> {
+    // Validate file type
+    if (!this.storageService.isValidAudioMimeType(file.mimetype)) {
+      throw new BadRequestException(
+        'Formato de áudio inválido. Use M4A, AAC, MP3 ou WAV.',
+      );
+    }
+
+    // Validate file size (25MB max for Whisper)
+    const maxSize = 25 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException(
+        'Arquivo de áudio muito grande. Tamanho máximo: 25MB.',
+      );
+    }
+
+    // Get or create conversation
+    let conversation = conversationId
+      ? await this.prisma.chatConversation.findFirst({
+          where: { id: conversationId, patientId },
+        })
+      : null;
+
+    if (!conversation) {
+      conversation = await this.prisma.chatConversation.create({
+        data: { patientId },
+      });
+    }
+
+    // Buscar userId do paciente para senderId
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { userId: true },
+    });
+
+    // Save file to storage
+    const storageResult = await this.storageService.saveFile(
+      clinicId,
+      patientId,
+      conversation.id,
+      file,
+    );
+
+    // Create user message for audio
+    const userMessage = await this.prisma.chatMessage.create({
+      data: {
+        conversationId: conversation.id,
+        role: 'user',
+        content: '[Mensagem de áudio]',
+        senderId: patient?.userId,
+        senderType: 'patient',
+      },
+    });
+
+    // Create attachment record
+    const attachment = await this.prisma.chatAttachment.create({
+      data: {
+        conversationId: conversation.id,
+        messageId: userMessage.id,
+        type: 'AUDIO',
+        originalName: storageResult.originalName,
+        storagePath: storageResult.storagePath,
+        mimeType: storageResult.mimeType,
+        sizeBytes: storageResult.sizeBytes,
+        durationSeconds: durationSeconds ? Math.round(durationSeconds) : null,
+        status: 'PENDING',
+      },
+    });
+
+    // Update conversation timestamp
+    await this.prisma.chatConversation.update({
+      where: { id: conversation.id },
+      data: { updatedAt: new Date() },
+    });
+
+    // Emit via WebSocket
+    this.websocketService.notifyNewMessage(conversation.id, {
+      id: userMessage.id,
+      conversationId: conversation.id,
+      role: 'user',
+      content: '[Mensagem de áudio]',
+      senderId: patient?.userId,
+      senderType: 'patient',
+      createdAt: userMessage.createdAt.toISOString(),
+      attachments: [{
+        id: attachment.id,
+        type: 'AUDIO',
+        mimeType: attachment.mimeType,
+        durationSeconds: attachment.durationSeconds,
+        status: attachment.status,
+      }],
+    });
+
+    console.log(`[Chat] Audio uploaded: ${attachment.id} for conversation ${conversation.id}`);
+
+    return {
+      id: attachment.id,
+      conversationId: conversation.id,
+      messageId: userMessage.id,
+      originalName: attachment.originalName,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+      durationSeconds: attachment.durationSeconds ?? undefined,
+      status: attachment.status,
+      createdAt: attachment.createdAt,
+    };
+  }
+
+  /**
+   * Transcribe audio using OpenAI Whisper API
+   */
+  async transcribeAudio(
+    patientId: string,
+    attachmentId: string,
+  ): Promise<{
+    attachmentId: string;
+    transcription: string;
+    transcribedAt: string;
+  }> {
+    console.log(`[Transcribe] Iniciando transcrição para attachment: ${attachmentId}`);
+
+    // Find attachment and verify ownership
+    const attachment = await this.prisma.chatAttachment.findUnique({
+      where: { id: attachmentId },
+      include: {
+        conversation: true,
+        message: true,
+      },
+    });
+
+    console.log(`[Transcribe] Attachment encontrado:`, attachment ? 'sim' : 'não');
+
+    if (!attachment) {
+      console.error(`[Transcribe] Attachment não encontrado: ${attachmentId}`);
+      throw new NotFoundException('Anexo não encontrado.');
+    }
+
+    if (!attachment.conversation) {
+      throw new BadRequestException('Conversa associada ao anexo não encontrada.');
+    }
+
+    if (attachment.conversation.patientId !== patientId) {
+      throw new ForbiddenException('Acesso negado a este anexo.');
+    }
+
+    if (attachment.type !== 'AUDIO') {
+      throw new BadRequestException('Este anexo não é um arquivo de áudio.');
+    }
+
+    // Check if already transcribed
+    if (attachment.transcription) {
+      return {
+        attachmentId: attachment.id,
+        transcription: attachment.transcription,
+        transcribedAt: attachment.transcribedAt?.toISOString() || new Date().toISOString(),
+      };
+    }
+
+    // Update status to processing
+    await this.prisma.chatAttachment.update({
+      where: { id: attachment.id },
+      data: { status: 'PROCESSING' },
+    });
+
+    try {
+      // Call OpenAI Whisper API
+      const transcription = await this.callWhisperAPI(attachment.storagePath, attachment.mimeType);
+      const now = new Date();
+
+      // Update attachment with transcription
+      await this.prisma.chatAttachment.update({
+        where: { id: attachment.id },
+        data: {
+          transcription,
+          transcribedAt: now,
+          status: 'COMPLETED',
+          processedAt: now,
+        },
+      });
+
+      // Update message content with transcription for AI context
+      if (attachment.message) {
+        await this.prisma.chatMessage.update({
+          where: { id: attachment.message.id },
+          data: {
+            content: `[Áudio transcrito]: ${transcription}`,
+          },
+        });
+      }
+
+      console.log(`[Chat] Audio transcribed: ${attachment.id}`);
+
+      // If in AI mode, generate AI response based on transcription
+      if (attachment.conversation.mode === 'AI') {
+        await this.generateAIResponseForAudio(attachment.conversation.id, transcription, patientId);
+      }
+
+      return {
+        attachmentId: attachment.id,
+        transcription,
+        transcribedAt: now.toISOString(),
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      console.error(`[Chat] Audio transcription failed: ${errorMessage}`);
+
+      await this.prisma.chatAttachment.update({
+        where: { id: attachment.id },
+        data: {
+          status: 'FAILED',
+          errorMessage,
+          processedAt: new Date(),
+        },
+      });
+
+      throw new BadRequestException(
+        'Erro ao transcrever áudio. Por favor, tente novamente.',
+      );
+    }
+  }
+
+  /**
+   * Call OpenAI Whisper API for audio transcription
+   */
+  private async callWhisperAPI(storagePath: string, mimeType: string): Promise<string> {
+    console.log(`[Whisper] callWhisperAPI called with storagePath: ${storagePath}`);
+    console.log(`[Whisper] mimeType: ${mimeType}`);
+
+    if (!this.openaiApiKey) {
+      console.log('[Whisper] No API key configured, using fallback');
+      return '[Transcrição não disponível - API não configurada]';
+    }
+
+    console.log(`[Whisper] API key configured (length: ${this.openaiApiKey.length})`);
+
+    try {
+      // Read audio file
+      console.log(`[Whisper] Reading audio file from: ${storagePath}`);
+      const audioBuffer = await this.storageService.readAudioFile(storagePath);
+      console.log(`[Whisper] Audio buffer read successfully: ${audioBuffer.length} bytes`);
+
+      // Determine file extension from MIME type
+      const extMap: Record<string, string> = {
+        'audio/m4a': 'm4a',
+        'audio/mp4': 'm4a',
+        'audio/aac': 'aac',
+        'audio/mpeg': 'mp3',
+        'audio/mp3': 'mp3',
+        'audio/wav': 'wav',
+        'audio/x-m4a': 'm4a',
+        'audio/x-wav': 'wav',
+      };
+      const ext = extMap[mimeType.toLowerCase()] || 'mp3';
+
+      // Create FormData for multipart upload using form-data package
+      // This is compatible with both Node fetch and provides proper multipart encoding
+      const FormData = require('form-data');
+      const formData = new FormData();
+
+      // Append the audio buffer as a file
+      formData.append('file', audioBuffer, {
+        filename: `audio.${ext}`,
+        contentType: mimeType,
+      });
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'pt');
+      formData.append('response_format', 'text');
+
+      console.log(`[Whisper] Starting transcription (${(audioBuffer.length / 1024).toFixed(1)}KB)`);
+      const startTime = Date.now();
+
+      // Use node-fetch style request with form-data
+      const https = require('https');
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = https.request({
+          hostname: 'api.openai.com',
+          path: '/v1/audio/transcriptions',
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            ...formData.getHeaders(),
+          },
+        }, (res: any) => {
+          let body = '';
+          res.on('data', (chunk: string) => body += chunk);
+          res.on('end', () => resolve({ status: res.statusCode, body }));
+        });
+        req.on('error', reject);
+        formData.pipe(req);
+      });
+
+      const duration = Date.now() - startTime;
+
+      if (response.status !== 200) {
+        console.error(`[Whisper] API error: ${response.status}`);
+        console.error(`[Whisper] Error body: ${response.body.substring(0, 500)}`);
+        throw new Error(`Whisper API error: ${response.status}`);
+      }
+
+      const transcription = response.body;
+      console.log(`[Whisper] Success in ${duration}ms (${transcription.length} chars)`);
+
+      return transcription.trim();
+    } catch (error: any) {
+      console.error('[Whisper] API call failed:', error.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate AI response for transcribed audio
+   */
+  private async generateAIResponseForAudio(
+    conversationId: string,
+    transcription: string,
+    patientId: string,
+  ): Promise<void> {
+    try {
+      // Get conversation history
+      const conversation = await this.prisma.chatConversation.findUnique({
+        where: { id: conversationId },
+        include: {
+          messages: { orderBy: { createdAt: 'asc' }, take: 20 },
+        },
+      });
+
+      if (!conversation || conversation.mode !== 'AI') {
+        return;
+      }
+
+      // Prepare messages for OpenAI
+      const historyMessages: ChatMessage[] = [
+        { role: 'system', content: this.systemPrompt },
+        ...conversation.messages.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      ];
+
+      // Call OpenAI
+      const aiResponse = await this.callOpenAI(historyMessages);
+
+      // Save AI response
+      const aiMessage = await this.prisma.chatMessage.create({
+        data: {
+          conversationId,
+          role: 'assistant',
+          content: aiResponse,
+          senderType: 'ai',
+        },
+      });
+
+      // Update conversation timestamp
+      await this.prisma.chatConversation.update({
+        where: { id: conversationId },
+        data: { updatedAt: new Date() },
+      });
+
+      // Emit via WebSocket
+      this.websocketService.notifyNewMessage(conversationId, {
+        id: aiMessage.id,
+        conversationId,
+        role: 'assistant',
+        content: aiResponse,
+        senderType: 'ai',
+        createdAt: aiMessage.createdAt.toISOString(),
+      });
+
+      console.log(`[Chat] AI response generated for audio transcription in ${conversationId}`);
+    } catch (error) {
+      console.error('[Chat] Error generating AI response for audio:', error);
+    }
+  }
+
+  /**
+   * Get audio attachment file path for serving
+   */
+  async getAudioAttachmentFile(
+    patientId: string,
+    attachmentId: string,
+  ): Promise<{ filePath: string; mimeType: string }> {
+    const attachment = await this.prisma.chatAttachment.findUnique({
+      where: { id: attachmentId },
+      include: { conversation: true },
+    });
+
+    if (!attachment) {
+      throw new NotFoundException('Anexo não encontrado.');
+    }
+
+    if (attachment.conversation.patientId !== patientId) {
+      throw new ForbiddenException('Acesso negado.');
+    }
+
+    const filePath = this.storageService.getFullPath(attachment.storagePath);
+    return { filePath, mimeType: attachment.mimeType };
+  }
+
+  /**
+   * Get audio attachment file for admin (clinic staff)
+   */
+  async getAudioAttachmentFileForAdmin(
+    attachmentId: string,
+    clinicId: string,
+  ): Promise<{ filePath: string; mimeType: string }> {
+    const attachment = await this.prisma.chatAttachment.findUnique({
+      where: { id: attachmentId },
+      include: {
+        conversation: {
+          include: { patient: true },
+        },
+      },
+    });
+
+    if (!attachment) {
+      throw new NotFoundException('Anexo não encontrado.');
+    }
+
+    if (attachment.conversation.patient.clinicId !== clinicId) {
+      throw new ForbiddenException('Acesso negado.');
+    }
+
+    const filePath = this.storageService.getFullPath(attachment.storagePath);
+    return { filePath, mimeType: attachment.mimeType };
   }
 }

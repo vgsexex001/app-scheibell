@@ -14,6 +14,7 @@ class SecureStorageService {
   static const String _tokenExpiresAtKey = 'token_expires_at';
   static const String _userIdKey = 'user_id';
   static const String _patientIdKey = 'patient_id';
+  static const String _onboardingCompletedKey = 'onboarding_completed';
 
   SecureStorageService._internal() {
     _storage = const FlutterSecureStorage(
@@ -152,5 +153,43 @@ class SecureStorageService {
         // Nota: O refresh token não existia antes, será gerado no próximo login
       }
     }
+  }
+
+  // ==================== Onboarding ====================
+
+  /// Verifica se o onboarding foi completado para o usuário atual
+  Future<bool> isOnboardingCompleted() async {
+    final userId = await getUserId();
+    if (userId == null) {
+      // Se não há usuário logado, verifica flag global (fallback)
+      final value = await _storage.read(key: _onboardingCompletedKey);
+      return value == 'true';
+    }
+    // Verifica flag específico do usuário
+    final userKey = '${_onboardingCompletedKey}_$userId';
+    final value = await _storage.read(key: userKey);
+    return value == 'true';
+  }
+
+  /// Marca o onboarding como completado para o usuário atual
+  Future<void> setOnboardingCompleted() async {
+    final userId = await getUserId();
+    if (userId != null) {
+      // Salva flag específico do usuário
+      final userKey = '${_onboardingCompletedKey}_$userId';
+      await _storage.write(key: userKey, value: 'true');
+    }
+    // Também salva flag global como fallback
+    await _storage.write(key: _onboardingCompletedKey, value: 'true');
+  }
+
+  /// Reseta o estado do onboarding (para testes)
+  Future<void> resetOnboarding() async {
+    final userId = await getUserId();
+    if (userId != null) {
+      final userKey = '${_onboardingCompletedKey}_$userId';
+      await _storage.delete(key: userKey);
+    }
+    await _storage.delete(key: _onboardingCompletedKey);
   }
 }

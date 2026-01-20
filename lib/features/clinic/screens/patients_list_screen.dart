@@ -116,26 +116,37 @@ class _PatientsListScreenState extends State<PatientsListScreen> {
 
   Widget _buildSearchBar() {
     return Container(
-      height: 42,
+      height: 44,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
-      child: TextField(
-        controller: _searchController,
-        onChanged: _onSearchChanged,
-        decoration: const InputDecoration(
-          hintText: 'Buscar paciente...',
-          hintStyle: TextStyle(
-            color: Color(0xFF9CA3AF),
-            fontSize: 14,
-            fontFamily: 'Inter',
+      child: Row(
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 12),
+            child: Icon(Icons.search, color: Color(0xFF9CA3AF), size: 20),
           ),
-          prefixIcon: Icon(Icons.search, color: Color(0xFF9CA3AF), size: 20),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        ),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              textAlignVertical: TextAlignVertical.center,
+              decoration: const InputDecoration(
+                hintText: 'Buscar paciente...',
+                hintStyle: TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                ),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                isCollapsed: true,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

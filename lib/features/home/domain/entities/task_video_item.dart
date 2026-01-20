@@ -19,6 +19,9 @@ class TaskVideoItem {
   final int? validFromDay;
   final int? validUntilDay;
   final int sortOrder;
+  final int watchedSeconds; // Segundos assistidos do vídeo
+  final int totalSeconds; // Duração total do vídeo em segundos
+  final double progressPercent; // Progresso percentual (0-100)
 
   const TaskVideoItem({
     required this.id,
@@ -34,6 +37,9 @@ class TaskVideoItem {
     this.validFromDay,
     this.validUntilDay,
     this.sortOrder = 0,
+    this.watchedSeconds = 0,
+    this.totalSeconds = 0,
+    this.progressPercent = 0,
   });
 
   bool get isVideo => type == TaskVideoType.video;
@@ -54,6 +60,9 @@ class TaskVideoItem {
     }
   }
 
+  /// Verifica se o vídeo tem progresso parcial (não completado)
+  bool get hasProgress => watchedSeconds > 0 && !completed;
+
   TaskVideoItem copyWith({
     String? id,
     String? title,
@@ -68,6 +77,9 @@ class TaskVideoItem {
     int? validFromDay,
     int? validUntilDay,
     int? sortOrder,
+    int? watchedSeconds,
+    int? totalSeconds,
+    double? progressPercent,
   }) {
     return TaskVideoItem(
       id: id ?? this.id,
@@ -83,6 +95,9 @@ class TaskVideoItem {
       validFromDay: validFromDay ?? this.validFromDay,
       validUntilDay: validUntilDay ?? this.validUntilDay,
       sortOrder: sortOrder ?? this.sortOrder,
+      watchedSeconds: watchedSeconds ?? this.watchedSeconds,
+      totalSeconds: totalSeconds ?? this.totalSeconds,
+      progressPercent: progressPercent ?? this.progressPercent,
     );
   }
 
@@ -101,6 +116,9 @@ class TaskVideoItem {
       'validFromDay': validFromDay,
       'validUntilDay': validUntilDay,
       'sortOrder': sortOrder,
+      'watchedSeconds': watchedSeconds,
+      'totalSeconds': totalSeconds,
+      'progressPercent': progressPercent,
     };
   }
 
@@ -133,6 +151,9 @@ class TaskVideoItem {
       validFromDay: json['validFromDay'],
       validUntilDay: json['validUntilDay'],
       sortOrder: json['sortOrder'] ?? 0,
+      watchedSeconds: json['watchedSeconds'] ?? 0,
+      totalSeconds: json['totalSeconds'] ?? 0,
+      progressPercent: (json['progressPercent'] ?? 0).toDouble(),
     );
   }
 

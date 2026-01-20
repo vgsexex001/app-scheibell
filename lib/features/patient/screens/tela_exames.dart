@@ -1,13 +1,26 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../../core/services/api_service.dart';
 
+/// Converte URLs de localhost para 10.0.2.2 no emulador Android
+String _fixImageUrl(String url) {
+  if (url.isEmpty) return url;
+  if (kIsWeb) return url;
+  if (Platform.isAndroid) {
+    return url.replaceAll('localhost', '10.0.2.2');
+  }
+  return url;
+}
+
 enum StatusExame {
   normal,
   alteracaoLeve,
   precisaRevisao,
+  critico,
+  emAnalise, // Novo status para exames aguardando revisão médica
 }
 
 class ExameCompleto {
@@ -17,6 +30,8 @@ class ExameCompleto {
   final StatusExame status;
   final String analiseIA;
   final String? fileUrl;
+  final bool enviadoPelaClinica;
+  final bool aprovadoPeloMedico;
 
   ExameCompleto({
     required this.id,
@@ -25,33 +40,78 @@ class ExameCompleto {
     required this.status,
     required this.analiseIA,
     this.fileUrl,
+    this.enviadoPelaClinica = false,
+    this.aprovadoPeloMedico = false,
   });
 
   factory ExameCompleto.fromJson(Map<String, dynamic> json) {
+    final createdByRole = json['createdByRole'] as String?;
+    final isFromClinic = createdByRole == 'CLINIC_ADMIN' || createdByRole == 'CLINIC_STAFF';
+    final status = json['status'] as String?;
+    final approvedAnalysis = json['approvedAnalysis'] as String?;
+    final resultStatus = json['resultStatus'] as String?;
+
+    // Determinar texto da análise
+    String analise;
+    if (isFromClinic) {
+      // Exame enviado pela clínica
+      analise = json['notes'] as String? ?? 'Enviado pela clínica';
+    } else if (approvedAnalysis != null && approvedAnalysis.isNotEmpty) {
+      // Exame aprovado pelo médico - mostrar análise aprovada
+      analise = approvedAnalysis;
+    } else if (status == 'PENDING_REVIEW') {
+      // Aguardando revisão médica
+      analise = 'Em análise pela equipe médica. Você será notificado quando a análise estiver disponível.';
+    } else {
+      // Fallback para aiSummary ou mensagem padrão
+      analise = json['aiSummary'] as String? ?? json['result'] as String? ?? json['notes'] as String? ?? 'Análise pendente';
+    }
+
     return ExameCompleto(
       id: json['id'] as String,
       nome: json['title'] as String? ?? 'Exame',
       data: json['date'] != null ? DateTime.parse(json['date'] as String) : DateTime.now(),
-      status: _parseStatus(json['status'] as String?, json['aiStatus'] as String?),
-      analiseIA: json['aiSummary'] as String? ?? json['result'] as String? ?? json['notes'] as String? ?? 'Análise pendente',
+      status: _parseStatus(status, json['aiStatus'] as String?, resultStatus),
+      analiseIA: analise,
       fileUrl: json['fileUrl'] as String?,
+      enviadoPelaClinica: isFromClinic,
+      aprovadoPeloMedico: approvedAnalysis != null && approvedAnalysis.isNotEmpty,
     );
   }
 
-  static StatusExame _parseStatus(String? status, String? aiStatus) {
-    // Priorizar status da análise IA
-    if (aiStatus == 'PROCESSING') return StatusExame.alteracaoLeve;
-    if (aiStatus == 'FAILED') return StatusExame.precisaRevisao;
+  static StatusExame _parseStatus(String? status, String? aiStatus, String? resultStatus) {
+    // Se tem resultStatus (aprovado pelo médico), usar esse
+    if (resultStatus != null) {
+      switch (resultStatus) {
+        case 'NORMAL':
+          return StatusExame.normal;
+        case 'MILD_ALTERATION':
+          return StatusExame.alteracaoLeve;
+        case 'NEEDS_REVIEW':
+          return StatusExame.precisaRevisao;
+        case 'CRITICAL':
+          return StatusExame.critico;
+      }
+    }
+
+    // Se ainda está em revisão, mostrar status de análise
+    if (status == 'PENDING_REVIEW') {
+      return StatusExame.emAnalise;
+    }
+
+    // Priorizar status da análise IA para exames não aprovados
+    if (aiStatus == 'PROCESSING') return StatusExame.emAnalise;
+    if (aiStatus == 'FAILED') return StatusExame.emAnalise;
 
     switch (status) {
       case 'PENDING':
-        return StatusExame.alteracaoLeve;
+        return StatusExame.emAnalise;
       case 'AVAILABLE':
         return StatusExame.normal;
       case 'VIEWED':
         return StatusExame.normal;
       default:
-        return StatusExame.alteracaoLeve;
+        return StatusExame.emAnalise;
     }
   }
 }
@@ -128,19 +188,11 @@ class _TelaExamesState extends State<TelaExames> {
       });
     } catch (e) {
       debugPrint('Erro ao carregar exames: $e');
-      // Tratar 404 como lista vazia (sem exames)
-      final errorStr = e.toString().toLowerCase();
-      if (errorStr.contains('404') || errorStr.contains('not found')) {
-        setState(() {
-          _examesApi = [];
-          _carregando = false;
-        });
-      } else {
-        setState(() {
-          _erro = e.toString();
-          _carregando = false;
-        });
-      }
+      // Tratar qualquer erro como lista vazia para evitar mensagens de erro
+      setState(() {
+        _examesApi = [];
+        _carregando = false;
+      });
     }
   }
 
@@ -173,9 +225,6 @@ class _TelaExamesState extends State<TelaExames> {
     if (widget.embedded) {
       return Column(
         children: [
-          const SizedBox(height: 16),
-          _buildBotaoAdicionar(),
-          const SizedBox(height: 8),
           _carregando
               ? const Padding(
                   padding: EdgeInsets.all(48),
@@ -201,6 +250,9 @@ class _TelaExamesState extends State<TelaExames> {
                             );
                           },
                         ),
+          const SizedBox(height: 8),
+          _buildBotaoAdicionar(),
+          const SizedBox(height: 16),
         ],
       );
     }
@@ -424,13 +476,40 @@ class _TelaExamesState extends State<TelaExames> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: _corBorda,
-          width: 1,
+          color: exame.enviadoPelaClinica ? const Color(0xFF4F4A34) : _corBorda,
+          width: exame.enviadoPelaClinica ? 2 : 1,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Badge "Enviado pela clínica"
+          if (exame.enviadoPelaClinica) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4F4A34),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.local_hospital, color: Colors.white, size: 12),
+                  SizedBox(width: 4),
+                  Text(
+                    'Enviado pela clínica',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
           // Linha 1: Nome + Badge de status
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -467,7 +546,7 @@ class _TelaExamesState extends State<TelaExames> {
           ),
           const SizedBox(height: 12),
 
-          // Caixa de análise IA
+          // Caixa de análise
           _buildCaixaAnaliseIA(exame),
           const SizedBox(height: 12),
 
@@ -525,7 +604,7 @@ class _TelaExamesState extends State<TelaExames> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '🤖 Análise IA:',
+            '📋 Análise:',
             style: TextStyle(
               color: _textoAnalise,
               fontSize: 12,
@@ -549,13 +628,13 @@ class _TelaExamesState extends State<TelaExames> {
   }
 
   Widget _buildBotoesAcao(ExameCompleto exame) {
-    // Se precisa revisão, mostra 2 botões
-    if (exame.status == StatusExame.precisaRevisao) {
+    // Se precisa revisão ou é crítico, mostra 2 botões
+    if (exame.status == StatusExame.precisaRevisao || exame.status == StatusExame.critico) {
       return Row(
         children: [
           // Botão Ver laudo
           Expanded(
-            child: _buildBotaoVerLaudo(),
+            child: _buildBotaoVerLaudo(exame),
           ),
           const SizedBox(width: 8),
           // Botão Agendar consulta (azul)
@@ -597,15 +676,45 @@ class _TelaExamesState extends State<TelaExames> {
       );
     }
 
+    // Se está em análise, mostrar texto informativo
+    if (exame.status == StatusExame.emAnalise) {
+      return Container(
+        height: 32,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.hourglass_empty,
+              color: Color(0xFF6B7280),
+              size: 16,
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Aguardando análise médica',
+              style: TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                height: 1.43,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Caso contrário, só mostra Ver laudo
-    return _buildBotaoVerLaudo();
+    return _buildBotaoVerLaudo(exame);
   }
 
-  Widget _buildBotaoVerLaudo() {
+  Widget _buildBotaoVerLaudo(ExameCompleto exame) {
     return GestureDetector(
       onTap: () {
-        // TODO: Abrir laudo
-        debugPrint('Ver laudo');
+        _mostrarLaudo(exame);
       },
       child: Container(
         height: 32,
@@ -636,6 +745,173 @@ class _TelaExamesState extends State<TelaExames> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _mostrarLaudo(ExameCompleto exame) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF5F3EF),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.description_outlined, color: _textoPrimario, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            exame.nome,
+                            style: const TextStyle(
+                              color: _textoPrimario,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '${exame.data.day.toString().padLeft(2, '0')}/${exame.data.month.toString().padLeft(2, '0')}/${exame.data.year}',
+                            style: const TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.close, color: Color(0xFF6B7280), size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Imagem do exame
+              Flexible(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.6,
+                  ),
+                  child: exame.fileUrl != null && exame.fileUrl!.isNotEmpty
+                      ? InteractiveViewer(
+                          minScale: 0.5,
+                          maxScale: 4.0,
+                          child: Image.network(
+                            _fixImageUrl(exame.fileUrl!),
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(48),
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                    color: _botaoPrincipal,
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                padding: const EdgeInsets.all(48),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Color(0xFFC8C2B4),
+                                      size: 64,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'Não foi possível carregar a imagem',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Color(0xFF6B7280),
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.all(48),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.image_not_supported_outlined,
+                                color: Color(0xFFC8C2B4),
+                                size: 64,
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Imagem não disponível',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Color(0xFF6B7280),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                ),
+              ),
+
+              // Rodapé com dica
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.touch_app, color: Color(0xFF9CA3AF), size: 16),
+                    SizedBox(width: 8),
+                    Text(
+                      'Deslize para ampliar',
+                      style: TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -866,7 +1142,7 @@ class _TelaExamesState extends State<TelaExames> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Exame enviado com sucesso! Análise IA em andamento...'),
+            content: Text('Exame enviado com sucesso! Análise em andamento...'),
             backgroundColor: Color(0xFF00C950),
           ),
         );
@@ -942,6 +1218,10 @@ class _TelaExamesState extends State<TelaExames> {
         return _corBadgeAlteracao;
       case StatusExame.precisaRevisao:
         return _corBadgeRevisao;
+      case StatusExame.critico:
+        return const Color(0xFFDC2626); // Vermelho escuro para crítico
+      case StatusExame.emAnalise:
+        return const Color(0xFF6B7280); // Cinza para em análise
     }
   }
 
@@ -953,6 +1233,10 @@ class _TelaExamesState extends State<TelaExames> {
         return Icons.warning_amber_outlined;
       case StatusExame.precisaRevisao:
         return Icons.error_outline;
+      case StatusExame.critico:
+        return Icons.dangerous_outlined;
+      case StatusExame.emAnalise:
+        return Icons.hourglass_empty;
     }
   }
 
@@ -964,6 +1248,10 @@ class _TelaExamesState extends State<TelaExames> {
         return 'Alteração leve';
       case StatusExame.precisaRevisao:
         return 'Precisa revisão';
+      case StatusExame.critico:
+        return 'Crítico';
+      case StatusExame.emAnalise:
+        return 'Em análise';
     }
   }
 
@@ -975,6 +1263,10 @@ class _TelaExamesState extends State<TelaExames> {
         return _analiseAlteracaoFundo;
       case StatusExame.precisaRevisao:
         return _analiseRevisaoFundo;
+      case StatusExame.critico:
+        return const Color(0xFFFEE2E2); // Vermelho claro
+      case StatusExame.emAnalise:
+        return const Color(0xFFF3F4F6); // Cinza claro
     }
   }
 
@@ -986,6 +1278,10 @@ class _TelaExamesState extends State<TelaExames> {
         return _analiseAlteracaoBorda;
       case StatusExame.precisaRevisao:
         return _analiseRevisaoBorda;
+      case StatusExame.critico:
+        return const Color(0xFFFCA5A5); // Vermelho médio
+      case StatusExame.emAnalise:
+        return const Color(0xFFD1D5DB); // Cinza
     }
   }
 

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Query,
   Param,
@@ -25,6 +26,8 @@ import {
   RequestHandoffDto,
   SendHumanMessageDto,
   CloseConversationDto,
+  UploadAudioDto,
+  TranscribeAudioDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -178,6 +181,22 @@ export class ChatController {
 
   // ==================== ADMIN/STAFF ENDPOINTS ====================
 
+  // GET /api/chat/admin/all-conversations - Listar TODAS as conversas de pacientes da clínica
+  @Get('admin/all-conversations')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getAllPatientConversations(
+    @Request() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.chatService.getAllPatientConversations(
+      clinicId,
+      parseInt(page || '1'),
+      parseInt(limit || '50'),
+    );
+  }
+
   // GET /api/chat/admin/conversations - Listar conversas em modo HUMAN
   @Get('admin/conversations')
   @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
@@ -194,6 +213,49 @@ export class ChatController {
       parseInt(limit || '10'),
       status,
     );
+  }
+
+  // POST /api/chat/admin/patients/:patientId/start - Iniciar ou obter conversa com paciente
+  @Post('admin/patients/:patientId/start')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async startConversationWithPatient(
+    @Request() req: AuthenticatedRequest,
+    @Param('patientId') patientId: string,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.chatService.startConversationWithPatient(patientId, clinicId);
+  }
+
+  // POST /api/chat/admin/patients/:patientId/message - Enviar mensagem para paciente (cria conversa se não existir)
+  // Suporta texto e/ou áudio (audioUrl + audioDuration)
+  @Post('admin/patients/:patientId/message')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async sendMessageToPatient(
+    @Request() req: AuthenticatedRequest,
+    @Param('patientId') patientId: string,
+    @Body() dto: SendHumanMessageDto,
+  ) {
+    const clinicId = this.getClinicId(req);
+    const userId = req.user.sub;
+    return this.chatService.sendMessageToPatient(
+      patientId,
+      userId,
+      clinicId,
+      dto.message,
+      dto.audioUrl,
+      dto.audioDuration,
+    );
+  }
+
+  // GET /api/chat/admin/patients/:patientId/conversation - Obter conversa do paciente
+  @Get('admin/patients/:patientId/conversation')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getPatientConversation(
+    @Request() req: AuthenticatedRequest,
+    @Param('patientId') patientId: string,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.chatService.getPatientConversation(patientId, clinicId);
   }
 
   // GET /api/chat/admin/conversations/:id - Obter conversa completa
@@ -241,5 +303,148 @@ export class ChatController {
       clinicId,
       dto.returnToAi,
     );
+  }
+
+  // POST /api/chat/admin/conversations/:id/read - Marcar conversa como lida
+  @Post('admin/conversations/:id/read')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async markConversationAsRead(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
+    const clinicId = this.getClinicId(req);
+    const userId = req.user.sub;
+    return this.chatService.markConversationAsRead(
+      conversationId,
+      userId,
+      clinicId,
+    );
+  }
+
+  // DELETE /api/chat/admin/patients/:patientId/clear - Limpar conversa do paciente
+  @Delete('admin/patients/:patientId/clear')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async clearPatientConversation(
+    @Request() req: AuthenticatedRequest,
+    @Param('patientId') patientId: string,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.chatService.clearPatientConversation(patientId, clinicId);
+  }
+
+  // ==================== AUDIO MESSAGE ENDPOINTS ====================
+
+  // POST /api/chat/audio - Upload de mensagem de áudio
+  @Post('audio')
+  @Roles('PATIENT')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAudio(
+    @Request() req: AuthenticatedRequest,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 25 * 1024 * 1024 }), // 25MB
+        ],
+        fileIsRequired: true,
+      }),
+    )
+    file: Express.Multer.File,
+    @Body() dto: UploadAudioDto,
+  ) {
+    console.log('[AudioUpload] Recebido arquivo:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      bufferLength: file.buffer?.length || 0,
+    });
+    console.log('[AudioUpload] DTO:', dto);
+
+    // Validação flexível de tipo de áudio (aceita audio/mp4, audio/m4a, audio/mpeg, etc)
+    if (!file.mimetype.startsWith('audio/')) {
+      throw new BadRequestException(`Tipo de arquivo inválido: ${file.mimetype}. Esperado: áudio.`);
+    }
+
+    // Verifica se o arquivo tem conteúdo
+    if (!file.buffer || file.buffer.length === 0) {
+      console.error('[AudioUpload] Arquivo vazio!');
+      throw new BadRequestException('Arquivo de áudio vazio.');
+    }
+
+    const patientId = this.getPatientId(req);
+    const clinicId = this.getClinicId(req);
+
+    console.log('[AudioUpload] Processando para patient:', patientId, 'clinic:', clinicId);
+
+    const result = await this.chatService.uploadAudioAttachment(
+      patientId,
+      clinicId,
+      file,
+      dto.conversationId,
+      dto.durationSeconds,
+    );
+
+    console.log('[AudioUpload] Resultado:', result);
+    return result;
+  }
+
+  // POST /api/chat/audio/transcribe - Transcrever áudio
+  @Post('audio/transcribe')
+  @Roles('PATIENT')
+  async transcribeAudio(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: TranscribeAudioDto,
+  ) {
+    console.log('[Transcribe] Recebida requisição de transcrição');
+    console.log('[Transcribe] DTO:', dto);
+
+    const patientId = this.getPatientId(req);
+    console.log('[Transcribe] PatientId:', patientId);
+
+    try {
+      const result = await this.chatService.transcribeAudio(patientId, dto.attachmentId);
+      console.log('[Transcribe] Resultado:', result);
+      return result;
+    } catch (error) {
+      console.error('[Transcribe] Erro:', error);
+      throw error;
+    }
+  }
+
+  // GET /api/chat/audio/:id/file - Servir arquivo de áudio
+  @Get('audio/:id/file')
+  @Roles('PATIENT')
+  async getAudioFile(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') attachmentId: string,
+    @Res() res: Response,
+  ) {
+    const patientId = this.getPatientId(req);
+    const { filePath, mimeType } = await this.chatService.getAudioAttachmentFile(
+      patientId,
+      attachmentId,
+    );
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(filePath);
+  }
+
+  // GET /api/chat/admin/audio/:id/file - Servir arquivo de áudio (admin)
+  @Get('admin/audio/:id/file')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getAudioFileForAdmin(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') attachmentId: string,
+    @Res() res: Response,
+  ) {
+    const clinicId = this.getClinicId(req);
+    const { filePath, mimeType } = await this.chatService.getAudioAttachmentFileForAdmin(
+      attachmentId,
+      clinicId,
+    );
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(filePath);
   }
 }

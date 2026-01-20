@@ -23,55 +23,88 @@ class RoleGuard extends StatefulWidget {
 
 class _RoleGuardState extends State<RoleGuard> {
   bool _hasRedirected = false;
+  bool _isChecking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Verificação única após build inicial
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAccess();
+    });
+  }
+
+  void _checkAccess() {
+    if (!mounted) return;
+
+    final authProvider = context.read<AuthProvider>();
+
+    // Durante loading inicial ou logout, aguarda
+    if (authProvider.isLoading || authProvider.isLoggingOut) {
+      // Aguarda o status mudar
+      Future.delayed(const Duration(milliseconds: 100), _checkAccess);
+      return;
+    }
+
+    setState(() => _isChecking = false);
+
+    // Se não autenticado, redireciona
+    if (!authProvider.isAuthenticated || authProvider.user == null) {
+      if (!_hasRedirected && widget.redirectRoute != null) {
+        _hasRedirected = true;
+        debugPrint('[ROLE_GUARD] Não autenticado - redirecionando para ${widget.redirectRoute}');
+        Navigator.of(context).pushReplacementNamed(widget.redirectRoute!);
+      }
+      return;
+    }
+
+    // Se role não permitido, redireciona
+    if (!widget.allowedRoles.contains(authProvider.user!.role)) {
+      if (!_hasRedirected && widget.redirectRoute != null) {
+        _hasRedirected = true;
+        debugPrint('[ROLE_GUARD] Role ${authProvider.user!.role} não permitido - redirecionando');
+        Navigator.of(context).pushReplacementNamed(widget.redirectRoute!);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, _) {
-        // Durante logout, mostra loading e não redireciona
-        if (authProvider.isLoggingOut) {
-          debugPrint('[ROLE_GUARD] Logout em progresso - mostrando loading');
-          return const Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
-            ),
-          );
-        }
+    // Mostra loading enquanto verifica
+    if (_isChecking) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFFAF9F7),
+        body: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
+          ),
+        ),
+      );
+    }
 
-        // Se não autenticado e ainda não redirecionou
-        if (!authProvider.isAuthenticated || authProvider.user == null) {
-          if (!_hasRedirected && widget.redirectRoute != null) {
-            _hasRedirected = true;
-            debugPrint('[ROLE_GUARD] Não autenticado - redirecionando para ${widget.redirectRoute}');
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                Navigator.of(context).pushReplacementNamed(widget.redirectRoute!);
-              }
-            });
-          }
-          return widget.fallback ?? const _AccessDeniedScreen();
-        }
+    final authProvider = context.watch<AuthProvider>();
 
-        // NÃO resetar _hasRedirected aqui!
-        // A flag será resetada apenas quando widget for recriado
-        // Isso evita redirects duplicados durante rebuilds do Consumer
+    // Durante logout, mostra loading
+    if (authProvider.isLoggingOut) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFFAF9F7),
+        body: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFA49E86)),
+          ),
+        ),
+      );
+    }
 
-        // Check if user has allowed role
-        if (!widget.allowedRoles.contains(authProvider.user!.role)) {
-          if (widget.redirectRoute != null) {
-            debugPrint('[ROLE_GUARD] Role não permitido - redirecionando');
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                Navigator.of(context).pushReplacementNamed(widget.redirectRoute!);
-              }
-            });
-          }
-          return widget.fallback ?? const _AccessDeniedScreen();
-        }
+    // Se autenticado e role permitido, mostra child
+    if (authProvider.isAuthenticated &&
+        authProvider.user != null &&
+        widget.allowedRoles.contains(authProvider.user!.role)) {
+      return widget.child;
+    }
 
-        return widget.child;
-      },
-    );
+    // Fallback enquanto redireciona
+    return widget.fallback ?? const _AccessDeniedScreen();
   }
 }
 

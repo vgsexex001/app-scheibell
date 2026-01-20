@@ -233,6 +233,16 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
     }
   }
 
+  /// Retorna a data formatada em português (ex: "19 de Janeiro")
+  String _getDataFormatada() {
+    final now = DateTime.now();
+    final meses = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    return '${now.day} de ${meses[now.month - 1]}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final medicacoes = _getMedicacoes();
@@ -559,14 +569,25 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Timeline do dia',
-                style: TextStyle(
-                  color: Color(0xFF212621),
-                  fontSize: 14,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w600,
-                ),
+              // Ícone de calendário + data do dia
+              Row(
+                children: [
+                  const Icon(
+                    Icons.calendar_today,
+                    size: 16,
+                    color: Color(0xFF4F4A34),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _getDataFormatada(),
+                    style: const TextStyle(
+                      color: Color(0xFF212621),
+                      fontSize: 14,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -574,13 +595,24 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
                   color: const Color(0xFF212621),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  'Agora: ${_horaAtual.toString().padLeft(2, '0')}:00',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.access_time,
+                      size: 12,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Agora: ${_horaAtual.toString().padLeft(2, '0')}:00',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1061,7 +1093,7 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
   // ========== RODAPÉ ==========
   Widget _buildRodape(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.only(top: 25, left: 24, right: 24, bottom: 24),
+      padding: const EdgeInsets.only(top: 20, left: 24, right: 24, bottom: 24),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -1080,43 +1112,92 @@ class _TelaMedicamentosState extends State<TelaMedicamentos> {
       ),
       child: SafeArea(
         top: false,
-        child: GestureDetector(
-          onTap: () {
-            _abrirHistorico(context);
-          },
-          child: Container(
-            width: double.infinity,
-            height: 48,
-            decoration: BoxDecoration(
-              color: const Color(0xFFD7D1C5),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFF212621),
-                width: 2,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Botão Adicionar Medicamento (marrom escuro)
+            GestureDetector(
+              onTap: () {
+                _mostrarDialogAdicionarMedicacao(context);
+              },
+              child: Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F4A34),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x19212621),
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Adicionar medicamento',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w600,
+                        height: 1.43,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.history,
-                  color: Color(0xFF212621),
-                  size: 16,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'Ver histórico completo',
-                  style: TextStyle(
-                    color: Color(0xFF212621),
-                    fontSize: 14,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w500,
-                    height: 1.43,
+            const SizedBox(height: 12),
+            // Botão Ver histórico completo
+            GestureDetector(
+              onTap: () {
+                _abrirHistorico(context);
+              },
+              child: Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD7D1C5),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF212621),
+                    width: 2,
                   ),
                 ),
-              ],
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.history,
+                      color: Color(0xFF212621),
+                      size: 16,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Ver histórico completo',
+                      style: TextStyle(
+                        color: Color(0xFF212621),
+                        fontSize: 14,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w500,
+                        height: 1.43,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -1354,11 +1435,45 @@ class _FormularioMedicacaoState extends State<_FormularioMedicacao> {
     'Quando necessário',
   ];
 
-  final List<String> _horariosDisponiveis = [
-    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
-    '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
-    '18:00', '19:00', '20:00', '21:00', '22:00', '23:00',
-  ];
+  /// Abre o TimePicker e adiciona o horário selecionado
+  Future<void> _adicionarHorario() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF4F4A34),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Color(0xFF212621),
+            ),
+            timePickerTheme: TimePickerThemeData(
+              backgroundColor: Colors.white,
+              hourMinuteShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              dayPeriodShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      final horario = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      if (!_horariosSelecionados.contains(horario)) {
+        setState(() {
+          _horariosSelecionados.add(horario);
+          _horariosSelecionados.sort();
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -1486,39 +1601,92 @@ class _FormularioMedicacaoState extends State<_FormularioMedicacao> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: _horariosDisponiveis.map((horario) {
-                    final isSelected = _horariosSelecionados.contains(horario);
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          if (isSelected) {
-                            _horariosSelecionados.remove(horario);
-                          } else {
-                            _horariosSelecionados.add(horario);
-                            _horariosSelecionados.sort();
-                          }
-                        });
-                      },
+                  children: [
+                    // Horários selecionados (com botão de remover)
+                    ..._horariosSelecionados.map((horario) {
+                      return Container(
+                        padding: const EdgeInsets.only(left: 12, right: 4, top: 4, bottom: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4F4A34),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.access_time,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              horario,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _horariosSelecionados.remove(horario);
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    // Botão de adicionar horário
+                    GestureDetector(
+                      onTap: _adicionarHorario,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: isSelected ? const Color(0xFF212621) : Colors.white,
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: isSelected ? const Color(0xFF212621) : const Color(0xFFC8C2B4),
+                            color: const Color(0xFF4F4A34),
+                            width: 1.5,
+                            style: BorderStyle.solid,
                           ),
                         ),
-                        child: Text(
-                          horario,
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : const Color(0xFF212621),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.add,
+                              color: Color(0xFF4F4A34),
+                              size: 16,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'Adicionar horário',
+                              style: TextStyle(
+                                color: Color(0xFF4F4A34),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
 

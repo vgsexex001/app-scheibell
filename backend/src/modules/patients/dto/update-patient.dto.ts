@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, Min, Max, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min, Max, IsIn, IsDateString } from 'class-validator';
 
 export class UpdatePatientDto {
   @IsOptional()
@@ -31,4 +31,17 @@ export class UpdatePatientDto {
   @IsOptional()
   @IsString()
   emergencyPhone?: string;
+
+  // Campos de cirurgia
+  @IsOptional()
+  @IsString()
+  surgeryType?: string;
+
+  @IsOptional()
+  @IsDateString({}, { message: 'Data da cirurgia deve ser uma data válida' })
+  surgeryDate?: string;
+
+  @IsOptional()
+  @IsString()
+  surgeon?: string;
 }

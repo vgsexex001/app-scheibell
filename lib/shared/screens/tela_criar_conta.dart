@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/providers/auth_provider.dart';
+import 'tela_verificar_otp.dart';
 
 class TelaCriarConta extends StatefulWidget {
   const TelaCriarConta({super.key});
@@ -53,31 +56,39 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
     setState(() => _isLoading = true);
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      final success = await authProvider.register(
-        name: nome,
+      final supabase = Supabase.instance.client;
+
+      // Criar conta com Supabase Auth
+      // Supabase enviará automaticamente o código de verificação por email
+      await supabase.auth.signUp(
         email: email,
         password: senha,
+        data: {
+          'name': nome,
+          'role': 'PATIENT',
+        },
       );
 
       if (!mounted) return;
 
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Conta criada com sucesso! Faça login.'),
-            backgroundColor: Colors.green,
+      // Navegar para tela de verificação OTP
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TelaVerificarOTP(
+            email: email,
+            type: OTPType.signup,
           ),
-        );
-        Navigator.pop(context); // Volta para tela de login
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authProvider.errorMessage ?? 'Erro ao criar conta'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+        ),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_getAuthErrorMessage(e)),
+          backgroundColor: Colors.red,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -91,6 +102,20 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  String _getAuthErrorMessage(AuthException e) {
+    final message = e.message.toLowerCase();
+    if (message.contains('already registered') || message.contains('already exists')) {
+      return 'Este email já está cadastrado';
+    }
+    if (message.contains('invalid email')) {
+      return 'Email inválido';
+    }
+    if (message.contains('weak password') || message.contains('password')) {
+      return 'A senha deve ter pelo menos 6 caracteres';
+    }
+    return 'Erro ao criar conta. Tente novamente.';
   }
 
   @override
@@ -126,6 +151,10 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
                   _buildCampoSenha(),
                   const SizedBox(height: 40),
                   _buildBotaoCriar(),
+                  const SizedBox(height: 24),
+                  _buildDivider(),
+                  const SizedBox(height: 24),
+                  _buildBotoesSociais(),
                   const SizedBox(height: 32),
                   _buildLinkEntrar(),
                   const SizedBox(height: 40),
@@ -361,6 +390,118 @@ class _TelaCriarContaState extends State<TelaCriarConta> {
                 ),
               ),
       ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 1,
+            color: const Color(0xFFE0E0E0),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'ou cadastre-se com',
+            style: TextStyle(
+              color: Color(0xFF8E8E8E),
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: const Color(0xFFE0E0E0),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBotoesSociais() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildBotaoSocial(
+          icon: FontAwesomeIcons.apple,
+          iconSize: 24,
+          onTap: _loginComApple,
+        ),
+        const SizedBox(width: 20),
+        _buildBotaoSocial(
+          icon: FontAwesomeIcons.google,
+          iconSize: 22,
+          onTap: _loginComGoogle,
+        ),
+        const SizedBox(width: 20),
+        _buildBotaoSocial(
+          icon: FontAwesomeIcons.facebookF,
+          iconSize: 22,
+          onTap: _loginComFacebook,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBotaoSocial({
+    required IconData icon,
+    required double iconSize,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFFEBEBEB),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFFE0E0E0),
+            width: 1,
+          ),
+        ),
+        child: Center(
+          child: FaIcon(
+            icon,
+            size: iconSize,
+            color: const Color(0xFF374151),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _loginComApple() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cadastro com Apple - Em desenvolvimento')),
+    );
+  }
+
+  Future<void> _loginComGoogle() async {
+    final authProvider = context.read<AuthProvider>();
+
+    final success = await authProvider.signInWithGoogle();
+
+    if (!mounted) return;
+
+    if (!success && authProvider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authProvider.errorMessage!)),
+      );
+    }
+    // Se sucesso, a navegação é feita pelo callback OAuth no AuthProvider
+  }
+
+  void _loginComFacebook() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cadastro com Facebook - Em desenvolvimento')),
     );
   }
 

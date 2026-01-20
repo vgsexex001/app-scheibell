@@ -50,18 +50,14 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const role = dto.role || UserRole.PATIENT;
 
-    // Para pacientes, usar a clínica padrão se não informada
-    const defaultClinicId = 'clinic-default-scheibell';
-    const clinicId = dto.clinicId || (role === UserRole.PATIENT ? defaultClinicId : null);
-
-    // Criar apenas o usuário (Patient será vinculado via código de conexão ou criado pelo admin)
+    // clinicId é obrigatório (validado pelo DTO)
     const result = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
         passwordHash: hashedPassword,
         role: role,
-        clinicId: clinicId,
+        clinicId: dto.clinicId,
       },
     });
 
@@ -189,6 +185,11 @@ export class AuthService {
             name: true,
           },
         },
+        patient: {
+          select: {
+            id: true,
+          },
+        },
       },
     });
 
@@ -196,10 +197,11 @@ export class AuthService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    // Flatten clinic name for easier frontend consumption
+    // Flatten clinic name and patientId for easier frontend consumption
     return {
       ...user,
       clinicName: user.clinic?.name ?? null,
+      patientId: user.patient?.id ?? null,
     };
   }
 
@@ -653,5 +655,145 @@ export class AuthService {
       default:
         return 86400;
     }
+  }
+
+  // ==================== MAGIC LINK SYNC ====================
+
+  /**
+   * Sincroniza usuário que acessou via Magic Link do Supabase
+   * Cria o usuário na tabela users se não existir e vincula ao Patient pré-cadastrado
+   */
+  async syncMagicLinkUser(dto: {
+    authId: string;
+    email: string;
+    name?: string;
+    clinicId?: string;
+  }) {
+    const { authId, email, name, clinicId } = dto;
+
+    // 1. Verificar se usuário já existe pelo authId
+    let user = await this.prisma.user.findFirst({
+      where: { authId },
+    });
+
+    if (user) {
+      this.logger.authEvent('magic_link_sync', { email, status: 'user_exists', userId: user.id });
+      return {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          clinicId: user.clinicId,
+        },
+        created: false,
+      };
+    }
+
+    // 2. Verificar se existe usuário pelo email (migração)
+    user = await this.prisma.user.findFirst({
+      where: { email },
+    });
+
+    if (user) {
+      // Atualiza o authId
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { authId },
+      });
+
+      this.logger.authEvent('magic_link_sync', { email, status: 'authId_linked', userId: user.id });
+      return {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          clinicId: user.clinicId,
+        },
+        created: false,
+      };
+    }
+
+    // 3. Buscar Patient pré-cadastrado pelo email
+    const patient = await this.prisma.patient.findFirst({
+      where: {
+        email,
+        userId: null, // Ainda não vinculado
+      },
+    });
+
+    // Determinar clinicId: do Patient, do parâmetro, ou usar clínica padrão
+    let effectiveClinicId = patient?.clinicId || clinicId;
+
+    // Se não tiver clinicId, buscar clínica padrão
+    if (!effectiveClinicId) {
+      const defaultClinic = await this.prisma.clinic.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (!defaultClinic) {
+        throw new BadRequestException('Nenhuma clínica disponível no sistema');
+      }
+
+      effectiveClinicId = defaultClinic.id;
+      this.logger.authEvent('magic_link_sync', { email, status: 'using_default_clinic', clinicId: effectiveClinicId });
+    }
+
+    // 4. Criar usuário e Patient (se necessário) em uma transação
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Criar usuário
+      const newUser = await tx.user.create({
+        data: {
+          authId,
+          email,
+          name: name || patient?.name || email.split('@')[0],
+          passwordHash: '', // Magic Link não usa senha
+          role: UserRole.PATIENT,
+          clinicId: effectiveClinicId,
+        },
+      });
+
+      // Se existe Patient pré-cadastrado, vincular ao novo usuário
+      if (patient) {
+        await tx.patient.update({
+          where: { id: patient.id },
+          data: { userId: newUser.id },
+        });
+      } else {
+        // Criar Patient automaticamente para novos usuários
+        await tx.patient.create({
+          data: {
+            userId: newUser.id,
+            clinicId: effectiveClinicId,
+            email: email,
+            name: name || email.split('@')[0],
+          },
+        });
+        this.logger.authEvent('magic_link_sync', { email, status: 'patient_created', userId: newUser.id });
+      }
+
+      return newUser;
+    });
+
+    this.logger.authEvent('magic_link_sync', {
+      email,
+      status: 'user_created',
+      userId: result.id,
+      patientLinked: !!patient,
+    });
+
+    return {
+      user: {
+        id: result.id,
+        name: result.name,
+        email: result.email,
+        role: result.role,
+        clinicId: result.clinicId,
+      },
+      created: true,
+      patientLinked: !!patient,
+    };
   }
 }

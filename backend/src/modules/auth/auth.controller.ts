@@ -133,4 +133,21 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
   }
+
+  // ==================== MAGIC LINK SYNC ====================
+
+  /**
+   * Sincroniza usuário que acessou via Magic Link do Supabase
+   * Cria o usuário na tabela users se não existir e vincula ao Patient pré-cadastrado
+   * POST /api/auth/sync-magic-link
+   */
+  @Post('sync-magic-link')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sincronizar usuário do Magic Link' })
+  @ApiResponse({ status: 200, description: 'Usuário sincronizado' })
+  async syncMagicLink(
+    @Body() dto: { authId: string; email: string; name?: string; clinicId?: string },
+  ) {
+    return this.authService.syncMagicLinkUser(dto);
+  }
 }

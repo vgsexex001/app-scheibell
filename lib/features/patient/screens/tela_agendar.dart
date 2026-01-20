@@ -207,7 +207,7 @@ class TelaAgendar extends StatelessWidget {
           // Card Retirada de Splint
           _buildCardTipoAgendamento(
             context: context,
-            tipo: AppointmentType.evaluation,
+            tipo: AppointmentType.splintRemoval,
             descricao: 'Remoção do splint nasal',
             disponibilidade: 'Disponível: quinta-feira',
             dataCirurgia: dataCirurgia,

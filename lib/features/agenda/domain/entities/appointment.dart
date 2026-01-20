@@ -83,8 +83,9 @@ enum AppointmentStatus {
 }
 
 /// Tipo de agendamento (Prisma enum)
-/// Backend enum: CONSULTATION, RETURN_VISIT, EVALUATION, PHYSIOTHERAPY, EXAM, OTHER
+/// Backend enum: SPLINT_REMOVAL, CONSULTATION, RETURN_VISIT, EVALUATION, PHYSIOTHERAPY, EXAM, OTHER
 enum AppointmentType {
+  splintRemoval,
   consultation,
   returnVisit,
   evaluation,
@@ -94,6 +95,8 @@ enum AppointmentType {
 
   String get apiValue {
     switch (this) {
+      case AppointmentType.splintRemoval:
+        return 'SPLINT_REMOVAL';
       case AppointmentType.consultation:
         return 'CONSULTATION';
       case AppointmentType.returnVisit:
@@ -111,6 +114,8 @@ enum AppointmentType {
 
   static AppointmentType fromApi(String value) {
     switch (value.toUpperCase()) {
+      case 'SPLINT_REMOVAL':
+        return AppointmentType.splintRemoval;
       case 'CONSULTATION':
         return AppointmentType.consultation;
       case 'RETURN_VISIT':
@@ -130,12 +135,14 @@ enum AppointmentType {
 
   String get displayName {
     switch (this) {
+      case AppointmentType.splintRemoval:
+        return 'Retirada de Splint';
       case AppointmentType.consultation:
         return 'Consulta';
       case AppointmentType.returnVisit:
         return 'Retorno';
       case AppointmentType.evaluation:
-        return 'Retirada de Splint';
+        return 'Avaliação';
       case AppointmentType.physiotherapy:
         return 'Fisioterapia';
       case AppointmentType.exam:
@@ -148,12 +155,14 @@ enum AppointmentType {
   /// Gradiente de cor para cada tipo
   List<Color> get gradientColors {
     switch (this) {
+      case AppointmentType.splintRemoval:
+        return const [Color(0xFFFF9800), Color(0xFFF57C00)]; // Laranja
       case AppointmentType.consultation:
         return const [Color(0xFF2B7FFF), Color(0xFF155CFB)]; // Azul
       case AppointmentType.returnVisit:
         return const [Color(0xFF00C850), Color(0xFF00A63D)]; // Verde
       case AppointmentType.evaluation:
-        return const [Color(0xFFFF9800), Color(0xFFF57C00)]; // Laranja
+        return const [Color(0xFF795548), Color(0xFF5D4037)]; // Marrom
       case AppointmentType.physiotherapy:
         return const [Color(0xFFAC46FF), Color(0xFF980FFA)]; // Roxo
       case AppointmentType.exam:
@@ -166,12 +175,14 @@ enum AppointmentType {
   /// Ícone para cada tipo
   IconData get icon {
     switch (this) {
+      case AppointmentType.splintRemoval:
+        return Icons.healing;
       case AppointmentType.consultation:
         return Icons.medical_services_outlined;
       case AppointmentType.returnVisit:
         return Icons.event_repeat;
       case AppointmentType.evaluation:
-        return Icons.healing;
+        return Icons.assignment;
       case AppointmentType.physiotherapy:
         return Icons.spa;
       case AppointmentType.exam:
@@ -248,6 +259,7 @@ class Appointment {
     required this.updatedAt,
   });
 
+  bool get isSplintRemoval => type == AppointmentType.splintRemoval;
   bool get isConsultation => type == AppointmentType.consultation;
   bool get isReturnVisit => type == AppointmentType.returnVisit;
   bool get isEvaluation => type == AppointmentType.evaluation;

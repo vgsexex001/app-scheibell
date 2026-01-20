@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'chat_screen.dart' show Appointment, AppointmentType, AppointmentStatus;
 import '../../../core/providers/auth_provider.dart';
+import '../../agenda/domain/entities/appointment.dart';
 import '../../agenda/presentation/controller/agenda_controller.dart';
 
 class AppointmentDetailScreen extends StatefulWidget {
@@ -142,7 +142,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             ),
             child: Center(
               child: Text(
-                widget.appointment.patientInitials,
+                _getInitials(widget.appointment.title),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -158,7 +158,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.appointment.patientName,
+                  widget.appointment.title,
                   style: const TextStyle(
                     color: Color(0xFF212621),
                     fontSize: 16,
@@ -168,7 +168,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  widget.appointment.procedure,
+                  _getAppointmentTypeName(widget.appointment.type),
                   style: const TextStyle(
                     color: Color(0xFF495565),
                     fontSize: 14,
@@ -228,11 +228,10 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           _buildInfoRow(
               Icons.calendar_today_outlined, 'Data', _formatDate(widget.appointment.date)),
           const SizedBox(height: 12),
-          _buildInfoRow(Icons.access_time, 'Horário',
-              '${widget.appointment.time} (${widget.appointment.duration})'),
+          _buildInfoRow(Icons.access_time, 'Horário', widget.appointment.time),
           const SizedBox(height: 12),
           _buildInfoRow(Icons.medical_services_outlined, 'Tipo',
-              _getAppointmentTypeName(widget.appointment.procedureType)),
+              _getAppointmentTypeName(widget.appointment.type)),
           const SizedBox(height: 12),
           _buildInfoRow(Icons.check_circle_outline, 'Status',
               _getStatusName(widget.appointment.status),
@@ -314,8 +313,8 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            widget.appointment.notes.isNotEmpty
-                ? widget.appointment.notes
+            (widget.appointment.notes?.isNotEmpty ?? false)
+                ? widget.appointment.notes!
                 : 'Nenhuma observação registrada.',
             style: const TextStyle(
               color: Color(0xFF495565),
@@ -707,8 +706,19 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return '${parts[0].substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
+  }
+
   String _getAppointmentTypeName(AppointmentType type) {
     switch (type) {
+      case AppointmentType.splintRemoval:
+        return 'Retirada de Splint';
+      case AppointmentType.consultation:
+        return 'Consulta';
       case AppointmentType.returnVisit:
         return 'Retorno';
       case AppointmentType.evaluation:
@@ -730,6 +740,12 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         return 'Pendente';
       case AppointmentStatus.cancelled:
         return 'Cancelado';
+      case AppointmentStatus.completed:
+        return 'Concluído';
+      case AppointmentStatus.noShow:
+        return 'Não Compareceu';
+      case AppointmentStatus.inProgress:
+        return 'Em Andamento';
     }
   }
 
@@ -741,6 +757,12 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         return const Color(0xFFF59E0B);
       case AppointmentStatus.cancelled:
         return const Color(0xFFEF4444);
+      case AppointmentStatus.completed:
+        return const Color(0xFF3B82F6);
+      case AppointmentStatus.noShow:
+        return const Color(0xFF6B7280);
+      case AppointmentStatus.inProgress:
+        return const Color(0xFF8B5CF6);
     }
   }
 }

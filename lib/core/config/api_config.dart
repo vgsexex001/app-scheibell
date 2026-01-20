@@ -72,6 +72,7 @@ class ApiConfig {
   static const String profileEndpoint = '/auth/me';
   static const String validateEndpoint = '/auth/validate';
   static const String changePasswordEndpoint = '/auth/change-password';
+  static const String syncMagicLinkEndpoint = '/auth/sync-magic-link';
 
   /// Endpoints de conteúdo
   static const String contentClinicEndpoint = '/content/clinic';

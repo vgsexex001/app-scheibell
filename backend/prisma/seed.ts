@@ -246,9 +246,9 @@ async function syncTemplatesForClinic(clinicId: string) {
 async function createSampleAppointments() {
   console.log('\n📅 Criando consultas de exemplo...\n');
 
-  // Buscar todos os pacientes
+  // Buscar todos os pacientes com clinicId
   const patients = await prisma.patient.findMany({
-    select: { id: true, surgeryDate: true },
+    select: { id: true, surgeryDate: true, clinicId: true },
   });
 
   if (patients.length === 0) {
@@ -274,11 +274,12 @@ async function createSampleAppointments() {
     const appointments = [
       {
         patientId: patient.id,
-        title: 'Retorno Pós-Operatório',
-        description: 'Avaliação de cicatrização e retirada de pontos',
+        clinicId: patient.clinicId,
+        title: 'Retirada de Splint',
+        description: 'Retirada do splint nasal e avaliação de cicatrização',
         date: new Date(surgeryDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 dias após cirurgia
         time: '09:00',
-        type: AppointmentType.RETURN_VISIT,
+        type: AppointmentType.SPLINT_REMOVAL,
         status: now > new Date(surgeryDate.getTime() + 7 * 24 * 60 * 60 * 1000)
           ? AppointmentStatus.COMPLETED
           : AppointmentStatus.CONFIRMED,
@@ -286,16 +287,18 @@ async function createSampleAppointments() {
       },
       {
         patientId: patient.id,
-        title: 'Avaliação 1 Mês',
+        clinicId: patient.clinicId,
+        title: 'Consulta de Retorno',
         description: 'Avaliação de evolução e ajuste de medicação',
         date: new Date(surgeryDate.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 dias após cirurgia
         time: '10:30',
-        type: AppointmentType.EVALUATION,
+        type: AppointmentType.RETURN_VISIT,
         status: AppointmentStatus.PENDING,
         location: 'Consultório 2',
       },
       {
         patientId: patient.id,
+        clinicId: patient.clinicId,
         title: 'Fisioterapia',
         description: 'Sessão de drenagem linfática',
         date: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000), // 3 dias a partir de hoje
@@ -306,11 +309,12 @@ async function createSampleAppointments() {
       },
       {
         patientId: patient.id,
-        title: 'Avaliação 3 Meses',
+        clinicId: patient.clinicId,
+        title: 'Consulta',
         description: 'Avaliação final de resultado',
         date: new Date(surgeryDate.getTime() + 90 * 24 * 60 * 60 * 1000), // 90 dias após cirurgia
         time: '11:00',
-        type: AppointmentType.EVALUATION,
+        type: AppointmentType.CONSULTATION,
         status: AppointmentStatus.PENDING,
         location: 'Consultório 1',
       },
@@ -366,6 +370,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'Repouso',
       canDo: ['Repouso em casa', 'Caminhadas curtas dentro de casa', 'Exercícios respiratórios leves'],
       avoid: ['Qualquer esforço físico', 'Abaixar a cabeça', 'Assoar o nariz', 'Exposição ao sol'],
+      safetyCriteria: ['Apenas movimento leve de circulação', 'Sem elevar frequência cardíaca', 'Evitar completamente esforço'],
       sessions: [
         { sessionNumber: 1, name: 'Respiração diafragmática', description: '5 minutos de respiração profunda', duration: 5, intensity: 'Muito leve' },
         { sessionNumber: 2, name: 'Caminhada indoor', description: 'Andar pela casa por 5 minutos', duration: 5, intensity: 'Muito leve' },
@@ -381,6 +386,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'FC Basal + 25 bpm',
       canDo: ['Caminhadas leves de 10-15 min', 'Exercícios de mobilidade articular', 'Trabalho remoto leve'],
       avoid: ['Exercícios intensos', 'Pegar peso', 'Sol direto', 'Ambientes com muita poeira'],
+      safetyCriteria: ['Isometria muito leve apenas', 'Foco em membros inferiores', 'Respiração nasal contínua'],
       sessions: [
         { sessionNumber: 1, name: 'Caminhada leve', description: 'Caminhada de 10 minutos em ritmo lento', duration: 10, intensity: 'Leve' },
         { sessionNumber: 2, name: 'Mobilidade articular', description: 'Movimentos circulares de articulações', duration: 10, intensity: 'Leve' },
@@ -396,6 +402,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'FC Basal + 35 bpm',
       canDo: ['Caminhadas de 20-30 min', 'Alongamentos suaves', 'Subir escadas devagar'],
       avoid: ['Corrida', 'Musculação', 'Esportes de contato', 'Nadar'],
+      safetyCriteria: ['Unilateral reduz pressão arterial', 'Evita empolgação excessiva', 'Sensação de treino sem risco sistêmico'],
       sessions: [
         { sessionNumber: 1, name: 'Caminhada moderada', description: 'Caminhada de 20 minutos', duration: 20, intensity: 'Leve' },
         { sessionNumber: 2, name: 'Alongamento completo', description: 'Série de alongamentos para todo corpo', duration: 15, intensity: 'Leve' },
@@ -411,6 +418,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'FC Basal + 45 bpm',
       canDo: ['Caminhadas de 30-40 min', 'Yoga restaurativa', 'Bicicleta ergométrica leve'],
       avoid: ['Corrida', 'Peso', 'Exercícios abdominais', 'Sol direto no nariz'],
+      safetyCriteria: ['Respiração nasal limpa', 'Zero calor facial', 'Não piorar edema em 12-24h'],
       sessions: [
         { sessionNumber: 1, name: 'Caminhada longa', description: 'Caminhada de 30 minutos', duration: 30, intensity: 'Moderada' },
         { sessionNumber: 2, name: 'Yoga restaurativa', description: 'Posturas suaves de yoga', duration: 20, intensity: 'Leve' },
@@ -426,6 +434,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'FC Basal + 55 bpm',
       canDo: ['Caminhada rápida', 'Bicicleta', 'Elíptico', 'Exercícios de força leve (sem peso)'],
       avoid: ['Corrida intensa', 'Musculação pesada', 'Esportes de impacto'],
+      safetyCriteria: ['Critério-chave: sem desconforto facial 2-4h depois', 'Se houver desconforto, voltar 1 semana', 'Progressão baseada em resposta, não em calendário'],
       sessions: [
         { sessionNumber: 1, name: 'Cardio leve', description: 'Elíptico ou bicicleta 20 min', duration: 20, intensity: 'Moderada' },
         { sessionNumber: 2, name: 'Força leve', description: 'Exercícios com peso corporal', duration: 20, intensity: 'Moderada' },
@@ -441,6 +450,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'FC Basal + 65 bpm',
       canDo: ['Musculação leve', 'Natação (com liberação)', 'Corrida leve/trote'],
       avoid: ['Exercícios de alta intensidade', 'Mergulho', 'Esportes de contato'],
+      safetyCriteria: ['Treino estruturado liberado', 'Ainda evitar explosivos e impacto', 'Monitorar edema pós-treino'],
       sessions: [
         { sessionNumber: 1, name: 'Musculação leve', description: 'Série de exercícios com peso leve', duration: 30, intensity: 'Moderada' },
         { sessionNumber: 2, name: 'Trote/Corrida leve', description: 'Alternância entre caminhada e trote', duration: 25, intensity: 'Moderada-Alta' },
@@ -456,6 +466,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'FC Basal + 75 bpm',
       canDo: ['Musculação moderada', 'Corrida', 'Maioria dos esportes'],
       avoid: ['Esportes de contato no rosto', 'HIIT muito intenso'],
+      safetyCriteria: ['Retorno gradual ao treino habitual', 'Respeitar sensações individuais', 'Esportes de contato: aguardar +70-84 dias'],
       sessions: [
         { sessionNumber: 1, name: 'Treino de força', description: 'Musculação com carga moderada', duration: 40, intensity: 'Moderada-Alta' },
         { sessionNumber: 2, name: 'Corrida', description: 'Corrida contínua 20-25 minutos', duration: 25, intensity: 'Alta' },
@@ -471,6 +482,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
       heartRateLabel: 'Normal',
       canDo: ['Todos os exercícios', 'Esportes', 'Academia sem restrição'],
       avoid: ['Impactos diretos no nariz', 'Esportes com risco de trauma facial'],
+      safetyCriteria: ['Liberação completa para atividades físicas', 'Manter proteção contra impactos faciais', 'Progressão individualizada conforme tolerância'],
       sessions: [
         { sessionNumber: 1, name: 'Treino completo A', description: 'Treino de força superior', duration: 45, intensity: 'Alta' },
         { sessionNumber: 2, name: 'Treino completo B', description: 'Treino de força inferior', duration: 45, intensity: 'Alta' },
@@ -495,6 +507,7 @@ async function createDefaultTrainingProtocol(clinicId: string) {
         heartRateLabel: week.heartRateLabel,
         canDo: week.canDo,
         avoid: week.avoid,
+        safetyCriteria: week.safetyCriteria,
         sortOrder: week.weekNumber,
       },
     });
@@ -589,93 +602,48 @@ async function initializePatientTrainingProgress() {
 }
 
 async function createTestUsers(clinicId: string) {
-  console.log('\n👥 Criando usuários de teste...\n');
+  console.log('\n👥 Criando usuário administrador...\n');
 
   const defaultPassword = await bcrypt.hash('123456', 10);
 
-  // Definição dos usuários de teste
-  const testUsers = [
-    {
-      id: 'user-paciente-d0',
-      email: 'paciente@teste.com',
-      name: 'Paciente Novo (D+0)',
-      role: UserRole.PATIENT,
-      surgeryDaysAgo: 0, // Cirurgia hoje
-    },
-    {
-      id: 'user-paciente-d7',
-      email: 'paciente.semana2@teste.com',
-      name: 'Paciente Semana 2 (D+7)',
-      role: UserRole.PATIENT,
-      surgeryDaysAgo: 7, // Cirurgia há 7 dias
-    },
-    {
-      id: 'user-paciente-d14',
-      email: 'paciente.semana3@teste.com',
-      name: 'Paciente Semana 3 (D+14)',
-      role: UserRole.PATIENT,
-      surgeryDaysAgo: 14, // Cirurgia há 14 dias
-    },
-    {
-      id: 'user-admin',
-      email: 'admin@teste.com',
-      name: 'Administrador',
-      role: UserRole.CLINIC_ADMIN,
-      surgeryDaysAgo: null, // Não é paciente
-    },
-  ];
+  // Apenas admin - pacientes devem ser criados via app com autenticação Supabase
+  const adminUser = {
+    id: 'user-admin',
+    email: 'admin@teste.com',
+    name: 'Administrador',
+    role: UserRole.CLINIC_ADMIN,
+  };
 
-  for (const userData of testUsers) {
-    // Verificar se usuário já existe
-    const existingUser = await prisma.user.findUnique({
-      where: { email: userData.email },
-    });
+  // Verificar se usuário já existe
+  const existingUser = await prisma.user.findUnique({
+    where: { email: adminUser.email },
+  });
 
-    if (existingUser) {
-      console.log(`   ⏭️  Usuário ${userData.email} já existe, pulando...`);
-      continue;
-    }
-
-    // Criar usuário
-    const user = await prisma.user.create({
+  if (existingUser) {
+    console.log(`   ⏭️  Usuário ${adminUser.email} já existe, pulando...`);
+  } else {
+    // Criar usuário admin
+    await prisma.user.create({
       data: {
-        id: userData.id,
-        email: userData.email,
-        name: userData.name,
+        id: adminUser.id,
+        email: adminUser.email,
+        name: adminUser.name,
         passwordHash: defaultPassword,
-        role: userData.role,
+        role: adminUser.role,
         clinicId: clinicId,
       },
     });
 
-    // Se for paciente, criar registro de Patient
-    if (userData.role === UserRole.PATIENT && userData.surgeryDaysAgo !== null) {
-      const surgeryDate = new Date();
-      surgeryDate.setDate(surgeryDate.getDate() - userData.surgeryDaysAgo);
-
-      await prisma.patient.create({
-        data: {
-          id: `patient-${userData.id}`,
-          userId: user.id,
-          clinicId: clinicId,
-          surgeryDate: surgeryDate,
-          surgeryType: 'RINOPLASTIA',
-        },
-      });
-    }
-
-    console.log(`   ✅ Usuário criado: ${userData.email} (${userData.role})`);
+    console.log(`   ✅ Admin criado: ${adminUser.email}`);
   }
 
-  console.log('\n📋 Resumo dos logins de teste:');
+  console.log('\n📋 Login do administrador:');
   console.log('   ┌─────────────────────────────────┬──────────┬───────────────────┐');
   console.log('   │ Email                           │ Senha    │ Descrição         │');
   console.log('   ├─────────────────────────────────┼──────────┼───────────────────┤');
-  console.log('   │ paciente@teste.com              │ 123456   │ Paciente D+0      │');
-  console.log('   │ paciente.semana2@teste.com      │ 123456   │ Paciente D+7      │');
-  console.log('   │ paciente.semana3@teste.com      │ 123456   │ Paciente D+14     │');
   console.log('   │ admin@teste.com                 │ 123456   │ Admin da clínica  │');
   console.log('   └─────────────────────────────────┴──────────┴───────────────────┘');
+  console.log('\n   ℹ️  Pacientes devem ser cadastrados via app (Magic Link ou Supabase Auth)');
 }
 
 async function createTestAlerts(clinicId: string) {
@@ -775,26 +743,29 @@ async function createPendingAppointmentsForAdmin(clinicId: string) {
   const pendingAppointments = [
     {
       patientId: patients[0].id,
-      title: 'Retorno Pós-Operatório',
-      description: 'Avaliação de cicatrização',
+      clinicId,
+      title: 'Retirada de Splint',
+      description: 'Retirada do splint nasal',
       date: tomorrow,
       time: '09:30',
-      type: AppointmentType.RETURN_VISIT,
+      type: AppointmentType.SPLINT_REMOVAL,
       status: AppointmentStatus.PENDING,
       location: 'Consultório 1',
     },
     {
       patientId: patients[Math.min(1, patients.length - 1)].id,
-      title: 'Avaliação Pré-Operatória',
-      description: 'Exames e avaliação para nova cirurgia',
+      clinicId,
+      title: 'Consulta de Retorno',
+      description: 'Avaliação de evolução',
       date: dayAfterTomorrow,
       time: '14:00',
-      type: AppointmentType.EVALUATION,
+      type: AppointmentType.RETURN_VISIT,
       status: AppointmentStatus.PENDING,
       location: 'Consultório 2',
     },
     {
       patientId: patients[Math.min(2, patients.length - 1)].id,
+      clinicId,
       title: 'Fisioterapia',
       description: 'Sessão de drenagem linfática',
       date: nextWeek,

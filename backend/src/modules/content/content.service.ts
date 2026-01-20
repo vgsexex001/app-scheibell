@@ -296,6 +296,73 @@ export class ContentService {
     });
   }
 
+  async updatePatientMedication(
+    patientId: string,
+    medicationId: string,
+    data: {
+      title?: string;
+      description?: string;
+      dosage?: string;
+      frequency?: string;
+      times?: string[];
+    },
+  ) {
+    // Verificar se a medicação pertence ao paciente
+    const medication = await this.prisma.patientContentAdjustment.findFirst({
+      where: {
+        id: medicationId,
+        patientId,
+        adjustmentType: AdjustmentType.ADD,
+        contentType: ContentType.MEDICATIONS,
+      },
+    });
+
+    if (!medication) {
+      throw new Error('Medicação não encontrada ou não pertence ao paciente');
+    }
+
+    // Monta a descrição completa com dosagem, frequência e horários
+    let fullDescription = '';
+    if (data.dosage) fullDescription += `Dosagem: ${data.dosage}`;
+    if (data.frequency) {
+      fullDescription += fullDescription ? ` | Frequência: ${data.frequency}` : `Frequência: ${data.frequency}`;
+    }
+    if (data.times && data.times.length > 0) {
+      fullDescription += fullDescription ? ` | Horários: ${data.times.join(', ')}` : `Horários: ${data.times.join(', ')}`;
+    }
+    if (data.description) {
+      fullDescription += fullDescription ? ` | ${data.description}` : data.description;
+    }
+
+    return this.prisma.patientContentAdjustment.update({
+      where: { id: medicationId },
+      data: {
+        title: data.title,
+        description: fullDescription || data.description || medication.description,
+      },
+    });
+  }
+
+  async deletePatientMedication(patientId: string, medicationId: string) {
+    // Verificar se a medicação pertence ao paciente
+    const medication = await this.prisma.patientContentAdjustment.findFirst({
+      where: {
+        id: medicationId,
+        patientId,
+        adjustmentType: AdjustmentType.ADD,
+        contentType: ContentType.MEDICATIONS,
+      },
+    });
+
+    if (!medication) {
+      throw new Error('Medicação não encontrada ou não pertence ao paciente');
+    }
+
+    return this.prisma.patientContentAdjustment.delete({
+      where: { id: medicationId },
+    });
+  }
+
   // ==================== CONTEÚDO FINAL DO PACIENTE ====================
 
   async getPatientContent(
@@ -311,11 +378,15 @@ export class ContentService {
 
     if (!patient) throw new NotFoundException('Paciente não encontrado');
 
-    // Buscar conteúdos da clínica
-    const baseContents = await this.prisma.clinicContent.findMany({
-      where: { clinicId: patient.clinicId, type, isActive: true },
-      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
-    });
+    // Para MEDICATIONS, não buscar conteúdos de template da clínica
+    // Apenas medicamentos adicionados especificamente para o paciente serão mostrados
+    let baseContents: any[] = [];
+    if (type !== ContentType.MEDICATIONS) {
+      baseContents = await this.prisma.clinicContent.findMany({
+        where: { clinicId: patient.clinicId, type, isActive: true },
+        orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
+      });
+    }
 
     // Buscar ajustes do paciente
     const adjustments = await this.prisma.patientContentAdjustment.findMany({

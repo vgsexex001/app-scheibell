@@ -457,6 +457,156 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ==================== AUDIO MESSAGE METHODS ====================
+
+  /// Envia mensagem de audio
+  /// [audioFile] - Arquivo de audio (m4a, aac, mp3, wav)
+  /// [durationSeconds] - Duracao do audio em segundos
+  Future<void> sendAudioMessage(File audioFile, int durationSeconds) async {
+    // Valida formato
+    if (!_chatApiDatasource.isValidAudioFile(audioFile)) {
+      _errorMessage = 'Formato invalido. Use M4A, AAC, MP3 ou WAV.';
+      notifyListeners();
+      return;
+    }
+
+    // Valida tamanho
+    if (!await _chatApiDatasource.isAudioFileSizeValid(audioFile)) {
+      _errorMessage = 'Audio muito grande. Maximo 25MB.';
+      notifyListeners();
+      return;
+    }
+
+    _state = ChatState.uploading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      // Faz upload do audio
+      final uploadResponse = await _chatApiDatasource.uploadAudio(
+        audioFile,
+        conversationId: _conversationId,
+        durationSeconds: durationSeconds,
+      );
+
+      // Atualiza conversationId se for nova conversa
+      if (_conversationId == null || _conversationId!.isEmpty) {
+        _conversationId = uploadResponse.conversationId;
+      }
+
+      // Adiciona mensagem do usuario com audio
+      final userMessage = ChatMessage(
+        id: uploadResponse.messageId,
+        content: '[Mensagem de audio]',
+        role: MessageRole.user,
+        timestamp: DateTime.now(),
+        senderType: 'patient',
+        attachments: [
+          ChatAttachment(
+            id: uploadResponse.id,
+            originalName: uploadResponse.originalName,
+            mimeType: uploadResponse.mimeType,
+            sizeBytes: uploadResponse.sizeBytes,
+            status: AttachmentStatus.pending,
+            type: AttachmentType.audio,
+            createdAt: uploadResponse.createdAt,
+            durationSeconds: uploadResponse.durationSeconds,
+            localPath: audioFile.path,
+          ),
+        ],
+      );
+      _messages.add(userMessage);
+      notifyListeners();
+
+      // Inicia transcricao em background
+      _transcribeAudioInBackground(uploadResponse.id);
+
+      _state = ChatState.idle;
+    } on ChatApiException catch (e) {
+      _state = ChatState.error;
+      _errorMessage = e.userFriendlyMessage;
+      _messages.add(ChatMessage.fromAssistant(
+        'Desculpe, nao foi possivel enviar o audio. ${e.userFriendlyMessage}',
+        isError: true,
+      ));
+    } catch (e) {
+      _state = ChatState.error;
+      _errorMessage = 'Erro ao enviar audio: ${e.toString()}';
+      _messages.add(ChatMessage.fromAssistant(
+        'Desculpe, ocorreu um erro ao enviar o audio. Tente novamente.',
+        isError: true,
+      ));
+    }
+
+    notifyListeners();
+  }
+
+  /// Transcreve audio em background e atualiza a mensagem
+  Future<void> _transcribeAudioInBackground(String attachmentId) async {
+    try {
+      final transcribeResponse = await _chatApiDatasource.transcribeAudio(
+        attachmentId: attachmentId,
+      );
+
+      // Atualiza o attachment na mensagem com a transcricao
+      for (int i = 0; i < _messages.length; i++) {
+        final msg = _messages[i];
+        if (msg.hasAudioAttachment && msg.audioAttachment?.id == attachmentId) {
+          // Recria a mensagem com attachment atualizado
+          final updatedAttachments = msg.attachments.map((a) {
+            if (a.id == attachmentId) {
+              return ChatAttachment(
+                id: a.id,
+                originalName: a.originalName,
+                mimeType: a.mimeType,
+                sizeBytes: a.sizeBytes,
+                status: AttachmentStatus.completed,
+                type: a.type,
+                createdAt: a.createdAt,
+                durationSeconds: a.durationSeconds,
+                localPath: a.localPath,
+                transcription: transcribeResponse.transcription,
+                transcribedAt: transcribeResponse.transcribedDateTime,
+              );
+            }
+            return a;
+          }).toList();
+
+          _messages[i] = ChatMessage(
+            id: msg.id,
+            content: msg.content,
+            role: msg.role,
+            timestamp: msg.timestamp,
+            isError: msg.isError,
+            attachments: updatedAttachments,
+            senderId: msg.senderId,
+            senderType: msg.senderType,
+            senderName: msg.senderName,
+            deliveredAt: msg.deliveredAt,
+            readAt: msg.readAt,
+          );
+          notifyListeners();
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao transcrever audio: $e');
+    }
+  }
+
+  /// Solicita transcricao de um audio
+  Future<String?> requestTranscription(String attachmentId) async {
+    try {
+      final response = await _chatApiDatasource.transcribeAudio(
+        attachmentId: attachmentId,
+      );
+      return response.transcription;
+    } catch (e) {
+      debugPrint('Erro ao transcrever audio: $e');
+      return null;
+    }
+  }
+
   // ==================== HUMAN HANDOFF METHODS ====================
 
   /// Solicita transferencia para atendimento humano

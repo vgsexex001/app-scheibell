@@ -5,6 +5,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
+import * as express from 'express';
+import * as path from 'path';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -59,6 +61,9 @@ async function bootstrap() {
 
   // API prefix
   app.setGlobalPrefix('api');
+
+  // Serve static files from uploads directory (for local development)
+  app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
   // Global interceptors
   app.useGlobalInterceptors(new RequestIdInterceptor());

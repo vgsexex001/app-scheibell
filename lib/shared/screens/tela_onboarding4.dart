@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/services/secure_storage_service.dart';
 
 class TelaOnboarding4 extends StatelessWidget {
   const TelaOnboarding4({super.key});
@@ -7,6 +8,14 @@ class TelaOnboarding4 extends StatelessWidget {
   static const _backgroundColor = Color(0xFFA9A48E);
   static const _primaryDark = Color(0xFF4F4A34);
   static const _cardBackground = Color(0xFFF5F7FA);
+
+  Future<void> _completeOnboarding(BuildContext context) async {
+    final secureStorage = SecureStorageService();
+    await secureStorage.setOnboardingCompleted();
+    if (context.mounted) {
+      Navigator.pushReplacementNamed(context, '/home');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +87,7 @@ class TelaOnboarding4 extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.only(top: 8),
         child: TextButton(
-          onPressed: () => Navigator.pushReplacementNamed(context, '/home'),
+          onPressed: () => _completeOnboarding(context),
           child: const Text(
             'Pular',
             style: TextStyle(
@@ -157,7 +166,7 @@ class TelaOnboarding4 extends StatelessWidget {
           child: SizedBox(
             height: buttonHeight,
             child: ElevatedButton(
-              onPressed: () => Navigator.pushReplacementNamed(context, '/home'),
+              onPressed: () => _completeOnboarding(context),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryDark,
                 foregroundColor: Colors.white,

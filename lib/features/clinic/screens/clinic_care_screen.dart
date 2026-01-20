@@ -162,6 +162,8 @@ class _PatientCard extends StatelessWidget {
   }
 }
 
+// ==================== PATIENT CARE DETAIL SCREEN ====================
+
 class _PatientCareDetailScreen extends StatefulWidget {
   final PatientListItem patient;
   const _PatientCareDetailScreen({required this.patient});
@@ -170,14 +172,33 @@ class _PatientCareDetailScreen extends StatefulWidget {
   State<_PatientCareDetailScreen> createState() => _PatientCareDetailScreenState();
 }
 
-class _PatientCareDetailScreenState extends State<_PatientCareDetailScreen> {
+class _PatientCareDetailScreenState extends State<_PatientCareDetailScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  final List<_Category> _categories = [
+    _Category('CARE', 'Cuidado', const Color(0xFFE7000B), const Color(0xFFC50009), Icons.medical_services_outlined),
+    _Category('REQUIRED', 'Fazer', const Color(0xFF00A63E), const Color(0xFF008235), Icons.check_circle_outline),
+    _Category('OPTIONAL', 'Opcional', const Color(0xFFF0B100), const Color(0xFFD08700), Icons.help_outline),
+    _Category('NOT_REQUIRED', 'Não necessário', const Color(0xFF697282), const Color(0xFF495565), Icons.remove_circle_outline),
+  ];
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: _categories.length, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<ClinicContentProvider>();
-      if (provider.currentType != 'CARE') provider.loadContentsByType('CARE');
+      if (provider.currentType != 'CARE') {
+        provider.loadContentsByType('CARE');
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -186,22 +207,71 @@ class _PatientCareDetailScreenState extends State<_PatientCareDetailScreen> {
       backgroundColor: const Color(0xFFD7D1C5),
       body: SafeArea(
         top: false,
-        child: Column(children: [_buildHeader(), _buildPatientInfo(), _buildAddButton(), Expanded(child: Consumer<ClinicContentProvider>(builder: (context, provider, _) {
-          if (provider.isLoadingContents) return const Center(child: CircularProgressIndicator(color: Color(0xFFA49E86)));
-          return _buildList(provider);
-        }))]),
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildPatientInfo(),
+            _buildTabBar(),
+            _buildAddButton(),
+            Expanded(
+              child: Consumer<ClinicContentProvider>(
+                builder: (context, provider, _) {
+                  if (provider.isLoadingContents) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFFA49E86),
+                      ),
+                    );
+                  }
+
+                  return TabBarView(
+                    controller: _tabController,
+                    children: _categories.map((cat) => _buildList(cat, provider)).toList(),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildHeader() {
     return Padding(
-      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 16, left: 16, right: 16, bottom: 16),
-      child: Row(children: [
-        GestureDetector(onTap: () => Navigator.pop(context), child: Container(width: 38, height: 32, decoration: BoxDecoration(color: const Color(0xFFD7D1C5), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFA49E86))), child: const Icon(Icons.arrow_back, color: Color(0xFF4F4A34), size: 16))),
-        const SizedBox(width: 12),
-        const Text('Cuidados', style: TextStyle(color: Color(0xFF4F4A34), fontSize: 24, fontFamily: 'Inter', fontWeight: FontWeight.w500)),
-      ]),
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 16,
+        left: 16,
+        right: 16,
+        bottom: 16,
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 38,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD7D1C5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFA49E86)),
+              ),
+              child: const Icon(Icons.arrow_back, color: Color(0xFF4F4A34), size: 16),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Cuidados',
+            style: TextStyle(
+              color: Color(0xFF4F4A34),
+              fontSize: 24,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -209,12 +279,135 @@ class _PatientCareDetailScreenState extends State<_PatientCareDetailScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF4F4A34), Color(0xFF212621)]), borderRadius: BorderRadius.circular(16)),
-      child: Row(children: [
-        Container(width: 48, height: 48, decoration: BoxDecoration(color: Colors.white.withAlpha(26), borderRadius: BorderRadius.circular(24)), child: Center(child: Text(widget.patient.name.isNotEmpty ? widget.patient.name.substring(0, 1).toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 20, fontFamily: 'Inter', fontWeight: FontWeight.w600)))),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.patient.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Inter', fontWeight: FontWeight.w600)), const SizedBox(height: 2), Text(widget.patient.dayPostOp != null ? 'D+${widget.patient.dayPostOp} pós-operatório' : (widget.patient.phone ?? 'Sem telefone'), style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 13, fontFamily: 'Inter'))])),
-      ]),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF4F4A34), Color(0xFF212621)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(26),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Center(
+              child: Text(
+                widget.patient.name.isNotEmpty
+                    ? widget.patient.name.substring(0, 1).toUpperCase()
+                    : '?',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.patient.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.patient.dayPostOp != null
+                      ? 'D+${widget.patient.dayPostOp} pós-operatório'
+                      : (widget.patient.phone ?? 'Sem telefone'),
+                  style: TextStyle(
+                    color: Colors.white.withAlpha(179),
+                    fontSize: 13,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.only(left: 8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE5E7EB)),
+          left: BorderSide(color: Color(0xFFE5E7EB)),
+          right: BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        indicatorColor: Colors.transparent,
+        dividerColor: Colors.transparent,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+        tabs: _categories.asMap().entries.map((entry) {
+          final index = entry.key;
+          final cat = entry.value;
+          return Tab(
+            child: AnimatedBuilder(
+              animation: _tabController,
+              builder: (context, _) {
+                final isSelected = _tabController.index == index;
+                return Container(
+                  height: 46,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: isSelected ? cat.color : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(cat.icon, color: isSelected ? cat.textColor : const Color(0xFF697282), size: 14),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          cat.name,
+                          style: TextStyle(
+                            color: isSelected ? cat.textColor : const Color(0xFF697282),
+                            fontSize: 11,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 
@@ -223,16 +416,58 @@ class _PatientCareDetailScreenState extends State<_PatientCareDetailScreen> {
       padding: const EdgeInsets.all(16),
       child: GestureDetector(
         onTap: _showAddModal,
-        child: Container(width: double.infinity, height: 36, decoration: BoxDecoration(color: const Color(0xFF4F4A34), borderRadius: BorderRadius.circular(12)), child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.add, color: Colors.white, size: 16), SizedBox(width: 8), Text('Adicionar Cuidado', style: TextStyle(color: Colors.white, fontSize: 14, fontFamily: 'Inter', fontWeight: FontWeight.w500))])),
+        child: Container(
+          width: double.infinity,
+          height: 36,
+          decoration: BoxDecoration(
+            color: const Color(0xFF4F4A34),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text(
+                'Adicionar Cuidado',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildList(ClinicContentProvider provider) {
-    final items = provider.contents;
+  Widget _buildList(_Category category, ClinicContentProvider provider) {
+    final items = provider.getByCategory(category.id);
+
     if (items.isEmpty) {
-      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: const [Icon(Icons.medical_services_outlined, color: Color(0xFF697282), size: 48), SizedBox(height: 16), Text('Nenhum cuidado cadastrado', style: TextStyle(color: Color(0xFF697282), fontSize: 16, fontFamily: 'Inter')), SizedBox(height: 8), Text('Toque em "Adicionar Cuidado"', style: TextStyle(color: Color(0xFF697282), fontSize: 14, fontFamily: 'Inter'))]));
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(category.icon, color: const Color(0xFF697282), size: 48),
+            const SizedBox(height: 16),
+            const Text(
+              'Nenhum item cadastrado',
+              style: TextStyle(color: Color(0xFF697282), fontSize: 16, fontFamily: 'Inter'),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Toque em "Adicionar Cuidado"',
+              style: TextStyle(color: Color(0xFF697282), fontSize: 14, fontFamily: 'Inter'),
+            ),
+          ],
+        ),
+      );
     }
+
     return ReorderableListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: items.length,
@@ -241,32 +476,149 @@ class _PatientCareDetailScreenState extends State<_PatientCareDetailScreen> {
         final itemsCopy = List<ClinicContent>.from(items);
         final item = itemsCopy.removeAt(oldIndex);
         itemsCopy.insert(newIndex, item);
-        await provider.reorderContents(itemsCopy.map((c) => c.id).toList());
+
+        // Chamar API de reorder
+        final ids = itemsCopy.map((c) => c.id).toList();
+        await provider.reorderContents(ids);
       },
       itemBuilder: (context, index) {
         final item = items[index];
-        return Padding(key: ValueKey(item.id), padding: const EdgeInsets.only(bottom: 12), child: _ContentCard(item: item, onToggle: () => context.read<ClinicContentProvider>().toggleContent(item.id), onDelete: () => _deleteItem(item.id), onEdit: () => _showEditModal(item)));
+        return Padding(
+          key: ValueKey(item.id),
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _ContentCard(
+            item: item,
+            category: category,
+            onToggle: () => _toggleItem(item.id),
+            onDelete: () => _deleteItem(item.id),
+            onEdit: () => _showEditModal(item),
+          ),
+        );
       },
     );
   }
 
+  Future<void> _toggleItem(String id) async {
+    await context.read<ClinicContentProvider>().toggleContent(id);
+  }
+
   void _deleteItem(String id) {
-    showDialog(context: context, builder: (ctx) => AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), title: const Text('Excluir item?'), content: const Text('Esta ação não pode ser desfeita.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')), TextButton(onPressed: () async { Navigator.pop(ctx); final success = await context.read<ClinicContentProvider>().deleteContent(id); if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(success ? 'Item excluído' : 'Erro ao excluir'))); }, style: TextButton.styleFrom(foregroundColor: const Color(0xFFE7000B)), child: const Text('Excluir'))]));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Excluir item?'),
+        content: const Text('Esta ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final success = await context.read<ClinicContentProvider>().deleteContent(id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(success ? 'Item excluído' : 'Erro ao excluir'),
+                  ),
+                );
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE7000B)),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showAddModal() {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (ctx) => _ContentFormModal(onSave: (title, description) async { final success = await context.read<ClinicContentProvider>().createContent(type: 'CARE', category: 'INFO', title: title, description: description.isNotEmpty ? description : null); if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(success ? 'Item adicionado' : 'Erro ao adicionar'))); if (success) context.read<ClinicContentProvider>().loadStats(); } }));
+    final category = _categories[_tabController.index];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ContentFormModal(
+        category: category,
+        onSave: (title, description) async {
+          final success = await context.read<ClinicContentProvider>().createContent(
+            type: 'CARE',
+            category: category.id,
+            title: title,
+            description: description.isNotEmpty ? description : null,
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'Item adicionado' : 'Erro ao adicionar'),
+              ),
+            );
+            // Atualizar stats no grid principal
+            if (success) {
+              context.read<ClinicContentProvider>().loadStats();
+            }
+          }
+        },
+      ),
+    );
   }
 
   void _showEditModal(ClinicContent item) {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (ctx) => _ContentFormModal(item: item, onSave: (title, description) async { final success = await context.read<ClinicContentProvider>().updateContent(item.id, title: title, description: description.isNotEmpty ? description : null); if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(success ? 'Item atualizado' : 'Erro ao atualizar'))); }));
+    final category = _categories.firstWhere(
+      (c) => c.id == item.category,
+      orElse: () => _categories.first,
+    );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ContentFormModal(
+        category: category,
+        item: item,
+        onSave: (title, description) async {
+          final success = await context.read<ClinicContentProvider>().updateContent(
+            item.id,
+            title: title,
+            description: description.isNotEmpty ? description : null,
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'Item atualizado' : 'Erro ao atualizar'),
+              ),
+            );
+          }
+        },
+      ),
+    );
   }
 }
 
+// ==================== MODELS ====================
+
+class _Category {
+  final String id, name;
+  final Color color, textColor;
+  final IconData icon;
+  const _Category(this.id, this.name, this.color, this.textColor, this.icon);
+}
+
+// ==================== CARD ====================
+
 class _ContentCard extends StatelessWidget {
   final ClinicContent item;
+  final _Category category;
   final VoidCallback onToggle, onDelete, onEdit;
-  const _ContentCard({required this.item, required this.onToggle, required this.onDelete, required this.onEdit});
+
+  const _ContentCard({
+    required this.item,
+    required this.category,
+    required this.onToggle,
+    required this.onDelete,
+    required this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -274,29 +626,157 @@ class _ContentCard extends StatelessWidget {
       onTap: onEdit,
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFC8C2B4))),
-        child: Column(children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.drag_indicator, color: Color(0xFF697282), size: 20)),
-            const SizedBox(width: 8),
-            Expanded(child: Column(children: [Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFF5F3EF), borderRadius: BorderRadius.circular(12)), child: Text(item.title, style: const TextStyle(color: Color(0xFF212621), fontSize: 14, fontFamily: 'Inter', fontWeight: FontWeight.w500))), if (item.description != null && item.description!.isNotEmpty) ...[const SizedBox(height: 8), Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFF5F3EF), borderRadius: BorderRadius.circular(12)), child: Text(item.description!, style: const TextStyle(color: Color(0xFF212621), fontSize: 14, fontFamily: 'Inter', fontWeight: FontWeight.w400)))]])),
-          ]),
-          const SizedBox(height: 12),
-          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-            GestureDetector(onTap: onToggle, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: item.isActive ? const Color(0xFF00A63E).withAlpha(26) : const Color(0xFF697282).withAlpha(26), borderRadius: BorderRadius.circular(8)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(item.isActive ? Icons.visibility : Icons.visibility_off, color: item.isActive ? const Color(0xFF00A63E) : const Color(0xFF697282), size: 16), const SizedBox(width: 4), Text(item.isActive ? 'Ativo' : 'Inativo', style: TextStyle(color: item.isActive ? const Color(0xFF00A63E) : const Color(0xFF697282), fontSize: 12, fontFamily: 'Inter', fontWeight: FontWeight.w500))]))),
-            const SizedBox(width: 8),
-            GestureDetector(onTap: onDelete, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFE7000B).withAlpha(26), borderRadius: BorderRadius.circular(8)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.delete_outline, color: Color(0xFFE7000B), size: 16), SizedBox(width: 4), Text('Excluir', style: TextStyle(color: Color(0xFFE7000B), fontSize: 12, fontFamily: 'Inter', fontWeight: FontWeight.w500))]))),
-          ]),
-        ]),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFC8C2B4)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: Icon(Icons.drag_indicator, color: Color(0xFF697282), size: 20),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Título
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F3EF),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          item.title,
+                          style: const TextStyle(
+                            color: Color(0xFF212621),
+                            fontSize: 14,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (item.description != null && item.description!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        // Descrição
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F3EF),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            item.description!,
+                            style: const TextStyle(
+                              color: Color(0xFF212621),
+                              fontSize: 14,
+                              fontFamily: 'Inter',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Botões
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                GestureDetector(
+                  onTap: onToggle,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: item.isActive
+                          ? const Color(0xFF00A63E).withAlpha(26)
+                          : const Color(0xFF697282).withAlpha(26),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          item.isActive ? Icons.visibility : Icons.visibility_off,
+                          color: item.isActive
+                              ? const Color(0xFF00A63E)
+                              : const Color(0xFF697282),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          item.isActive ? 'Ativo' : 'Inativo',
+                          style: TextStyle(
+                            color: item.isActive
+                                ? const Color(0xFF00A63E)
+                                : const Color(0xFF697282),
+                            fontSize: 12,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onDelete,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE7000B).withAlpha(26),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.delete_outline, color: Color(0xFFE7000B), size: 16),
+                        SizedBox(width: 4),
+                        Text(
+                          'Excluir',
+                          style: TextStyle(
+                            color: Color(0xFFE7000B),
+                            fontSize: 12,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
+// ==================== FORM MODAL ====================
+
 class _ContentFormModal extends StatefulWidget {
+  final _Category category;
   final ClinicContent? item;
   final void Function(String title, String description) onSave;
-  const _ContentFormModal({this.item, required this.onSave});
+
+  const _ContentFormModal({
+    required this.category,
+    this.item,
+    required this.onSave,
+  });
 
   @override
   State<_ContentFormModal> createState() => _ContentFormModalState();
@@ -314,12 +794,23 @@ class _ContentFormModalState extends State<_ContentFormModal> {
   }
 
   @override
-  void dispose() { _titleController.dispose(); _descriptionController.dispose(); super.dispose(); }
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
 
   void _handleSave() {
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
-    if (title.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Informe o título'))); return; }
+
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe o título')),
+      );
+      return;
+    }
+
     widget.onSave(title, description);
     Navigator.pop(context);
   }
@@ -327,25 +818,149 @@ class _ContentFormModalState extends State<_ContentFormModal> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.item != null;
+
     return Container(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(isEditing ? 'Editar Cuidado' : 'Novo Cuidado', style: const TextStyle(color: Color(0xFF212621), fontSize: 20, fontFamily: 'Inter', fontWeight: FontWeight.w600)), GestureDetector(onTap: () => Navigator.pop(context), child: const Icon(Icons.close, color: Color(0xFF697282)))]),
-          const SizedBox(height: 24),
-          const Text('Título', style: TextStyle(color: Color(0xFF4F4A34), fontSize: 14, fontFamily: 'Inter', fontWeight: FontWeight.w500)),
-          const SizedBox(height: 8),
-          TextField(controller: _titleController, decoration: InputDecoration(hintText: 'Ex: Limpeza do curativo', hintStyle: const TextStyle(color: Color(0xFF9CA3AF)), filled: true, fillColor: const Color(0xFFF5F3EF), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14))),
-          const SizedBox(height: 16),
-          const Text('Descrição', style: TextStyle(color: Color(0xFF4F4A34), fontSize: 14, fontFamily: 'Inter', fontWeight: FontWeight.w500)),
-          const SizedBox(height: 8),
-          TextField(controller: _descriptionController, maxLines: 3, decoration: InputDecoration(hintText: 'Instruções detalhadas...', hintStyle: const TextStyle(color: Color(0xFF9CA3AF)), filled: true, fillColor: const Color(0xFFF5F3EF), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14))),
-          const SizedBox(height: 24),
-          GestureDetector(onTap: _handleSave, child: Container(width: double.infinity, height: 48, decoration: BoxDecoration(color: const Color(0xFF4F4A34), borderRadius: BorderRadius.circular(12)), child: Center(child: Text(isEditing ? 'Salvar Alterações' : 'Adicionar', style: const TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Inter', fontWeight: FontWeight.w600))))),
-          const SizedBox(height: 16),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  isEditing ? 'Editar Cuidado' : 'Novo Cuidado',
+                  style: const TextStyle(
+                    color: Color(0xFF212621),
+                    fontSize: 20,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: const Icon(Icons.close, color: Color(0xFF697282)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Categoria badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: widget.category.color.withAlpha(26),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(widget.category.icon, color: widget.category.color, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    widget.category.name,
+                    style: TextStyle(
+                      color: widget.category.textColor,
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Título
+            const Text(
+              'Título',
+              style: TextStyle(
+                color: Color(0xFF4F4A34),
+                fontSize: 14,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _titleController,
+              decoration: InputDecoration(
+                hintText: 'Ex: Limpeza do curativo',
+                hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+                filled: true,
+                fillColor: const Color(0xFFF5F3EF),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Descrição
+            const Text(
+              'Descrição',
+              style: TextStyle(
+                color: Color(0xFF4F4A34),
+                fontSize: 14,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _descriptionController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Instruções detalhadas...',
+                hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+                filled: true,
+                fillColor: const Color(0xFFF5F3EF),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Botão Salvar
+            GestureDetector(
+              onTap: _handleSave,
+              child: Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F4A34),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(
+                    isEditing ? 'Salvar Alterações' : 'Adicionar',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }

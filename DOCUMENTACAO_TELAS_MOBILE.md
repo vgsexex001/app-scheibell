@@ -353,7 +353,14 @@ lib/
 │   │   └── role_guard.dart           (Proteção de rotas por role)
 │   ├── routes/
 │   │   └── app_routes.dart           (Definição de rotas)
-│   └── services/                      (Serviços de API)
+│   ├── services/
+│   │   ├── api_service.dart          (Comunicação com backend NestJS)
+│   │   ├── content_service.dart      (Gerenciamento de conteúdos)
+│   │   ├── recovery_content_service.dart (Conteúdos de recuperação via Supabase)
+│   │   ├── medication_service.dart   (Gerenciamento de medicações)
+│   │   └── secure_storage_service.dart (Armazenamento seguro)
+│   └── utils/
+│       └── recovery_calculator.dart  (Cálculos de recuperação)
 ├── shared/
 │   ├── screens/
 │   │   ├── gate_screen.dart          (Splash com redirecionamento)
@@ -370,18 +377,23 @@ lib/
 │       ├── app_header.dart           (Headers reutilizáveis)
 │       └── patient_card.dart         (Cards de pacientes)
 ├── features/
-│   ├── patient/screens/              (Telas do paciente)
-│   │   ├── tela_home.dart
-│   │   ├── tela_agenda.dart
-│   │   ├── tela_agendamentos.dart
-│   │   ├── tela_medicamentos.dart
-│   │   ├── tela_recuperacao.dart
-│   │   ├── tela_perfil.dart
-│   │   ├── tela_configuracoes.dart
-│   │   ├── tela_exames.dart
-│   │   ├── tela_documentos.dart
-│   │   ├── tela_recursos.dart
-│   │   └── tela_chatbot.dart
+│   ├── patient/
+│   │   ├── screens/                  (Telas do paciente)
+│   │   │   ├── tela_home.dart
+│   │   │   ├── tela_agenda.dart
+│   │   │   ├── tela_agendamentos.dart
+│   │   │   ├── tela_medicamentos.dart
+│   │   │   ├── tela_historico_medicacoes.dart
+│   │   │   ├── tela_recuperacao.dart
+│   │   │   ├── tela_perfil.dart
+│   │   │   ├── tela_configuracoes.dart
+│   │   │   ├── tela_exames.dart
+│   │   │   ├── tela_documentos.dart
+│   │   │   ├── tela_recursos.dart
+│   │   │   └── tela_chatbot.dart
+│   │   └── providers/
+│   │       ├── home_provider.dart    (Estado da home do paciente)
+│   │       └── recovery_provider.dart (Estado da tela de recuperação)
 │   ├── clinic/
 │   │   ├── screens/
 │   │   │   └── clinic_dashboard_screen.dart (Dashboard da clínica)
@@ -528,6 +540,50 @@ TelaLoginForm (Email/Senha)
 
 ---
 
+### TelaMedicamentos (Gerenciamento de Medicações)
+
+**Arquivo:** `lib/features/patient/screens/tela_medicamentos.dart`
+
+**Descrição:** Tela para gerenciar medicações do paciente com funcionalidades completas de CRUD.
+
+**Seções:**
+1. **Header** - Título "Medicações" com botão de adicionar (+)
+2. **Resumo do Dia** - Card com estatísticas (doses tomadas, próxima medicação)
+3. **Lista de Medicações** - Cards de medicamentos com status
+4. **Botão Histórico** - Acesso ao histórico de medicações
+
+**Funcionalidades Implementadas:**
+- ✅ **Adicionar medicação** - Formulário completo com:
+  - Nome do medicamento
+  - Dosagem
+  - Forma (Comprimido, Cápsula, Líquido, etc.)
+  - Frequência (1x ao dia, 2x ao dia, etc.)
+  - Horários (seleção múltipla incluindo 00:00)
+  - Observações
+- ✅ **Editar medicação** - Botão "Editar" em cards customizados
+- ✅ **Remover medicação** - Botão "Remover" com confirmação
+- ✅ **Marcar como tomado** - Botão "Tomar" em cada card
+- ✅ **Histórico de medicações** - Tela separada com registros
+
+**Integração com Backend:**
+- `POST /patient/medications` - Adicionar medicação
+- `PATCH /patient/medications/:id` - Atualizar medicação
+- `DELETE /patient/medications/:id` - Remover medicação
+- `GET /patient/content?type=MEDICATIONS` - Listar medicações
+
+**Regras de Negócio:**
+- Apenas medicações adicionadas pelo paciente ou médico são exibidas
+- Medicações de template da clínica NÃO são mostradas
+- Cards customizados (isCustom=true) mostram botões de Editar/Remover
+- Atualiza HomeProvider após alterações para sincronizar dados
+
+**Componentes UI:**
+- `_CardMedicacao` - Card individual de medicação
+- `_FormularioMedicacao` - BottomSheet para adicionar/editar
+- Estados: tomado (verde), pendente (cinza)
+
+---
+
 ### TelaChatbot (Assistente de IA)
 
 **Arquivo:** `lib/features/patient/screens/tela_chatbot.dart`
@@ -553,18 +609,31 @@ TelaLoginForm (Email/Senha)
 
 **Arquivo:** `lib/features/patient/screens/tela_recuperacao.dart`
 
-**Descrição:** Acompanhamento detalhado do processo de recuperação.
+**Descrição:** Acompanhamento detalhado do processo de recuperação pós-operatória.
 
 **Seções:**
 1. **Header** - Título e subtítulo sobre recuperação
-2. **Módulo de Sintomas** - Tabs para monitoramento de sintomas
-3. **Módulo de Cuidados** - Tabs com informações de cuidados
-4. **Módulo de Atividades** - Tabs com restrições/permissões de atividades
-5. **Módulo de Dieta** - Tabs com orientações alimentares
+2. **Módulo de Sintomas** - Tabs para monitoramento de sintomas (Normais, Avisar Médico, Emergência)
+3. **Módulo de Cuidados** - Tabs com informações de cuidados pós-operatórios
+4. **Módulo de Atividades** - Tabs com restrições/permissões de atividades (Permitidas, Evitar, Proibidas)
+5. **Módulo de Dieta** - Tabs com orientações alimentares (Recomendada, Evitar, Proibida)
+
+**Integração com Supabase:**
+- Busca dados diretamente do Supabase via `RecoveryContentService`
+- Tabelas utilizadas:
+  - `clinic_contents` - Conteúdos padrão da clínica
+  - `patient_content_overrides` - Personalizações do paciente (ADD, MODIFY, REMOVE)
+  - `patient_content_adjustments` - Ajustes específicos do paciente
+  - `patients` - Dados do paciente (clinicId, surgeryDate)
+- Filtragem por dias pós-operatório (`validFromDay`, `validUntilDay`)
+- Suporte a conteúdos personalizados com badge "Personalizado"
 
 **Funcionalidades Implementadas:**
-- Tabs com indicador de borda apenas na parte inferior (padrão consistente)
-- Design responsivo para cada módulo
+- ✅ Integração com Supabase para dados dinâmicos
+- ✅ Tabs com indicador de borda apenas na parte inferior
+- ✅ Fallback para dados estáticos quando Supabase falha
+- ✅ Exibição de descrição em conteúdos personalizados
+- ✅ Design responsivo para cada módulo
 
 ---
 
@@ -796,29 +865,357 @@ TelaLoginForm (Email/Senha)
 
 ---
 
+## Integrações
+
+### Backend NestJS
+
+O app se comunica com um backend NestJS através do `ApiService`.
+
+**Endpoints Principais:**
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/auth/login` | Autenticação de usuário |
+| `GET` | `/patient/content` | Buscar conteúdos do paciente |
+| `GET` | `/patient/clinic-content` | Buscar conteúdos da clínica |
+| `POST` | `/patient/medications` | Adicionar medicação |
+| `PATCH` | `/patient/medications/:id` | Atualizar medicação |
+| `DELETE` | `/patient/medications/:id` | Remover medicação |
+| `GET` | `/patient/training-protocol` | Buscar protocolo de treino |
+
+### Supabase (Acesso Direto)
+
+A tela de Recuperação busca dados diretamente do Supabase para melhor performance.
+
+**Serviço:** `RecoveryContentService`
+
+**Tabelas Acessadas:**
+- `patients` - Dados do paciente (id, clinicId, surgeryDate)
+- `clinic_contents` - Conteúdos padrão da clínica
+- `patient_content_overrides` - Personalizações (ADD, MODIFY, REMOVE)
+- `patient_content_adjustments` - Ajustes específicos
+
+**Fluxo de Dados:**
+1. Busca `patientId` do SecureStorage
+2. Busca dados do paciente (`clinicId`, `surgeryDate`)
+3. Calcula dias pós-operatório
+4. Busca conteúdos da clínica filtrados por `clinicId`
+5. Aplica personalizações do paciente
+6. Filtra por dias válidos (`validFromDay`, `validUntilDay`)
+7. Ordena por `sortOrder`
+
+---
+
 ## Pendências e Próximos Passos
+
+### ✅ Implementado
+
+1. **Integração com Backend/API**
+   - ✅ Conexão para autenticação de usuário
+   - ✅ Endpoints de medicações (CRUD completo)
+   - ✅ Busca de conteúdos personalizados
+   - ✅ Protocolo de treino
+
+2. **Tela de Medicamentos**
+   - ✅ Adicionar medicação
+   - ✅ Editar medicação
+   - ✅ Remover medicação
+   - ✅ Marcar como tomado
+   - ✅ Histórico de medicações
+
+3. **Tela de Recuperação**
+   - ✅ Integração com Supabase
+   - ✅ Conteúdos personalizados por paciente
+   - ✅ Filtragem por dias pós-operatório
+
+4. **Gerenciamento de Estado**
+   - ✅ Provider implementado (HomeProvider, RecoveryProvider)
+   - ✅ Armazenamento seguro com SecureStorage
 
 ### 🔴 A Implementar
 
-1. **Integração com Backend/API**
-   - Conexão para autenticação de usuário
-   - Envio de email de recuperação
-   - Verificação de código OTP
-   - Atualização de senha
-
-2. **Funcionalidades "Em Breve"**
+1. **Funcionalidades "Em Breve"**
    - Diário Pós-Op (tela do paciente)
    - Fotos (tela do paciente)
    - Módulo Diário (gestão de conteúdos)
 
-3. **Gerenciamento de Estado**
-   - Implementar Provider, Riverpod, ou Bloc
-   - Armazenamento de token de autenticação (Secure Storage)
+2. **Melhorias**
+   - Notificações push para medicações
+   - Sincronização offline
+   - Cache de dados
 
-4. **Tratamento de Erros**
-   - Erros de conexão
-   - Erros de API
-   - Feedback visual para o usuário
+---
+
+## Módulo de Biblioteca de Vídeos
+
+### TelaVideos (Biblioteca de Vídeos do Paciente)
+
+**Arquivo:** `lib/features/patient/screens/tela_videos.dart`
+
+**Descrição:** Player de vídeos educativos com suporte a legendas automáticas.
+
+**Funcionalidades Implementadas:**
+- ✅ **Player de Vídeo** - Reprodução de vídeos com controles estilo YouTube
+- ✅ **Thumbnails Automáticas** - Geradas via ffmpeg a partir do vídeo
+- ✅ **Legendas Automáticas (VTT)** - Geradas via OpenAI Whisper API
+- ✅ **Progresso de Visualização** - Salva e retoma de onde parou
+- ✅ **Controles de Player:**
+  - Play/Pause
+  - Barra de progresso arrastável
+  - Volume e mute
+  - Tela cheia
+  - Toggle de legendas
+- ✅ **Lista de Vídeos** - Cards com thumbnail, título, descrição e duração
+
+**Integração com Supabase:**
+- Tabela `clinic_videos` - Armazena metadados dos vídeos
+- Supabase Storage - Armazena arquivos de vídeo, thumbnails e legendas
+
+**Correções Implementadas:**
+
+1. **Encoding de Legendas (UTF-8)**
+   - Problema: Caracteres acentuados apareciam incorretos ("elÃ©trica" ao invés de "elétrica")
+   - Solução:
+     - Backend: Content-Type com `charset=utf-8` no upload para Azure/Supabase
+     - Flutter: `utf8.decode(response.bodyBytes)` ao carregar legendas
+
+2. **Geração de Thumbnails**
+   - Script: `backend/scripts/generate-thumbnails.ts`
+   - Usa ffmpeg para extrair frame do segundo 1 do vídeo
+   - Upload automático para Supabase Storage
+   - Atualiza campo `thumbnailUrl` no banco
+
+3. **Mapeamento de Campos (snake_case/camelCase)**
+   - Suporte para ambos os formatos: `videoUrl` e `video_url`
+   - Compatibilidade entre API backend e Supabase direto
+
+**Endpoints do Backend:**
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/videos/upload` | Upload de vídeo para Azure |
+| `GET` | `/api/videos/clinic/:clinicId` | Listar vídeos da clínica |
+| `GET` | `/api/videos/:id` | Buscar vídeo por ID |
+| `PATCH` | `/api/videos/:id` | Atualizar metadados do vídeo |
+| `DELETE` | `/api/videos/:id` | Deletar vídeo (soft/hard) |
+| `POST` | `/api/videos/:id/subtitle` | Upload de legenda manual |
+| `POST` | `/api/videos/:id/generate-thumbnail` | Regenerar thumbnail |
+| `POST` | `/api/videos/clinic/:clinicId/generate-thumbnails` | Gerar thumbnails faltantes |
+
+**Scripts Utilitários:**
+
+| Script | Descrição |
+|--------|-----------|
+| `backend/scripts/generate-thumbnails.ts` | Gera thumbnails para vídeos no Supabase |
+| `backend/scripts/generate-subtitles.ts` | Gera legendas via Whisper API |
+
+---
+
+## Módulo de Exames e Documentos
+
+### TelaExames (Exames do Paciente)
+
+**Arquivo:** `lib/features/patient/screens/tela_exames.dart`
+
+**Descrição:** Visualização e upload de exames médicos com análise de IA.
+
+**Funcionalidades Implementadas:**
+- ✅ **Lista de Exames** - Cards com status (normal, disponível, aguardando)
+- ✅ **Upload de Exames** - Suporte a PDF e imagens
+- ✅ **Análise de IA** - Integração com OpenAI para análise automática
+- ✅ **Visualização de Resultados** - Exibição de análises e valores
+
+**Integração com Backend:**
+- Upload para Azure Blob Storage
+- Análise via OpenAI GPT-4 Vision (para imagens)
+- Armazenamento de metadados no banco
+
+### TelaDocumentos (Documentos do Paciente)
+
+**Arquivo:** `lib/features/patient/screens/tela_documentos.dart`
+
+**Descrição:** Gerenciamento de documentos médicos.
+
+**Funcionalidades Implementadas:**
+- ✅ **Lista de Documentos** - Organização por categoria
+- ✅ **Upload de Documentos** - PDF, DOC, imagens
+- ✅ **Download e Visualização** - Abertura de documentos
+- ✅ **Categorização** - Consentimentos, Orientações, Resultados
+
+---
+
+## Módulo de Agendamento
+
+### TelaAgendar e TelaSelecaoData
+
+**Arquivos:**
+- `lib/features/patient/screens/tela_agendar.dart`
+- `lib/features/patient/screens/tela_selecao_data.dart`
+
+**Descrição:** Sistema de agendamento de consultas.
+
+**Funcionalidades Implementadas:**
+- ✅ **Calendário Interativo** - Seleção de data
+- ✅ **Slots de Horário** - Exibição de horários disponíveis
+- ✅ **Confirmação de Agendamento** - Resumo antes de confirmar
+- ✅ **Integração com Backend** - Verificação de disponibilidade
+
+**Endpoints do Backend:**
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/schedules/availability` | Buscar horários disponíveis |
+| `POST` | `/api/appointments` | Criar agendamento |
+| `GET` | `/api/appointments/patient` | Listar agendamentos do paciente |
+| `DELETE` | `/api/appointments/:id` | Cancelar agendamento |
+
+---
+
+## Módulo de Chat com IA
+
+### TelaChatbot (Assistente IA do Paciente)
+
+**Arquivo:** `lib/features/patient/screens/tela_chatbot.dart`
+
+**Descrição:** Chat inteligente para dúvidas sobre recuperação.
+
+**Funcionalidades Implementadas:**
+- ✅ **Chat em Tempo Real** - Mensagens instantâneas
+- ✅ **Integração com OpenAI** - Respostas contextualizadas
+- ✅ **Histórico de Conversas** - Persistência de mensagens
+- ✅ **Sugestões Rápidas** - Perguntas frequentes
+- ✅ **Botão de Suporte Humano** - FAB para contato com equipe
+
+**Integração com Backend:**
+- Endpoint `/api/chat/message` para envio de mensagens
+- Contexto do paciente (cirurgia, dias pós-op) enviado junto
+- Respostas geradas via OpenAI GPT-4
+
+---
+
+## Módulo de Treino (Training)
+
+### TelaTreino (Exercícios do Paciente)
+
+**Descrição:** Protocolo de exercícios pós-operatórios.
+
+**Funcionalidades Implementadas:**
+- ✅ **Lista de Exercícios** - Organizados por fase de recuperação
+- ✅ **Vídeos Demonstrativos** - Player integrado
+- ✅ **Marcação de Conclusão** - Registro de exercícios feitos
+- ✅ **Progresso Semanal** - Estatísticas de adesão
+
+**Endpoints do Backend:**
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/patient/training-protocol` | Buscar protocolo de treino |
+| `POST` | `/patient/training/complete` | Marcar exercício como feito |
+| `GET` | `/patient/training/progress` | Buscar progresso |
+
+---
+
+## Armazenamento de Arquivos
+
+### Azure Blob Storage
+
+**Serviço:** `backend/src/common/services/azure-storage.service.ts`
+
+**Funcionalidades:**
+- ✅ Upload de vídeos (até 100MB)
+- ✅ Upload de thumbnails (JPEG)
+- ✅ Upload de legendas (VTT/SRT com UTF-8)
+- ✅ Deleção de arquivos
+- ✅ Geração de URLs com SAS Token
+
+**Estrutura de Pastas no Storage:**
+```
+clinic-videos/
+├── clinic-{clinicId}/
+│   ├── videos/
+│   │   └── {timestamp}_{filename}.mp4
+│   ├── thumbnails/
+│   │   └── {videoId}.jpg
+│   └── subtitles/
+│       └── {videoId}.vtt
+```
+
+### Supabase Storage
+
+**Configuração:** Usado para Biblioteca de Mídia da clínica
+
+**Estrutura:**
+```
+media/
+├── clinic_videos/
+│   └── clinic-{clinicId}/
+│       └── {timestamp}_{filename}.mp4
+├── thumbnails/
+│   └── {clinicId}/
+│       └── {videoId}.jpg
+├── subtitles/
+│   └── {clinicId}/
+│       └── {videoId}.vtt
+└── clinic_documents/
+    └── {clinicId}/
+        └── {timestamp}_{filename}.pdf
+```
+
+---
+
+## Tela da Clínica - Biblioteca de Mídia
+
+### ClinicMediaLibraryScreen
+
+**Arquivo:** `lib/features/clinic/screens/clinic_media_library_screen.dart`
+
+**Descrição:** Gerenciamento de vídeos e documentos da clínica.
+
+**Funcionalidades Implementadas:**
+- ✅ **Tabs** - Vídeos e Documentos separados
+- ✅ **Upload de Vídeos** - Seleção de arquivo, título, descrição, categoria
+- ✅ **Upload de Documentos** - PDF, DOC, imagens
+- ✅ **Listagem** - Cards com preview e informações
+- ✅ **Edição** - Alterar título, descrição, categoria
+- ✅ **Exclusão** - Soft delete e hard delete
+- ✅ **Geração de Legendas** - Trigger para transcrição automática
+
+**Categorias de Vídeo:**
+- GERAL
+- EXERCICIO
+- POS_OPERATORIO
+- ORIENTACAO
+
+**Categorias de Documento:**
+- GERAL
+- CONSENTIMENTO
+- ORIENTACAO
+- RESULTADO
+
+---
+
+## Transcrição Automática de Vídeos
+
+### TranscriptionService
+
+**Arquivo:** `backend/src/modules/transcription/transcription.service.ts`
+
+**Descrição:** Geração automática de legendas usando OpenAI Whisper.
+
+**Fluxo:**
+1. Vídeo é enviado para Azure/Supabase
+2. Backend baixa o vídeo temporariamente
+3. Extrai áudio usando ffmpeg (MP3, 16kHz, mono)
+4. Envia áudio para Whisper API
+5. Converte resposta para formato VTT
+6. Upload do VTT para storage (com UTF-8)
+7. Atualiza registro do vídeo com URL da legenda
+
+**Status de Transcrição:**
+- `PENDING` - Aguardando processamento
+- `PROCESSING` - Em processamento
+- `COMPLETED` - Concluído com sucesso
+- `FAILED` - Erro no processamento
 
 ---
 
@@ -831,7 +1228,9 @@ TelaLoginForm (Email/Senha)
 - **Estilo:** Material Design 3 consistente com tema de cores personalizado
 - **Responsividade:** Usa MediaQuery para layouts responsivos
 - **Multi-Tenant:** Suporte completo para Paciente, Clínica e Terceiro
+- **Storage:** Azure Blob Storage para vídeos/Azure, Supabase Storage para mídia da clínica
+- **IA:** OpenAI GPT-4 para chat e análise de exames, Whisper para transcrição de vídeos
 
 ---
 
-*Documentação atualizada em: 26 de Dezembro de 2025*
+*Documentação atualizada em: 18 de Janeiro de 2026*

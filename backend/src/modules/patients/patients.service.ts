@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppointmentStatus, Appointment } from '@prisma/client';
-import { CreateAllergyDto, CreateMedicalNoteDto, UpdatePatientDto } from './dto';
+import { CreateAllergyDto, CreateMedicalNoteDto, UpdatePatientDto, InvitePatientDto } from './dto';
 
 @Injectable()
 export class PatientsService {
@@ -111,8 +111,8 @@ export class PatientsService {
 
       return {
         id: patient.id,
-        name: patient.user?.name || 'Nome não informado',
-        email: patient.user?.email || '',
+        name: patient.user?.name || patient.name || 'Nome não informado',
+        email: patient.user?.email || patient.email || '',
         phone: patient.phone,
         surgeryType: patient.surgeryType || 'Não informado',
         surgeryDate: patient.surgeryDate?.toISOString() || null,
@@ -271,15 +271,15 @@ export class PatientsService {
 
     return {
       id: patient.id,
-      name: patient.user?.name || 'Nome não informado',
-      email: patient.user?.email || '',
+      name: patient.user?.name || patient.name || 'Nome não informado',
+      email: patient.user?.email || patient.email || '',
       phone: patient.phone,
       birthDate: patient.birthDate?.toISOString() || null,
       cpf: patient.cpf,
       address: null,
       surgeryType: patient.surgeryType || 'Não informado',
       surgeryDate: patient.surgeryDate?.toISOString() || null,
-      surgeon: null,
+      surgeon: patient.surgeon || null,
       dayPostOp,
       weekPostOp,
       adherenceRate,
@@ -741,7 +741,7 @@ export class PatientsService {
     const paginatedItems = historyItems.slice(skip, skip + limit);
 
     return {
-      patientName: patient.user?.name || 'Nome não informado',
+      patientName: patient.user?.name || patient.name || 'Nome não informado',
       items: paginatedItems,
       page,
       limit,
@@ -778,6 +778,9 @@ export class PatientsService {
         heightCm: dto.heightCm,
         emergencyContact: dto.emergencyContact,
         emergencyPhone: dto.emergencyPhone,
+        surgeryType: dto.surgeryType,
+        surgeryDate: dto.surgeryDate ? new Date(dto.surgeryDate) : undefined,
+        surgeon: dto.surgeon,
       },
       include: {
         user: {
@@ -788,14 +791,131 @@ export class PatientsService {
 
     return {
       id: updated.id,
-      name: updated.user?.name,
-      email: updated.user?.email,
+      name: updated.user?.name || updated.name,
+      email: updated.user?.email || updated.email,
       phone: updated.phone,
       bloodType: updated.bloodType,
       weightKg: updated.weightKg,
       heightCm: updated.heightCm,
       emergencyContact: updated.emergencyContact,
       emergencyPhone: updated.emergencyPhone,
+      surgeryType: updated.surgeryType,
+      surgeryDate: updated.surgeryDate?.toISOString() || null,
+      surgeon: updated.surgeon,
+    };
+  }
+
+  // ==================== CONVITE DE PACIENTE ====================
+
+  /**
+   * Cria paciente via convite do admin (pré-cadastro antes do Magic Link)
+   * Cria o registro Patient sem userId (será vinculado quando paciente acessar)
+   * Se surgeryDate for informada, cria agendamento da cirurgia automaticamente
+   */
+  async invitePatient(clinicId: string, dto: InvitePatientDto) {
+    // Verificar se já existe paciente com este email na clínica
+    const existingPatient = await this.prisma.patient.findFirst({
+      where: {
+        email: dto.email,
+        clinicId,
+      },
+    });
+
+    if (existingPatient) {
+      throw new ConflictException('Já existe um paciente com este email nesta clínica');
+    }
+
+    // Criar paciente e agendamento em uma transação
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Criar paciente (sem userId - será vinculado depois)
+      const patient = await tx.patient.create({
+        data: {
+          name: dto.name,
+          email: dto.email,
+          phone: dto.phone,
+          clinicId,
+          surgeryDate: dto.surgeryDate ? new Date(dto.surgeryDate) : null,
+          surgeryType: dto.surgeryType,
+        },
+      });
+
+      let surgeryAppointment = null;
+
+      // Se tem data de cirurgia, criar agendamento automaticamente
+      if (dto.surgeryDate) {
+        const surgeryDate = new Date(dto.surgeryDate);
+
+        surgeryAppointment = await tx.appointment.create({
+          data: {
+            patientId: patient.id,
+            clinicId,
+            title: 'Cirurgia',
+            description: dto.surgeryType
+              ? `Cirurgia: ${dto.surgeryType}`
+              : 'Procedimento cirúrgico agendado',
+            date: surgeryDate,
+            time: '08:00', // Horário padrão para cirurgias
+            duration: 120, // 2 horas padrão
+            type: 'SURGERY',
+            status: AppointmentStatus.CONFIRMED, // Cirurgia já confirmada pelo admin
+            notes: 'Agendamento criado automaticamente no cadastro do paciente',
+          },
+        });
+      }
+
+      return { patient, surgeryAppointment };
+    });
+
+    return {
+      patient: {
+        id: result.patient.id,
+        name: result.patient.name,
+        email: result.patient.email,
+        phone: result.patient.phone,
+        surgeryDate: result.patient.surgeryDate?.toISOString() || null,
+        surgeryType: result.patient.surgeryType,
+      },
+      surgeryAppointment: result.surgeryAppointment
+        ? {
+            id: result.surgeryAppointment.id,
+            date: result.surgeryAppointment.date.toISOString(),
+            time: result.surgeryAppointment.time,
+            title: result.surgeryAppointment.title,
+            status: result.surgeryAppointment.status,
+          }
+        : null,
+      message: 'Paciente criado com sucesso. Envie o Magic Link para acesso.',
+    };
+  }
+
+  /**
+   * Vincula um paciente existente a um userId (quando paciente acessa via Magic Link)
+   */
+  async linkPatientToUser(email: string, userId: string, clinicId: string) {
+    // Buscar paciente pelo email na clínica
+    const patient = await this.prisma.patient.findFirst({
+      where: {
+        email,
+        clinicId,
+        userId: null, // Ainda não vinculado
+      },
+    });
+
+    if (!patient) {
+      return null; // Não encontrou paciente pré-cadastrado
+    }
+
+    // Vincular ao userId
+    const updated = await this.prisma.patient.update({
+      where: { id: patient.id },
+      data: { userId },
+    });
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      surgeryDate: updated.surgeryDate?.toISOString() || null,
     };
   }
 }

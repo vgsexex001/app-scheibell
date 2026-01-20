@@ -26,7 +26,7 @@ export class RegisterDto {
   @IsOptional()
   role?: UserRole;
 
-  @IsString()
-  @IsOptional()
-  clinicId?: string;
+  @IsString({ message: 'clinicId deve ser uma string' })
+  @IsNotEmpty({ message: 'clinicId é obrigatório' })
+  clinicId: string;
 }

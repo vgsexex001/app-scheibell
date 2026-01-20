@@ -4,23 +4,64 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../core/providers/auth_provider.dart';
+import '../../../core/services/api_service.dart';
 import 'tela_videos.dart';
 
 // ========== MODELOS ==========
 class Video {
   final String id;
   final String titulo;
+  final String? descricao;
   final String duracao;
   final bool assistido;
   final String? thumbnailUrl;
+  final String? videoUrl;
+  final double progressPercent;
 
   Video({
     required this.id,
     required this.titulo,
+    this.descricao,
     required this.duracao,
     required this.assistido,
     this.thumbnailUrl,
+    this.videoUrl,
+    this.progressPercent = 0,
   });
+
+  factory Video.fromSupabase(Map<String, dynamic> data, Map<String, dynamic>? progress) {
+    // Usar duration do banco - se 0 ou null, mostrar vazio
+    final dataDuration = data['duration'] as int? ?? 0;
+    String duracao;
+    if (dataDuration > 0) {
+      final minutes = dataDuration ~/ 60;
+      final secs = dataDuration % 60;
+      duracao = '$minutes:${secs.toString().padLeft(2, '0')}';
+    } else {
+      duracao = ''; // Sem duração definida
+    }
+
+    final rawProgress = progress?['progressPercent'];
+    final progressPercent = rawProgress != null
+        ? (rawProgress is int ? rawProgress.toDouble() : rawProgress as double)
+        : 0.0;
+    final isCompleted = progress?['isCompleted'] as bool? ?? false;
+
+    return Video(
+      id: data['id'] as String,
+      titulo: data['title'] as String,
+      descricao: data['description'] as String?,
+      duracao: duracao,
+      assistido: isCompleted,
+      thumbnailUrl: data['thumbnailUrl'] as String?,
+      videoUrl: data['videoUrl'] as String?,
+      progressPercent: progressPercent,
+    );
+  }
 }
 
 class PdfRecurso {
@@ -28,13 +69,37 @@ class PdfRecurso {
   final String titulo;
   final String tamanho;
   final String? url;
+  final String? descricao;
 
   PdfRecurso({
     required this.id,
     required this.titulo,
     required this.tamanho,
     this.url,
+    this.descricao,
   });
+
+  /// Cria PdfRecurso a partir de dados do Supabase (clinic_documents)
+  factory PdfRecurso.fromSupabase(Map<String, dynamic> data) {
+    // Formatar tamanho do arquivo
+    final fileSize = data['fileSize'] as int? ?? 0;
+    String tamanho;
+    if (fileSize >= 1024 * 1024) {
+      tamanho = '${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB';
+    } else if (fileSize >= 1024) {
+      tamanho = '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    } else {
+      tamanho = '$fileSize B';
+    }
+
+    return PdfRecurso(
+      id: data['id'] as String,
+      titulo: data['title'] as String? ?? 'Documento',
+      tamanho: tamanho,
+      url: data['fileUrl'] as String?,
+      descricao: data['description'] as String?,
+    );
+  }
 }
 
 class ContatoEmergencia {
@@ -85,45 +150,25 @@ class _TelaRecursosState extends State<TelaRecursos> {
   static const _corBotaoFundo = Color(0xFFF5F7FA);
   static const _corBotaoBorda = Color(0xFFE0E0E0);
 
-  // Dados mock
-  static final List<Video> _videos = [
-    Video(
-      id: '1',
-      titulo: 'Cuidados pós-operatórios',
-      duracao: '5:30',
-      assistido: true,
-    ),
-    Video(
-      id: '2',
-      titulo: 'Quando retomar exercícios',
-      duracao: '3:45',
-      assistido: false,
-    ),
-    Video(
-      id: '3',
-      titulo: 'Alimentação na recuperação',
-      duracao: '4:20',
-      assistido: false,
-    ),
-  ];
+  // Vídeos carregados do Supabase
+  List<Video> _videos = [];
+  bool _isLoadingVideos = true;
+  final ApiService _apiService = ApiService();
 
-  static final List<PdfRecurso> _pdfs = [
-    PdfRecurso(
-      id: '1',
-      titulo: 'Guia completo de recuperação',
-      tamanho: '2.3 MB',
-    ),
-    PdfRecurso(
-      id: '2',
-      titulo: 'Instruções de medicação',
-      tamanho: '1.1 MB',
-    ),
-    PdfRecurso(
-      id: '3',
-      titulo: 'Exercícios recomendados',
-      tamanho: '1.8 MB',
-    ),
-  ];
+  // Documentos carregados do Supabase
+  List<PdfRecurso> _documentos = [];
+  bool _isLoadingDocumentos = true;
+
+  /// Verifica se Supabase está disponível
+  bool get _isSupabaseAvailable {
+    try {
+      Supabase.instance;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
 
   static final _emergencia = ContatoEmergencia(
     telefone: '+5511999999999',
@@ -160,6 +205,114 @@ class _TelaRecursosState extends State<TelaRecursos> {
   void initState() {
     super.initState();
     _initializeMap();
+    _carregarVideos();
+    _carregarDocumentos();
+  }
+
+  /// Carrega vídeos do Supabase
+  Future<void> _carregarVideos() async {
+    if (!_isSupabaseAvailable) {
+      setState(() => _isLoadingVideos = false);
+      return;
+    }
+
+    try {
+      final clinicId = context.read<AuthProvider>().user?.clinicId;
+      debugPrint('TelaRecursos: clinicId=$clinicId');
+
+      if (clinicId != null) {
+        final supabase = Supabase.instance.client;
+        final response = await supabase
+            .from('clinic_videos')
+            .select()
+            .eq('clinicId', clinicId)
+            .eq('isActive', true)
+            .order('sortOrder')
+            .limit(4);
+
+        final supabaseVideos = List<Map<String, dynamic>>.from(response);
+        debugPrint('TelaRecursos: Encontrados ${supabaseVideos.length} videos');
+
+        // Buscar progresso
+        Map<String, Map<String, dynamic>> progressMap = {};
+        try {
+          final progressResponse = await _apiService.get('/patient/videos/progress');
+          if (progressResponse.statusCode == 200 && progressResponse.data != null) {
+            final progressList = progressResponse.data as List<dynamic>? ?? [];
+            for (final p in progressList) {
+              final contentId = p['contentId'] as String?;
+              if (contentId != null) {
+                progressMap[contentId] = p as Map<String, dynamic>;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Erro ao buscar progresso: $e');
+        }
+
+        final videos = supabaseVideos.map((data) {
+          return Video.fromSupabase(data, progressMap[data['id']]);
+        }).toList();
+
+        if (mounted) {
+          setState(() {
+            _videos = videos;
+            _isLoadingVideos = false;
+          });
+        }
+      } else {
+        setState(() => _isLoadingVideos = false);
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar vídeos: $e');
+      if (mounted) {
+        setState(() => _isLoadingVideos = false);
+      }
+    }
+  }
+
+  /// Carrega documentos do Supabase (clinic_documents)
+  Future<void> _carregarDocumentos() async {
+    if (!_isSupabaseAvailable) {
+      setState(() => _isLoadingDocumentos = false);
+      return;
+    }
+
+    try {
+      final clinicId = context.read<AuthProvider>().user?.clinicId;
+      debugPrint('TelaRecursos: Carregando documentos para clinicId=$clinicId');
+
+      if (clinicId != null) {
+        final supabase = Supabase.instance.client;
+        final response = await supabase
+            .from('clinic_documents')
+            .select()
+            .eq('clinicId', clinicId)
+            .eq('isActive', true)
+            .order('createdAt', ascending: false);
+
+        final supabaseDocumentos = List<Map<String, dynamic>>.from(response);
+        debugPrint('TelaRecursos: Encontrados ${supabaseDocumentos.length} documentos');
+
+        final documentos = supabaseDocumentos.map((data) {
+          return PdfRecurso.fromSupabase(data);
+        }).toList();
+
+        if (mounted) {
+          setState(() {
+            _documentos = documentos;
+            _isLoadingDocumentos = false;
+          });
+        }
+      } else {
+        setState(() => _isLoadingDocumentos = false);
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar documentos: $e');
+      if (mounted) {
+        setState(() => _isLoadingDocumentos = false);
+      }
+    }
   }
 
   @override
@@ -612,11 +765,42 @@ class _TelaRecursosState extends State<TelaRecursos> {
         ),
         const SizedBox(height: 16),
 
-        // Mostrar apenas os 2 primeiros vídeos como preview
-        ..._videos.take(2).map((video) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _buildCardVideo(video),
-            )),
+        // Loading indicator
+        if (_isLoadingVideos)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(
+                color: Color(0xFFA49E86),
+              ),
+            ),
+          )
+        // Mensagem se não há vídeos
+        else if (_videos.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.videocam_off_outlined, size: 40, color: Colors.grey[400]),
+                const SizedBox(height: 8),
+                Text(
+                  'Nenhum vídeo disponível',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
+              ],
+            ),
+          )
+        // Mostrar vídeos do Supabase
+        else
+          ..._videos.map((video) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildCardVideo(video),
+              )),
       ],
     );
   }
@@ -624,109 +808,171 @@ class _TelaRecursosState extends State<TelaRecursos> {
   Widget _buildCardVideo(Video video) {
     return GestureDetector(
       onTap: () {
-        // TODO: Abrir player de vídeo
-        debugPrint('Abrir vídeo: ${video.titulo}');
+        // Navegar para tela de vídeos
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const TelaVideos()),
+        );
       },
       child: Container(
         width: double.infinity,
-        constraints: const BoxConstraints(minHeight: 82),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: _corBotaoBorda,
-            width: 1,
-          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _corBotaoBorda, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: IntrinsicHeight(
-          child: Row(
-            children: [
-              // Thumbnail do vídeo
-              Container(
-                width: 100,
-                constraints: const BoxConstraints(minHeight: 80),
-                decoration: const BoxDecoration(
-                  color: _corTextoPrincipal,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    bottomLeft: Radius.circular(24),
-                  ),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.play_circle_fill,
-                    color: Colors.white,
-                    size: 36,
-                  ),
+        child: Row(
+          children: [
+            // Thumbnail do vídeo à esquerda
+            ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+              child: Container(
+                width: 120,
+                height: 90,
+                color: _corTextoPrincipal,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (video.thumbnailUrl != null && video.thumbnailUrl!.isNotEmpty)
+                      Image.network(
+                        video.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(
+                            Icons.play_circle_fill,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                        ),
+                      )
+                    else
+                      const Center(
+                        child: Icon(
+                          Icons.play_circle_fill,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+
+                    // Badge Assistido
+                    if (video.assistido)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _corBadgeAssistido,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Assistido',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // Barra de progresso
+                    if (video.progressPercent > 0 && !video.assistido)
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          height: 3,
+                          color: Colors.white.withOpacity(0.3),
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: video.progressPercent / 100,
+                            child: Container(color: Colors.red),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
+            ),
 
-              // Conteúdo
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Título
+            // Conteúdo à direita
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Título
+                    Text(
+                      video.titulo,
+                      style: const TextStyle(
+                        color: _corTextoPrincipal,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    // Descrição
+                    if (video.descricao != null && video.descricao!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
                       Text(
-                        video.titulo,
+                        video.descricao!,
                         style: const TextStyle(
-                          color: _corTextoPrincipal,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          height: 1.43,
+                          color: _corTextoSecundario,
+                          fontSize: 12,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
-                      // Duração + Badge
+                    ],
+                    // Duração (só mostra se existir)
+                    if (video.duracao.isNotEmpty) ...[
+                      const SizedBox(height: 8),
                       Row(
                         children: [
+                          const Icon(
+                            Icons.access_time,
+                            size: 14,
+                            color: _corTextoSecundario,
+                          ),
+                          const SizedBox(width: 4),
                           Text(
                             video.duracao,
                             style: const TextStyle(
                               color: _corTextoSecundario,
                               fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              height: 1.33,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          if (video.assistido) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              height: 21,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: _corBadgeAssistido,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'Assistido',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.33,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ],
-                  ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-            ],
-          ),
+            ),
+
+            // Seta
+            const Padding(
+              padding: EdgeInsets.only(right: 12),
+              child: Icon(
+                Icons.chevron_right,
+                color: _corTextoSecundario,
+                size: 24,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -759,11 +1005,42 @@ class _TelaRecursosState extends State<TelaRecursos> {
         ),
         const SizedBox(height: 16),
 
-        // Lista de PDFs
-        ..._pdfs.map((pdf) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _buildCardPdf(pdf),
-            )),
+        // Loading indicator
+        if (_isLoadingDocumentos)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(
+                color: Color(0xFFA49E86),
+              ),
+            ),
+          )
+        // Mensagem se não há documentos
+        else if (_documentos.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.description_outlined, size: 40, color: Colors.grey[400]),
+                const SizedBox(height: 8),
+                Text(
+                  'Nenhum documento disponível',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
+              ],
+            ),
+          )
+        // Lista de documentos do Supabase
+        else
+          ..._documentos.map((pdf) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildCardPdf(pdf),
+              )),
       ],
     );
   }
@@ -832,10 +1109,7 @@ class _TelaRecursosState extends State<TelaRecursos> {
 
           // Botão Baixar
           GestureDetector(
-            onTap: () {
-              // TODO: Baixar PDF
-              debugPrint('Baixar PDF: ${pdf.titulo}');
-            },
+            onTap: () => _baixarDocumento(pdf),
             child: Container(
               height: 32,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -863,6 +1137,51 @@ class _TelaRecursosState extends State<TelaRecursos> {
         ],
       ),
     );
+  }
+
+  /// Baixa/abre documento PDF
+  Future<void> _baixarDocumento(PdfRecurso pdf) async {
+    if (pdf.url == null || pdf.url!.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('URL do documento não disponível'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    debugPrint('Abrindo documento: ${pdf.titulo} - ${pdf.url}');
+
+    try {
+      final uri = Uri.parse(pdf.url!);
+
+      // Tentar abrir diretamente (canLaunchUrl pode falhar em algumas plataformas)
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        // Fallback: tentar abrir no browser
+        await launchUrl(
+          uri,
+          mode: LaunchMode.platformDefault,
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao abrir documento: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao abrir documento: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   // ========== SEÇÃO: GUIA DA CIDADE ==========

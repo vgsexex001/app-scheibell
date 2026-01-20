@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 import 'patient_chat_screen.dart';
-import 'appointment_detail_screen.dart';
 import '../providers/admin_chat_controller.dart';
 import '../../chatbot/domain/entities/chat_message.dart' as domain;
+import '../../chatbot/presentation/widgets/audio_recorder_widget.dart';
+import '../../chatbot/data/datasources/chat_api_datasource.dart';
 import '../../../core/services/api_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -14,24 +17,28 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  int _selectedTabIndex = 0; // 0 = IA, 1 = Clínico (atendimento humano), 2 = Agenda
+  int _selectedTabIndex = 0; // 0 = IA, 1 = Clínico (atendimento humano)
   final int _selectedNavIndex = 2; // Chat tab
   final TextEditingController _messageController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ImagePicker _imagePicker = ImagePicker();
+  File? _selectedImage;
+  bool _isRecordingAudio = false;
 
   // API Service
   final ApiService _apiService = ApiService();
+  final ChatApiDatasource _chatApiDatasource = ChatApiDatasource();
 
   // Estado para conversas de pacientes
   List<PatientConversation> _patientConversations = [];
+  List<PatientConversation> _filteredPatientConversations = [];
   bool _isLoadingConversations = true;
-
-  // Estado para agendamentos
-  List<Appointment> _appointments = [];
-  bool _isLoadingAppointments = true;
+  String _searchQuery = '';
 
   // Estado para conversas em modo HUMAN (atendimento)
   List<HumanHandoffConversation> _humanConversations = [];
+  List<HumanHandoffConversation> _filteredHumanConversations = [];
   bool _isLoadingHumanConversations = true;
   int _humanConversationsCount = 0;
 
@@ -39,12 +46,51 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    final query = _searchController.text.toLowerCase().trim();
+    setState(() {
+      _searchQuery = query;
+      _filterConversations();
+    });
+  }
+
+  void _filterConversations() {
+    if (_searchQuery.isEmpty) {
+      _filteredPatientConversations = List.from(_patientConversations);
+      _filteredHumanConversations = List.from(_humanConversations);
+    } else {
+      _filteredPatientConversations = _patientConversations.where((conv) {
+        final nameMatch = conv.name.toLowerCase().contains(_searchQuery);
+        final idMatch = conv.id.toLowerCase().contains(_searchQuery);
+        // Também permite buscar por status
+        final statusMatch = conv.status.label.toLowerCase().contains(_searchQuery);
+        return nameMatch || idMatch || statusMatch;
+      }).toList();
+
+      _filteredHumanConversations = _humanConversations.where((conv) {
+        final nameMatch = conv.patientName.toLowerCase().contains(_searchQuery);
+        final idMatch = conv.patientId.toLowerCase().contains(_searchQuery);
+        return nameMatch || idMatch;
+      }).toList();
+    }
+    // Aplica ordenação por prioridade
+    _sortConversationsByPriority();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _filterConversations();
+    });
   }
 
   Future<void> _loadData() async {
     await Future.wait([
       _loadPatientConversations(),
-      _loadAppointments(),
       _loadHumanConversations(),
     ]);
   }
@@ -70,12 +116,14 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _humanConversations = conversations;
         _humanConversationsCount = conversations.length;
+        _filterConversations();
         _isLoadingHumanConversations = false;
       });
     } catch (e) {
       print('Erro ao carregar conversas humanas: $e');
       setState(() {
         _humanConversations = [];
+        _filteredHumanConversations = [];
         _humanConversationsCount = 0;
         _isLoadingHumanConversations = false;
       });
@@ -85,27 +133,36 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadPatientConversations() async {
     setState(() => _isLoadingConversations = true);
     try {
-      final data = await _apiService.getChatConversations();
+      // Usa endpoint de admin para listar TODAS as conversas de pacientes da clínica
+      final data = await _apiService.getAdminAllConversations();
       final conversations = data.map((item) {
+        final lastMessage = item['lastMessage'] ?? '';
+        final backendStatus = item['status'] as String?;
+        // Analisa automaticamente a mensagem para detectar sinais
+        final autoStatus = _analyzeMessageForStatus(lastMessage, backendStatus);
+
         return PatientConversation(
           id: item['id'] ?? '',
           name: item['patientName'] ?? item['name'] ?? 'Paciente',
           procedure: item['procedure'] ?? 'Consulta',
           daysPostOp: item['daysPostOp'] ?? 0,
-          lastMessage: item['lastMessage'] ?? '',
+          lastMessage: lastMessage,
           lastMessageTime: item['lastMessageTime'] ?? '',
           unreadCount: item['unreadCount'] ?? 0,
-          status: _mapPatientStatus(item['status']),
+          status: autoStatus,
         );
       }).toList();
       setState(() {
         _patientConversations = conversations;
+        _filterConversations();
+        _sortConversationsByPriority();
         _isLoadingConversations = false;
       });
     } catch (e) {
       print('Erro ao carregar conversas: $e');
       setState(() {
         _patientConversations = [];
+        _filteredPatientConversations = [];
         _isLoadingConversations = false;
       });
     }
@@ -117,80 +174,146 @@ class _ChatScreenState extends State<ChatScreen> {
         return PatientStatus.urgent;
       case 'ATTENTION':
         return PatientStatus.attention;
+      case 'MEDICATION':
+        return PatientStatus.medication;
+      case 'EXAM':
+        return PatientStatus.exam;
+      case 'ANXIOUS':
+        return PatientStatus.anxious;
       default:
         return PatientStatus.normal;
     }
   }
 
-  Future<void> _loadAppointments() async {
-    setState(() => _isLoadingAppointments = true);
-    try {
-      final data = await _apiService.getAppointments();
-      final appointments = data.map((item) => _mapAppointment(item)).toList();
-      setState(() {
-        _appointments = appointments;
-        _isLoadingAppointments = false;
-      });
-    } catch (e) {
-      print('Erro ao carregar agendamentos: $e');
-      setState(() {
-        _appointments = [];
-        _isLoadingAppointments = false;
-      });
+  /// Analisa a última mensagem e detecta sinais de urgência/atenção automaticamente
+  PatientStatus _analyzeMessageForStatus(String message, String? backendStatus) {
+    // Se o backend já definiu um status urgente, mantém
+    final mapped = _mapPatientStatus(backendStatus);
+    if (mapped == PatientStatus.urgent) return mapped;
+
+    final lowerMessage = message.toLowerCase();
+
+    // Palavras-chave para URGENTE (alta prioridade)
+    final urgentKeywords = [
+      'sangramento', 'sangrando', 'muito sangue',
+      'febre alta', 'febre forte',
+      'não consigo respirar', 'falta de ar', 'dificuldade respirar',
+      'dor muito forte', 'dor insuportável', 'dor intensa',
+      'emergência', 'urgente', 'socorro',
+      'desmaiei', 'desmaiar', 'tontura forte',
+      'vomitando muito', 'vômito constante',
+      'inchaço muito grande', 'inchaço grave',
+    ];
+
+    for (final keyword in urgentKeywords) {
+      if (lowerMessage.contains(keyword)) {
+        return PatientStatus.urgent;
+      }
     }
+
+    // Palavras-chave para ATENÇÃO
+    final attentionKeywords = [
+      'preocupado', 'preocupada',
+      'não está normal', 'está estranho',
+      'piorou', 'piorando',
+      'vermelho', 'vermelhidão',
+      'secreção', 'pus',
+      'febre', 'temperatura',
+      'dor que não passa', 'dor constante',
+      'inchaço', 'inchado',
+      'hematoma',
+    ];
+
+    for (final keyword in attentionKeywords) {
+      if (lowerMessage.contains(keyword)) {
+        return PatientStatus.attention;
+      }
+    }
+
+    // Palavras-chave para ANSIOSO
+    final anxiousKeywords = [
+      'ansioso', 'ansiosa', 'ansiedade',
+      'nervoso', 'nervosa',
+      'medo', 'com medo',
+      'preocupado', 'preocupada',
+      'não consigo dormir', 'insônia',
+      'estressado', 'estressada',
+      'angústia', 'angustiado',
+    ];
+
+    for (final keyword in anxiousKeywords) {
+      if (lowerMessage.contains(keyword)) {
+        return PatientStatus.anxious;
+      }
+    }
+
+    // Palavras-chave para MEDICAÇÃO
+    final medicationKeywords = [
+      'remédio', 'medicamento', 'medicação',
+      'tomar', 'horário',
+      'esqueci de tomar', 'posso tomar',
+      'dipirona', 'paracetamol', 'ibuprofeno',
+      'antibiótico', 'analgésico',
+      'receita', 'prescrição',
+      'dose', 'dosagem',
+    ];
+
+    for (final keyword in medicationKeywords) {
+      if (lowerMessage.contains(keyword)) {
+        return PatientStatus.medication;
+      }
+    }
+
+    // Palavras-chave para EXAME
+    final examKeywords = [
+      'exame', 'resultado',
+      'ultrassom', 'raio-x', 'tomografia',
+      'hemograma', 'análise',
+      'laboratório', 'coleta',
+      'retorno', 'consulta',
+      'avaliação',
+    ];
+
+    for (final keyword in examKeywords) {
+      if (lowerMessage.contains(keyword)) {
+        return PatientStatus.exam;
+      }
+    }
+
+    // Se o backend definiu algo, mantém
+    if (mapped != PatientStatus.normal) return mapped;
+
+    return PatientStatus.normal;
   }
 
-  Appointment _mapAppointment(Map<String, dynamic> item) {
-    final patientName = item['patientName'] ?? item['patient']?['name'] ?? 'Paciente';
-    final initials = _getInitials(patientName);
+  /// Retorna o número de pacientes que precisam de atenção (urgente, atenção ou não lidas)
+  int _getAttentionCount() {
+    return _patientConversations.where((p) =>
+        p.status == PatientStatus.urgent ||
+        p.status == PatientStatus.attention ||
+        p.unreadCount > 0).length;
+  }
 
-    AppointmentType procedureType;
-    switch (item['type']) {
-      case 'RETURN_VISIT':
-        procedureType = AppointmentType.returnVisit;
-        break;
-      case 'EVALUATION':
-        procedureType = AppointmentType.evaluation;
-        break;
-      case 'PHYSIOTHERAPY':
-        procedureType = AppointmentType.physiotherapy;
-        break;
-      case 'EXAM':
-        procedureType = AppointmentType.exam;
-        break;
-      default:
-        procedureType = AppointmentType.other;
-    }
+  /// Ordena conversas por prioridade (urgente primeiro)
+  void _sortConversationsByPriority() {
+    _filteredPatientConversations.sort((a, b) {
+      // Primeiro por prioridade do status
+      final priorityCompare = a.status.priority.compareTo(b.status.priority);
+      if (priorityCompare != 0) return priorityCompare;
 
-    AppointmentStatus status;
-    switch (item['status']) {
-      case 'CONFIRMED':
-        status = AppointmentStatus.confirmed;
-        break;
-      case 'CANCELLED':
-        status = AppointmentStatus.cancelled;
-        break;
-      default:
-        status = AppointmentStatus.pending;
-    }
+      // Depois por mensagens não lidas (mais não lidas primeiro)
+      final unreadCompare = b.unreadCount.compareTo(a.unreadCount);
+      if (unreadCompare != 0) return unreadCompare;
 
-    return Appointment(
-      id: item['id'] ?? '',
-      patientName: patientName,
-      patientInitials: initials,
-      procedure: item['title'] ?? item['procedure'] ?? 'Consulta',
-      procedureType: procedureType,
-      date: DateTime.tryParse(item['date'] ?? '') ?? DateTime.now(),
-      time: item['time'] ?? '00:00',
-      duration: item['duration'] ?? '30 min',
-      status: status,
-      notes: item['description'] ?? item['notes'] ?? '',
-    );
+      // Por último, alfabeticamente
+      return a.name.compareTo(b.name);
+    });
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -218,15 +341,13 @@ class _ChatScreenState extends State<ChatScreen> {
       case 0:
         return _buildIAChatContent();
       case 1:
-        return _buildAtendimentoContent(); // Clínico (atendimento humano)
-      case 2:
-        return _buildAgendamentosContent();
+        return _buildClinicoPatientsContent(); // Clínico (lista de pacientes com flags automáticas)
       default:
         return _buildIAChatContent();
     }
   }
 
-  /// Tab Bar com 3 abas
+  /// Tab Bar com 2 abas: IA e Clínico
   Widget _buildTabBar() {
     return Container(
       width: double.infinity,
@@ -257,16 +378,7 @@ class _ChatScreenState extends State<ChatScreen> {
               icon: Icons.support_agent,
               label: 'Clínico',
               isActive: _selectedTabIndex == 1,
-              badgeCount: _humanConversationsCount,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _buildTab(
-              index: 2,
-              icon: Icons.calendar_today_outlined,
-              label: 'Agenda',
-              isActive: _selectedTabIndex == 2,
+              badgeCount: _getAttentionCount(),
             ),
           ),
         ],
@@ -473,14 +585,14 @@ class _ChatScreenState extends State<ChatScreen> {
       child: const Row(
         children: [
           Icon(
-            Icons.info_outline,
+            Icons.auto_awesome,
             size: 12,
             color: Colors.white,
           ),
           SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Este é um chat com IA. As respostas são sugestões e devem ser revisadas antes do envio.',
+              'Assistente de comunicação médico-paciente. Peça sugestões de respostas para seus pacientes.',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 12,
@@ -581,7 +693,6 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildMessageInput() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -591,126 +702,328 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: ShapeDecoration(
-              color: const Color(0xFFF5F3EF),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: const Icon(
-              Icons.attach_file,
-              size: 20,
-              color: Color(0xFF495565),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: ShapeDecoration(
-                color: const Color(0xFFFAFAFA),
-                shape: RoundedRectangleBorder(
-                  side: const BorderSide(
-                    width: 1,
-                    color: Color(0xFFE0E0E0),
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: TextField(
-                controller: _messageController,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  hintText: 'Digite sua mensagem ou peça uma sugestão à IA...',
-                  hintStyle: TextStyle(
-                    color: Color(0xFF9CA3AF),
-                    fontSize: 12,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w400,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 12),
-                ),
-                style: const TextStyle(
-                  color: Color(0xFF1A1A1A),
-                  fontSize: 12,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Botão de microfone para gravar áudio
-          GestureDetector(
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Gravação de áudio em breve!'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: ShapeDecoration(
-                color: const Color(0xFFF5F3EF),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Icon(
-                Icons.mic,
-                size: 20,
-                color: Color(0xFF4F4A34),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Botão de enviar
-          GestureDetector(
-            onTap: _sendMessage,
-            child: Opacity(
-              opacity: _messageController.text.isEmpty ? 0.5 : 1.0,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: ShapeDecoration(
-                  color: const Color(0xFF4F4A34),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  shadows: const [
-                    BoxShadow(
-                      color: Color(0x19000000),
-                      blurRadius: 6,
-                      offset: Offset(0, 3),
-                      spreadRadius: 0,
+          // Sugestões rápidas de IA (oculta durante gravação)
+          if (!_isRecordingAudio) _buildQuickSuggestions(),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Quando está gravando, mostra o AudioRecorderWidget
+                if (_isRecordingAudio) ...[
+                  Expanded(
+                    child: AudioRecorderWidget(
+                      primaryColor: const Color(0xFF4F4A34),
+                      onAudioRecorded: (audioFile, durationSeconds) {
+                        setState(() {
+                          _isRecordingAudio = false;
+                        });
+                        _handleAudioRecorded(audioFile, durationSeconds);
+                      },
+                      onRecordingStarted: () {},
+                      onRecordingCancelled: () {
+                        setState(() {
+                          _isRecordingAudio = false;
+                        });
+                      },
                     ),
-                    BoxShadow(
-                      color: Color(0x14000000),
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                      spreadRadius: 0,
+                  ),
+                ] else ...[
+                  // Botão anexo
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: GestureDetector(
+                      onTap: _showAttachmentOptions,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F3EF),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(
+                          Icons.attach_file,
+                          size: 20,
+                          color: Color(0xFF495565),
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.send,
-                  size: 20,
-                  color: Colors.white,
-                ),
-              ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Campo de texto
+                  Expanded(
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minHeight: 44,
+                        maxHeight: 120,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F3EF),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: TextField(
+                        controller: _messageController,
+                        onChanged: (_) => setState(() {}),
+                        textAlignVertical: TextAlignVertical.center,
+                        maxLines: null,
+                        minLines: 1,
+                        keyboardType: TextInputType.multiline,
+                        decoration: const InputDecoration(
+                          hintText: 'Peça ajuda para responder seu paciente...',
+                          hintStyle: TextStyle(
+                            color: Color(0xFF9CA3AF),
+                            fontSize: 13,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w400,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          isDense: true,
+                        ),
+                        style: const TextStyle(
+                          color: Color(0xFF1A1A1A),
+                          fontSize: 13,
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Botão de microfone - só aparece quando não há texto
+                  if (_messageController.text.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isRecordingAudio = true;
+                          });
+                        },
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F3EF),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.mic,
+                            size: 20,
+                            color: Color(0xFF4F4A34),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_messageController.text.isEmpty)
+                    const SizedBox(width: 8),
+                  // Botão de enviar - sempre visível
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: GestureDetector(
+                      onTap: _messageController.text.isEmpty ? null : _sendMessage,
+                      child: Opacity(
+                        opacity: _messageController.text.isEmpty ? 0.5 : 1.0,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4F4A34),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x19000000),
+                                blurRadius: 6,
+                                offset: Offset(0, 3),
+                                spreadRadius: 0,
+                              ),
+                              BoxShadow(
+                                color: Color(0x14000000),
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                                spreadRadius: 0,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.send,
+                            size: 20,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Processa áudio gravado - transcreve e envia para a IA
+  Future<void> _handleAudioRecorded(File audioFile, int durationSeconds) async {
+    // Formata duração
+    final minutes = durationSeconds ~/ 60;
+    final seconds = durationSeconds % 60;
+    final durationStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+    // Mostra indicador de processamento
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              SizedBox(width: 12),
+              Text('Transcrevendo áudio...'),
+            ],
+          ),
+          duration: Duration(seconds: 30),
+        ),
+      );
+    }
+
+    try {
+      // Usa a OpenAI Whisper API via backend para transcrever
+      final transcription = await _transcribeAudioLocally(audioFile);
+
+      // Fecha o SnackBar de loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      }
+
+      if (transcription != null && transcription.isNotEmpty) {
+        // Envia a transcrição para a IA
+        final chatController = context.read<AdminChatController>();
+        await chatController.sendMessage(transcription);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Não foi possível transcrever o áudio. Tente digitar sua mensagem.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[AUDIO] Error transcribing: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao processar áudio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      // Limpa o arquivo de áudio temporário
+      try {
+        if (audioFile.existsSync()) {
+          audioFile.deleteSync();
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Transcreve áudio usando OpenAI Whisper API via backend
+  Future<String?> _transcribeAudioLocally(File audioFile) async {
+    try {
+      // Valida o arquivo
+      if (!_chatApiDatasource.isValidAudioFile(audioFile)) {
+        debugPrint('[AUDIO] Invalid audio file format');
+        return null;
+      }
+
+      // Faz upload do áudio via ChatApiDatasource
+      final uploadResponse = await _chatApiDatasource.uploadAudio(
+        audioFile,
+        durationSeconds: 0,
+      );
+
+      debugPrint('[AUDIO] Upload successful, attachmentId: ${uploadResponse.id}');
+
+      // Solicita transcrição
+      final transcribeResponse = await _chatApiDatasource.transcribeAudio(
+        attachmentId: uploadResponse.id,
+      );
+
+      debugPrint('[AUDIO] Transcription: ${transcribeResponse.transcription}');
+      return transcribeResponse.transcription;
+    } catch (e) {
+      debugPrint('[AUDIO] Transcription error: $e');
+      return null;
+    }
+  }
+
+  Widget _buildQuickSuggestions() {
+    final suggestions = [
+      'Sugerir resposta para dúvida sobre medicação',
+      'Como explicar cuidados pós-operatórios?',
+      'Resposta para sintoma relatado pelo paciente',
+      'Orientação sobre retorno e consultas',
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: suggestions.map((suggestion) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () {
+                  _messageController.text = suggestion;
+                  setState(() {});
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F3EF),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.auto_awesome,
+                        size: 14,
+                        color: Color(0xFF4F4A34),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        suggestion,
+                        style: const TextStyle(
+                          color: Color(0xFF495565),
+                          fontSize: 12,
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -734,6 +1047,329 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _showAttachmentOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Anexar arquivo',
+              style: TextStyle(
+                color: Color(0xFF212621),
+                fontSize: 18,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildAttachmentOption(
+                  icon: Icons.camera_alt,
+                  label: 'Câmera',
+                  color: const Color(0xFF4F4A34),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
+                _buildAttachmentOption(
+                  icon: Icons.photo_library,
+                  label: 'Galeria',
+                  color: const Color(0xFF3B82F6),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImage(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAttachmentOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: color.withAlpha(26),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 13,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+
+      if (image != null) {
+        setState(() {
+          _selectedImage = File(image.path);
+        });
+        // Mostrar preview e opção de enviar
+        _showImagePreview();
+      }
+    } catch (e) {
+      debugPrint('Erro ao selecionar imagem: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erro ao selecionar imagem')),
+        );
+      }
+    }
+  }
+
+  void _showImagePreview() {
+    if (_selectedImage == null) return;
+    final TextEditingController captionController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+        ),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.75,
+          decoration: const BoxDecoration(
+            color: Color(0xFFF5F3EF),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Enviar imagem',
+                      style: TextStyle(
+                        color: Color(0xFF212621),
+                        fontSize: 18,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedImage = null);
+                        Navigator.pop(ctx);
+                      },
+                      child: const Icon(Icons.close, color: Color(0xFF697282)),
+                    ),
+                  ],
+                ),
+              ),
+              // Card branco com imagem e campo de texto
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        // Imagem
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(
+                                _selectedImage!,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Divisor
+                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        // Campo de texto para legenda
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: TextField(
+                            controller: captionController,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              hintText: 'Adicione uma descrição (opcional)...',
+                              hintStyle: TextStyle(
+                                color: Color(0xFF9CA3AF),
+                                fontSize: 14,
+                                fontFamily: 'Inter',
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            style: const TextStyle(
+                              color: Color(0xFF212621),
+                              fontSize: 14,
+                              fontFamily: 'Inter',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Botões
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _selectedImage = null);
+                          Navigator.pop(ctx);
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Cancelar',
+                              style: TextStyle(
+                                color: Color(0xFF495565),
+                                fontSize: 14,
+                                fontFamily: 'Inter',
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _sendImageMessage(caption: captionController.text);
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4F4A34),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.send, color: Colors.white, size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                'Enviar',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontFamily: 'Inter',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _sendImageMessage({String? caption}) {
+    if (_selectedImage == null) return;
+
+    // Por enquanto, apenas mostra feedback
+    final message = caption != null && caption.isNotEmpty
+        ? 'Imagem com descrição será enviada em breve!'
+        : 'Envio de imagem em breve!';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+    setState(() => _selectedImage = null);
+  }
+
   /// ==========================================
   /// ABA CLÍNICO - LISTA DE PACIENTES
   /// ==========================================
@@ -748,32 +1384,61 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: Color(0xFF4F4A34),
                   ),
                 )
-              : _patientConversations.isEmpty
-                  ? const Center(
+              : _filteredPatientConversations.isEmpty
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            Icons.chat_bubble_outline,
+                            _searchQuery.isNotEmpty
+                                ? Icons.search_off
+                                : Icons.chat_bubble_outline,
                             size: 48,
-                            color: Color(0xFFA49E86),
+                            color: const Color(0xFFA49E86),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           Text(
-                            'Nenhuma conversa encontrada',
-                            style: TextStyle(
+                            _searchQuery.isNotEmpty
+                                ? 'Nenhum paciente encontrado para "$_searchQuery"'
+                                : 'Nenhuma conversa encontrada',
+                            style: const TextStyle(
                               color: Color(0xFF495565),
                               fontSize: 14,
                             ),
+                            textAlign: TextAlign.center,
                           ),
+                          if (_searchQuery.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            GestureDetector(
+                              onTap: _clearSearch,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4F4A34),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'Limpar busca',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontFamily: 'Inter',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      itemCount: _patientConversations.length,
+                      itemCount: _filteredPatientConversations.length,
                       itemBuilder: (context, index) {
-                        return _buildPatientConversationCard(_patientConversations[index]);
+                        return _buildPatientConversationCard(_filteredPatientConversations[index]);
                       },
                     ),
         ),
@@ -826,28 +1491,23 @@ class _ChatScreenState extends State<ChatScreen> {
           Container(
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: ShapeDecoration(
-              color: Colors.white,
-              shape: RoundedRectangleBorder(
-                side: const BorderSide(
-                  width: 1,
-                  color: Color(0xFFE5E7EB),
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F3EF),
+              borderRadius: BorderRadius.circular(22),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.search,
                   size: 18,
                   color: Color(0xFF9CA3AF),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Buscar paciente...',
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      hintText: 'Buscar paciente por nome ou ID...',
                       hintStyle: TextStyle(
                         color: Color(0xFF9CA3AF),
                         fontSize: 13,
@@ -856,13 +1516,22 @@ class _ChatScreenState extends State<ChatScreen> {
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(vertical: 10),
                     ),
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Color(0xFF212621),
                       fontSize: 13,
                       fontFamily: 'Inter',
                     ),
                   ),
                 ),
+                if (_searchQuery.isNotEmpty)
+                  GestureDetector(
+                    onTap: _clearSearch,
+                    child: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -872,6 +1541,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildPatientConversationCard(PatientConversation patient) {
+    final statusColor = patient.status.color;
+    final hasSpecialStatus = patient.status != PatientStatus.normal;
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -888,12 +1560,10 @@ class _ChatScreenState extends State<ChatScreen> {
           color: Colors.white,
           shape: RoundedRectangleBorder(
             side: BorderSide(
-              width: 1,
-              color: patient.status == PatientStatus.urgent
-                  ? const Color(0xFFEF4444).withOpacity(0.3)
-                  : patient.status == PatientStatus.attention
-                      ? const Color(0xFFF59E0B).withOpacity(0.3)
-                      : const Color(0xFFE5E7EB),
+              width: hasSpecialStatus ? 1.5 : 1,
+              color: hasSpecialStatus
+                  ? statusColor.withOpacity(0.4)
+                  : const Color(0xFFE5E7EB),
             ),
             borderRadius: BorderRadius.circular(16),
           ),
@@ -923,9 +1593,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                 ),
-                // Indicador de mensagem nova (verde) ou status urgente/atenção
-                if (patient.unreadCount > 0 ||
-                    patient.status != PatientStatus.normal)
+                // Indicador de mensagem nova ou status especial
+                if (patient.unreadCount > 0 || hasSpecialStatus)
                   Positioned(
                     right: 0,
                     top: 0,
@@ -935,9 +1604,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       decoration: BoxDecoration(
                         color: patient.unreadCount > 0
                             ? const Color(0xFF22C55E) // Verde para mensagens novas
-                            : patient.status == PatientStatus.urgent
-                                ? const Color(0xFFEF4444)
-                                : const Color(0xFFF59E0B),
+                            : statusColor,
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                       ),
@@ -951,15 +1618,71 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          patient.name,
+                          style: const TextStyle(
+                            color: Color(0xFF212621),
+                            fontSize: 14,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Badge de status automático
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: statusColor.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              patient.status.icon,
+                              size: 10,
+                              color: statusColor,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              patient.status.label,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 9,
+                                fontFamily: 'Inter',
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        patient.name,
-                        style: const TextStyle(
-                          color: Color(0xFF212621),
-                          fontSize: 14,
-                          fontFamily: 'Inter',
-                          fontWeight: FontWeight.w600,
+                      Expanded(
+                        child: Text(
+                          '${patient.procedure} • ${patient.daysPostOp}d pós-op',
+                          style: const TextStyle(
+                            color: Color(0xFF495565),
+                            fontSize: 12,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w400,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       Text(
@@ -976,16 +1699,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${patient.procedure} • ${patient.daysPostOp}d pós-op',
-                    style: const TextStyle(
-                      color: Color(0xFF495565),
-                      fontSize: 12,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                    ),
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -1053,6 +1766,58 @@ class _ChatScreenState extends State<ChatScreen> {
     return Column(
       children: [
         _buildAtendimentoHeader(),
+        // Barra de busca para atendimento
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F3EF),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.search,
+                  size: 18,
+                  color: Color(0xFF9CA3AF),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      hintText: 'Buscar paciente por nome ou ID...',
+                      hintStyle: TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 13,
+                        fontFamily: 'Inter',
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    style: const TextStyle(
+                      color: Color(0xFF212621),
+                      fontSize: 13,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ),
+                if (_searchQuery.isNotEmpty)
+                  GestureDetector(
+                    onTap: _clearSearch,
+                    child: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
           child: _isLoadingHumanConversations
               ? const Center(
@@ -1060,22 +1825,70 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: Color(0xFF3B82F6),
                   ),
                 )
-              : _humanConversations.isEmpty
-                  ? _buildEmptyAtendimento()
+              : _filteredHumanConversations.isEmpty
+                  ? (_searchQuery.isNotEmpty
+                      ? _buildSearchEmptyState()
+                      : _buildEmptyAtendimento())
                   : RefreshIndicator(
                       onRefresh: _loadHumanConversations,
                       color: const Color(0xFF3B82F6),
                       child: ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        itemCount: _humanConversations.length,
+                        itemCount: _filteredHumanConversations.length,
                         itemBuilder: (context, index) {
                           return _buildHumanConversationCard(
-                              _humanConversations[index]);
+                              _filteredHumanConversations[index]);
                         },
                       ),
                     ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSearchEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.search_off,
+            size: 48,
+            color: Color(0xFF9CA3AF),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Nenhum paciente encontrado para "$_searchQuery"',
+            style: const TextStyle(
+              color: Color(0xFF495565),
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _clearSearch,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3B82F6),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'Limpar busca',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1381,463 +2194,28 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _openHumanConversation(HumanHandoffConversation conversation) {
+    // Usa PatientChatScreen para manter consistência com todas as funcionalidades
+    // (perguntas rápidas, envio de fotos, etc.)
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => HumanChatScreen(conversation: conversation),
+        builder: (_) => PatientChatScreen(
+          patient: PatientConversation(
+            id: conversation.patientId,
+            name: conversation.patientName,
+            procedure: 'Atendimento Humano',
+            daysPostOp: 0,
+            lastMessage: conversation.lastMessage,
+            lastMessageTime: conversation.lastMessageTime,
+            unreadCount: conversation.unreadCount,
+            status: PatientStatus.attention,
+          ),
+        ),
       ),
     ).then((_) {
       // Recarrega as conversas ao voltar
       _loadHumanConversations();
     });
-  }
-
-  /// ==========================================
-  /// ABA AGENDAMENTOS - LISTA DE CONSULTAS
-  /// ==========================================
-  Widget _buildAgendamentosContent() {
-    if (_isLoadingAppointments) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF4F4A34),
-        ),
-      );
-    }
-
-    final today = DateTime.now();
-    final todayAppointments = _appointments
-        .where((a) =>
-            a.date.day == today.day &&
-            a.date.month == today.month &&
-            a.date.year == today.year)
-        .toList();
-
-    final tomorrowAppointments = _appointments
-        .where((a) =>
-            a.date.day == today.add(const Duration(days: 1)).day &&
-            a.date.month == today.add(const Duration(days: 1)).month &&
-            a.date.year == today.add(const Duration(days: 1)).year)
-        .toList();
-
-    final laterAppointments = _appointments
-        .where((a) => a.date.isAfter(today.add(const Duration(days: 1))))
-        .toList();
-
-    if (_appointments.isEmpty) {
-      return Column(
-        children: [
-          _buildAgendamentosHeader(),
-          const Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.calendar_today_outlined,
-                    size: 48,
-                    color: Color(0xFFA49E86),
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Nenhum agendamento encontrado',
-                    style: TextStyle(
-                      color: Color(0xFF495565),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Column(
-      children: [
-        _buildAgendamentosHeader(),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (todayAppointments.isNotEmpty) ...[
-                  _buildDateSection('Hoje', todayAppointments.length),
-                  ...todayAppointments.map((a) => _buildAppointmentCard(a)),
-                  const SizedBox(height: 16),
-                ],
-                if (tomorrowAppointments.isNotEmpty) ...[
-                  _buildDateSection('Amanhã', tomorrowAppointments.length),
-                  ...tomorrowAppointments.map((a) => _buildAppointmentCard(a)),
-                  const SizedBox(height: 16),
-                ],
-                if (laterAppointments.isNotEmpty) ...[
-                  _buildDateSection('Próximos dias', laterAppointments.length),
-                  ...laterAppointments.map((a) => _buildAppointmentCard(a)),
-                ],
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAgendamentosHeader() {
-    final today = DateTime.now();
-    final todayCount = _appointments
-        .where((a) =>
-            a.date.day == today.day &&
-            a.date.month == today.month &&
-            a.date.year == today.year)
-        .length;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Agendamentos',
-                style: TextStyle(
-                  color: Color(0xFF212621),
-                  fontSize: 16,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F4A34),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '$todayCount hoje',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildFilterChip('Todos', true),
-                const SizedBox(width: 8),
-                _buildFilterChip('Consultas', false),
-                const SizedBox(width: 8),
-                _buildFilterChip('Cirurgias', false),
-                const SizedBox(width: 8),
-                _buildFilterChip('Retornos', false),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, bool isSelected) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: ShapeDecoration(
-        color: isSelected ? const Color(0xFF4F4A34) : Colors.white,
-        shape: RoundedRectangleBorder(
-          side: BorderSide(
-            width: 1,
-            color:
-                isSelected ? const Color(0xFF4F4A34) : const Color(0xFFE5E7EB),
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isSelected ? Colors.white : const Color(0xFF495565),
-          fontSize: 12,
-          fontFamily: 'Inter',
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDateSection(String title, int count) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 4),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Color(0xFF212621),
-              fontSize: 14,
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E7EB),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '$count',
-              style: const TextStyle(
-                color: Color(0xFF495565),
-                fontSize: 11,
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAppointmentCard(Appointment appointment) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AppointmentDetailScreen(appointment: appointment),
-          ),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: ShapeDecoration(
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            side: BorderSide(
-              width: 1,
-              color: appointment.procedureType == AppointmentType.exam
-                  ? const Color(0xFF7C75B7).withOpacity(0.3)
-                  : const Color(0xFFE5E7EB),
-            ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: ShapeDecoration(
-                color: _getAppointmentTypeColor(appointment.procedureType)
-                    .withOpacity(0.1),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    appointment.time,
-                    style: TextStyle(
-                      color:
-                          _getAppointmentTypeColor(appointment.procedureType),
-                      fontSize: 14,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    appointment.duration,
-                    style: TextStyle(
-                      color: _getAppointmentTypeColor(appointment.procedureType)
-                          .withOpacity(0.7),
-                      fontSize: 10,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: ShapeDecoration(
-                          color: const Color(0xFF4F4A34),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            appointment.patientInitials,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontFamily: 'Inter',
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          appointment.patientName,
-                          style: const TextStyle(
-                            color: Color(0xFF212621),
-                            fontSize: 14,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      _buildStatusBadge(appointment.status),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        _getAppointmentTypeIcon(appointment.procedureType),
-                        size: 12,
-                        color:
-                            _getAppointmentTypeColor(appointment.procedureType),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          appointment.procedure,
-                          style: const TextStyle(
-                            color: Color(0xFF495565),
-                            fontSize: 12,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (appointment.notes.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      appointment.notes,
-                      style: const TextStyle(
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 11,
-                        fontFamily: 'Inter',
-                        fontWeight: FontWeight.w400,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: Color(0xFF9CA3AF),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(AppointmentStatus status) {
-    Color bgColor;
-    Color textColor;
-    String label;
-
-    switch (status) {
-      case AppointmentStatus.confirmed:
-        bgColor = const Color(0xFF22C55E).withOpacity(0.1);
-        textColor = const Color(0xFF22C55E);
-        label = 'Confirmado';
-        break;
-      case AppointmentStatus.pending:
-        bgColor = const Color(0xFFF59E0B).withOpacity(0.1);
-        textColor = const Color(0xFFF59E0B);
-        label = 'Pendente';
-        break;
-      case AppointmentStatus.cancelled:
-        bgColor = const Color(0xFFEF4444).withOpacity(0.1);
-        textColor = const Color(0xFFEF4444);
-        label = 'Cancelado';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 10,
-          fontFamily: 'Inter',
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  Color _getAppointmentTypeColor(AppointmentType type) {
-    switch (type) {
-      case AppointmentType.returnVisit:
-        return const Color(0xFF22C55E);
-      case AppointmentType.evaluation:
-        return const Color(0xFF3B82F6);
-      case AppointmentType.physiotherapy:
-        return const Color(0xFF7C75B7);
-      case AppointmentType.exam:
-        return const Color(0xFFF59E0B);
-      case AppointmentType.other:
-        return const Color(0xFF4F4A34);
-    }
-  }
-
-  IconData _getAppointmentTypeIcon(AppointmentType type) {
-    switch (type) {
-      case AppointmentType.returnVisit:
-        return Icons.refresh;
-      case AppointmentType.evaluation:
-        return Icons.camera_alt_outlined;
-      case AppointmentType.physiotherapy:
-        return Icons.fitness_center_outlined;
-      case AppointmentType.exam:
-        return Icons.medical_services_outlined;
-      case AppointmentType.other:
-        return Icons.event_note_outlined;
-    }
   }
 
   String _getInitials(String name) {
@@ -1989,7 +2367,62 @@ class ChatMessage {
   });
 }
 
-enum PatientStatus { normal, attention, urgent }
+/// Status de prioridade do paciente com flags automáticas
+enum PatientStatus {
+  normal,      // Rotina
+  attention,   // Atenção
+  urgent,      // Urgente
+  medication,  // Medicação
+  exam,        // Exame
+  anxious,     // Ansioso
+}
+
+/// Extensão para obter informações visuais do status
+extension PatientStatusExtension on PatientStatus {
+  String get label {
+    switch (this) {
+      case PatientStatus.urgent: return 'URGENTE';
+      case PatientStatus.attention: return 'ATENÇÃO';
+      case PatientStatus.medication: return 'MEDICAÇÃO';
+      case PatientStatus.exam: return 'EXAME';
+      case PatientStatus.anxious: return 'ANSIOSO';
+      case PatientStatus.normal: return 'ROTINA';
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case PatientStatus.urgent: return const Color(0xFFEF4444);      // Vermelho
+      case PatientStatus.attention: return const Color(0xFFF59E0B);   // Laranja
+      case PatientStatus.medication: return const Color(0xFF8B5CF6); // Roxo
+      case PatientStatus.exam: return const Color(0xFF3B82F6);        // Azul
+      case PatientStatus.anxious: return const Color(0xFFEC4899);     // Rosa
+      case PatientStatus.normal: return const Color(0xFF22C55E);      // Verde
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case PatientStatus.urgent: return Icons.warning_amber_rounded;
+      case PatientStatus.attention: return Icons.error_outline;
+      case PatientStatus.medication: return Icons.medication;
+      case PatientStatus.exam: return Icons.assignment;
+      case PatientStatus.anxious: return Icons.sentiment_dissatisfied;
+      case PatientStatus.normal: return Icons.check_circle_outline;
+    }
+  }
+
+  int get priority {
+    switch (this) {
+      case PatientStatus.urgent: return 0;
+      case PatientStatus.attention: return 1;
+      case PatientStatus.anxious: return 2;
+      case PatientStatus.medication: return 3;
+      case PatientStatus.exam: return 4;
+      case PatientStatus.normal: return 5;
+    }
+  }
+}
 
 class PatientConversation {
   final String id;
@@ -2010,36 +2443,6 @@ class PatientConversation {
     required this.lastMessageTime,
     required this.unreadCount,
     required this.status,
-  });
-}
-
-enum AppointmentType { returnVisit, evaluation, physiotherapy, exam, other }
-
-enum AppointmentStatus { confirmed, pending, cancelled }
-
-class Appointment {
-  final String id;
-  final String patientName;
-  final String patientInitials;
-  final String procedure;
-  final AppointmentType procedureType;
-  final DateTime date;
-  final String time;
-  final String duration;
-  final AppointmentStatus status;
-  final String notes;
-
-  Appointment({
-    required this.id,
-    required this.patientName,
-    required this.patientInitials,
-    required this.procedure,
-    required this.procedureType,
-    required this.date,
-    required this.time,
-    required this.duration,
-    required this.status,
-    required this.notes,
   });
 }
 

@@ -203,11 +203,47 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Consultas Pendentes - Em breve
+                    // Biblioteca de Mídia - Funcional
+                    _buildMenuCard(
+                      icon: Icons.photo_library_outlined,
+                      title: 'Biblioteca de Mídia',
+                      subtitle: 'Vídeos e documentos',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.pushNamed(context, '/clinic-media-library');
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Horários de Atendimento - Funcional
+                    _buildMenuCard(
+                      icon: Icons.schedule_outlined,
+                      title: 'Horários de Atendimento',
+                      subtitle: 'Configurar agenda',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.pushNamed(context, '/clinic-schedule-settings');
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Cadastrar Paciente - Funcional
+                    _buildMenuCard(
+                      icon: Icons.person_add_outlined,
+                      title: 'Cadastrar Paciente',
+                      subtitle: 'Enviar convite por email',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.pushNamed(context, '/add-patient-magic-link');
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Fila de Revisão de Fotos - Em breve
                     _buildComingSoonCard(
-                      icon: Icons.pending_actions_outlined,
-                      title: 'Consultas Pendentes',
-                      subtitle: '3 aguardando aprovação',
+                      icon: Icons.camera_alt_outlined,
+                      title: 'Fila de Revisão de Fotos',
+                      subtitle: '2 pacientes aguardando',
                     ),
                     const SizedBox(height: 8),
 
@@ -216,14 +252,6 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
                       icon: Icons.psychology_outlined,
                       title: 'Alertas da IA',
                       subtitle: '2 alertas ativos',
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Fila de Revisão de Fotos - Em breve
-                    _buildComingSoonCard(
-                      icon: Icons.photo_library_outlined,
-                      title: 'Fila de Revisão de Fotos',
-                      subtitle: '2 pacientes aguardando',
                     ),
                     const SizedBox(height: 24),
                     const Text(
@@ -475,6 +503,74 @@ class _ClinicDashboardScreenState extends State<ClinicDashboardScreen> {
                   Text(
                     'Links, notificações e mais',
                     style: TextStyle(
+                      color: Color(0xFF495565),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: Color(0xFF9CA3AF),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4F4A34).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                size: 20,
+                color: const Color(0xFF4F4A34),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xFF212621),
+                      fontSize: 14,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
                       color: Color(0xFF495565),
                       fontSize: 12,
                       fontFamily: 'Inter',

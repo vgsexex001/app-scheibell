@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/theme/app_colors.dart';
+import 'tela_verificar_otp.dart';
 
 class TelaRecuperarSenha extends StatefulWidget {
   const TelaRecuperarSenha({super.key});
@@ -12,6 +14,7 @@ class _TelaRecuperarSenhaState extends State<TelaRecuperarSenha> {
   final _emailController = TextEditingController();
   bool _hasError = false;
   String _errorMessage = '';
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -19,20 +22,68 @@ class _TelaRecuperarSenhaState extends State<TelaRecuperarSenha> {
     super.dispose();
   }
 
-  void _onSubmit() {
+  Future<void> _onSubmit() async {
     final email = _emailController.text.trim();
     if (email.isEmpty || !email.contains('@')) {
       setState(() {
         _hasError = true;
         _errorMessage = 'Por favor, insira um email válido';
       });
-    } else {
-      setState(() {
-        _hasError = false;
-        _errorMessage = '';
-      });
-      Navigator.pushNamed(context, '/verificar-codigo');
+      return;
     }
+
+    setState(() {
+      _hasError = false;
+      _errorMessage = '';
+      _isLoading = true;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Enviar código de recuperação via Supabase
+      await supabase.auth.resetPasswordForEmail(email);
+
+      if (!mounted) return;
+
+      // Navegar para tela de verificação OTP
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TelaVerificarOTP(
+            email: email,
+            type: OTPType.recovery,
+          ),
+        ),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hasError = true;
+        _errorMessage = _getAuthErrorMessage(e);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hasError = true;
+        _errorMessage = 'Erro ao enviar código. Tente novamente.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  String _getAuthErrorMessage(AuthException e) {
+    final message = e.message.toLowerCase();
+    if (message.contains('not found') || message.contains('invalid')) {
+      return 'Email não encontrado';
+    }
+    if (message.contains('too many')) {
+      return 'Muitas tentativas. Aguarde um momento.';
+    }
+    return 'Erro ao enviar código. Tente novamente.';
   }
 
   @override
@@ -188,7 +239,7 @@ class _TelaRecuperarSenhaState extends State<TelaRecuperarSenha> {
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: _onSubmit,
+        onPressed: _isLoading ? null : _onSubmit,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primaryDark,
           foregroundColor: Colors.white,
@@ -197,15 +248,24 @@ class _TelaRecuperarSenhaState extends State<TelaRecuperarSenha> {
           ),
           elevation: 0,
         ),
-        child: const Text(
-          'Enviar',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            height: 1.25,
-            letterSpacing: -0.24,
-          ),
-        ),
+        child: _isLoading
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : const Text(
+                'Enviar',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                  letterSpacing: -0.24,
+                ),
+              ),
       ),
     );
   }

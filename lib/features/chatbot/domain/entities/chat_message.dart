@@ -16,19 +16,29 @@ ChatMode chatModeFromString(String? value) {
   }
 }
 
-/// Status de um anexo de imagem
+/// Status de um anexo
 enum AttachmentStatus { pending, processing, completed, failed }
 
-/// Entidade representando um anexo de imagem no chat
+/// Tipo de anexo
+enum AttachmentType { image, audio }
+
+/// Entidade representando um anexo no chat (imagem ou audio)
 class ChatAttachment {
   final String id;
   final String originalName;
   final String mimeType;
   final int sizeBytes;
   final AttachmentStatus status;
+  final AttachmentType type;
   final String? aiAnalysis;
   final DateTime createdAt;
   final String? localPath;
+
+  // Audio-specific fields
+  final int? durationSeconds;
+  final String? transcription;
+  final DateTime? transcribedAt;
+  final String? storagePath; // URL do Supabase Storage ou path relativo
 
   const ChatAttachment({
     required this.id,
@@ -36,26 +46,50 @@ class ChatAttachment {
     required this.mimeType,
     required this.sizeBytes,
     required this.status,
+    this.type = AttachmentType.image,
     this.aiAnalysis,
     required this.createdAt,
     this.localPath,
+    this.durationSeconds,
+    this.transcription,
+    this.transcribedAt,
+    this.storagePath,
   });
+
+  /// Retorna URL para reprodução do áudio
+  /// Se storagePath é URL completa (http), usa diretamente
+  /// Senão, retorna null (será resolvido pelo endpoint do backend)
+  String? get audioPlayableUrl {
+    if (storagePath != null && storagePath!.startsWith('http')) {
+      return storagePath;
+    }
+    return null;
+  }
 
   factory ChatAttachment.fromJson(Map<String, dynamic> json) {
     return ChatAttachment(
       id: json['id'] as String,
-      originalName: json['originalName'] as String,
-      mimeType: json['mimeType'] as String,
-      sizeBytes: json['sizeBytes'] as int,
-      status: _parseStatus(json['status'] as String),
+      originalName: json['originalName'] as String? ?? 'file',
+      mimeType: json['mimeType'] as String? ?? 'application/octet-stream',
+      sizeBytes: json['sizeBytes'] as int? ?? 0,
+      status: _parseStatus(json['status'] as String?),
+      type: _parseType(json['type'] as String?),
       aiAnalysis: json['aiAnalysis'] as String?,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'] as String)
+          : DateTime.now(),
       localPath: json['localPath'] as String?,
+      durationSeconds: json['durationSeconds'] as int?,
+      transcription: json['transcription'] as String?,
+      transcribedAt: json['transcribedAt'] != null
+          ? DateTime.parse(json['transcribedAt'] as String)
+          : null,
+      storagePath: json['storagePath'] as String?,
     );
   }
 
-  static AttachmentStatus _parseStatus(String status) {
-    switch (status.toUpperCase()) {
+  static AttachmentStatus _parseStatus(String? status) {
+    switch (status?.toUpperCase()) {
       case 'PENDING':
         return AttachmentStatus.pending;
       case 'PROCESSING':
@@ -69,9 +103,30 @@ class ChatAttachment {
     }
   }
 
+  static AttachmentType _parseType(String? type) {
+    switch (type?.toUpperCase()) {
+      case 'AUDIO':
+        return AttachmentType.audio;
+      case 'IMAGE':
+      default:
+        return AttachmentType.image;
+    }
+  }
+
   bool get isProcessing => status == AttachmentStatus.processing;
   bool get isCompleted => status == AttachmentStatus.completed;
   bool get isFailed => status == AttachmentStatus.failed;
+  bool get isAudio => type == AttachmentType.audio;
+  bool get isImage => type == AttachmentType.image;
+  bool get hasTranscription => transcription != null && transcription!.isNotEmpty;
+
+  /// Formatted duration string (e.g., "0:45")
+  String get formattedDuration {
+    if (durationSeconds == null) return '0:00';
+    final minutes = durationSeconds! ~/ 60;
+    final seconds = durationSeconds! % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
 }
 
 class ChatMessage {
@@ -87,6 +142,10 @@ class ChatMessage {
   final String? senderType; // 'patient' | 'staff' | 'ai' | 'system'
   final String? senderName; // Nome do staff (para exibicao)
 
+  // Status de leitura
+  final DateTime? deliveredAt;
+  final DateTime? readAt;
+
   const ChatMessage({
     required this.id,
     required this.content,
@@ -97,12 +156,24 @@ class ChatMessage {
     this.senderId,
     this.senderType,
     this.senderName,
+    this.deliveredAt,
+    this.readAt,
   });
 
   bool get isUser => role == MessageRole.user;
   bool get isAssistant => role == MessageRole.assistant;
   bool get isSystem => role == MessageRole.system;
   bool get hasAttachments => attachments.isNotEmpty;
+  bool get hasAudioAttachment => attachments.any((a) => a.isAudio);
+  bool get hasImageAttachment => attachments.any((a) => a.isImage);
+
+  /// Get the first audio attachment if exists
+  ChatAttachment? get audioAttachment =>
+      attachments.where((a) => a.isAudio).firstOrNull;
+
+  /// Get the first image attachment if exists
+  ChatAttachment? get imageAttachment =>
+      attachments.where((a) => a.isImage).firstOrNull;
 
   // Human Handoff helpers
   bool get isFromStaff => senderType == 'staff';
@@ -138,6 +209,31 @@ class ChatMessage {
       content: content,
       role: MessageRole.system,
       timestamp: DateTime.now(),
+    );
+  }
+
+  /// Cria mensagem de audio do usuario
+  factory ChatMessage.audioFromUser({
+    required String attachmentId,
+    required int durationSeconds,
+  }) {
+    return ChatMessage(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      content: '[Mensagem de áudio]',
+      role: MessageRole.user,
+      timestamp: DateTime.now(),
+      attachments: [
+        ChatAttachment(
+          id: attachmentId,
+          originalName: 'audio.m4a',
+          mimeType: 'audio/m4a',
+          sizeBytes: 0,
+          status: AttachmentStatus.pending,
+          type: AttachmentType.audio,
+          createdAt: DateTime.now(),
+          durationSeconds: durationSeconds,
+        ),
+      ],
     );
   }
 

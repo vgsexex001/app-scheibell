@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../features/agenda/domain/entities/appointment.dart';
 import '../../../features/agenda/providers/appointment_provider.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/services/availability_service.dart';
+import '../../../core/models/time_slot.dart';
 import '../providers/home_provider.dart';
 
 /// Modelo para representar um horário disponível
@@ -15,7 +18,7 @@ class Horario {
 /// Tela de seleção de data e horário para agendamento
 /// Exibida após o usuário escolher o tipo de agendamento
 class TelaSelecaoData extends StatefulWidget {
-  final String tipoAgendamento; // 'splint', 'fisioterapia', 'consulta'
+  final String tipoAgendamento; // 'SPLINT_REMOVAL', 'PHYSIOTHERAPY', 'CONSULTATION' (apiValue do enum)
   final String titulo;
   final String disponibilidade;
   final DateTime dataCirurgia;
@@ -42,20 +45,20 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
   static const _corDestaque = Color(0xFF4F4A34);
 
   bool _isLoading = false;
+  bool _isLoadingSlots = false;
 
   DateTime _mesSelecionado = DateTime.now();
   DateTime? _dataSelecionada;
   String? _horarioSelecionado;
 
-  // Horários disponíveis (em produção viria do backend)
-  final List<Horario> _horarios = [
-    Horario(hora: '09:00'),
-    Horario(hora: '10:00'),
-    Horario(hora: '11:00', disponivel: false),
-    Horario(hora: '14:00'),
-    Horario(hora: '15:00'),
-    Horario(hora: '16:00', disponivel: false),
-  ];
+  // Serviço de disponibilidade
+  late AvailabilityService _availabilityService;
+
+  // Dias disponíveis no mês
+  List<AvailableDay> _diasDisponiveis = [];
+
+  // Horários disponíveis do dia selecionado
+  List<Horario> _horarios = [];
 
   static const List<String> _nomesMeses = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -63,12 +66,13 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
   ];
 
   String get _tituloHeader {
-    switch (widget.tipoAgendamento) {
-      case 'splint':
+    // Usa o título passado pelo enum AppointmentType.displayName
+    switch (widget.tipoAgendamento.toUpperCase()) {
+      case 'SPLINT_REMOVAL':
         return 'Retirada de Splint';
-      case 'fisioterapia':
+      case 'PHYSIOTHERAPY':
         return 'Fisioterapia';
-      case 'consulta':
+      case 'CONSULTATION':
         return 'Agendar Consulta';
       default:
         return widget.titulo;
@@ -76,15 +80,106 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
   }
 
   IconData get _iconeHeader {
-    switch (widget.tipoAgendamento) {
-      case 'splint':
-        return Icons.content_cut;
-      case 'fisioterapia':
-        return Icons.face;
-      case 'consulta':
-        return Icons.access_time;
+    switch (widget.tipoAgendamento.toUpperCase()) {
+      case 'SPLINT_REMOVAL':
+        return Icons.healing;
+      case 'PHYSIOTHERAPY':
+        return Icons.spa;
+      case 'CONSULTATION':
+        return Icons.medical_services_outlined;
       default:
         return Icons.calendar_today;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('[TELA_SELECAO_DATA] initState - tipoAgendamento: ${widget.tipoAgendamento}');
+    // Inicializa o serviço de disponibilidade
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('[TELA_SELECAO_DATA] postFrameCallback - obtendo ApiService');
+      final apiService = context.read<ApiService>();
+      _availabilityService = AvailabilityService(apiService);
+      _carregarDiasDisponiveis();
+    });
+  }
+
+  /// Carrega os dias disponíveis do mês atual
+  Future<void> _carregarDiasDisponiveis() async {
+    setState(() => _isLoading = true);
+
+    try {
+      debugPrint('[SELECAO_DATA] ═══════════════════════════════════════════');
+      debugPrint('[SELECAO_DATA] Carregando dias disponíveis');
+      debugPrint('[SELECAO_DATA] Mês: ${_mesSelecionado.month}/${_mesSelecionado.year}');
+      debugPrint('[SELECAO_DATA] TipoAgendamento: ${widget.tipoAgendamento}');
+
+      final dias = await _availabilityService.getAvailableDaysInMonth(
+        year: _mesSelecionado.year,
+        month: _mesSelecionado.month,
+        appointmentType: widget.tipoAgendamento,
+      );
+
+      final diasComSlots = dias.where((d) => d.hasAvailableSlots).length;
+      debugPrint('[SELECAO_DATA] Dias carregados: ${dias.length}');
+      debugPrint('[SELECAO_DATA] Dias com slots disponíveis: $diasComSlots');
+      debugPrint('[SELECAO_DATA] ═══════════════════════════════════════════');
+
+      if (mounted) {
+        setState(() {
+          _diasDisponiveis = dias;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[SELECAO_DATA] ERRO ao carregar dias disponíveis: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  /// Carrega os horários disponíveis para a data selecionada
+  Future<void> _carregarHorarios(DateTime data) async {
+    setState(() {
+      _isLoadingSlots = true;
+      _horarios = [];
+      _horarioSelecionado = null;
+    });
+
+    try {
+      debugPrint('[SELECAO_DATA] ═══════════════════════════════════════════');
+      debugPrint('[SELECAO_DATA] Carregando horários');
+      debugPrint('[SELECAO_DATA] Data: $data');
+      debugPrint('[SELECAO_DATA] TipoAgendamento: ${widget.tipoAgendamento}');
+
+      final slots = await _availabilityService.getSlotsForDay(
+        date: data,
+        appointmentType: widget.tipoAgendamento,
+        includeOccupied: true, // Mostrar ocupados (desabilitados)
+      );
+
+      debugPrint('[SELECAO_DATA] Slots recebidos: ${slots.length}');
+      for (final slot in slots) {
+        debugPrint('[SELECAO_DATA]   - ${slot.timeString}: ${slot.status}');
+      }
+      debugPrint('[SELECAO_DATA] ═══════════════════════════════════════════');
+
+      if (mounted) {
+        setState(() {
+          _horarios = slots.map((slot) => Horario(
+            hora: slot.timeString,
+            disponivel: slot.isAvailable,
+          )).toList();
+          _isLoadingSlots = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[SELECAO_DATA] ERRO ao carregar horários: $e');
+      if (mounted) {
+        setState(() => _isLoadingSlots = false);
+      }
     }
   }
 
@@ -488,7 +583,11 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
                       _mesSelecionado.year,
                       _mesSelecionado.month - 1,
                     );
+                    _dataSelecionada = null;
+                    _horarioSelecionado = null;
+                    _horarios = [];
                   });
+                  _carregarDiasDisponiveis();
                 },
                 child: const Icon(
                   Icons.chevron_left,
@@ -512,7 +611,11 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
                       _mesSelecionado.year,
                       _mesSelecionado.month + 1,
                     );
+                    _dataSelecionada = null;
+                    _horarioSelecionado = null;
+                    _horarios = [];
                   });
+                  _carregarDiasDisponiveis();
                 },
                 child: const Icon(
                   Icons.chevron_right,
@@ -546,8 +649,18 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
           ),
           const SizedBox(height: 8),
 
-          // Grid de dias
-          _buildGridDias(),
+          // Grid de dias (com loading)
+          if (_isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(40),
+                child: CircularProgressIndicator(
+                  color: _corDestaque,
+                ),
+              ),
+            )
+          else
+            _buildGridDias(),
         ],
       ),
     );
@@ -576,31 +689,51 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
           _dataSelecionada!.month == dataAtual.month &&
           _dataSelecionada!.day == dataAtual.day;
 
+      // Verificar se o dia está disponível baseado nos dados do backend
+      final diaDisponivel = _diasDisponiveis.any((d) =>
+          d.date.year == dataAtual.year &&
+          d.date.month == dataAtual.month &&
+          d.date.day == dataAtual.day &&
+          d.hasAvailableSlots);
+
+      final isDisabled = isPast || !diaDisponivel;
+
       diasDaSemana.add(
         GestureDetector(
-          onTap: isPast
+          onTap: isDisabled
               ? null
               : () {
                   setState(() {
                     _dataSelecionada = dataAtual;
+                    _horarioSelecionado = null;
                   });
+                  _carregarHorarios(dataAtual);
                 },
           child: Container(
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: isSelected ? _corDestaque : Colors.transparent,
+              color: isSelected
+                  ? _corDestaque
+                  : diaDisponivel && !isPast
+                      ? const Color(0xFFE8F5E9) // Verde claro para dias disponíveis
+                      : Colors.transparent,
               borderRadius: BorderRadius.circular(18),
+              border: diaDisponivel && !isPast && !isSelected
+                  ? Border.all(color: const Color(0xFF4CAF50), width: 1)
+                  : null,
             ),
             child: Center(
               child: Text(
                 dia.toString(),
                 style: TextStyle(
-                  color: isPast
+                  color: isDisabled
                       ? const Color(0xFFBDBDBD)
                       : isSelected
                           ? Colors.white
-                          : const Color(0xFF4A5660),
+                          : diaDisponivel
+                              ? const Color(0xFF2E7D32) // Verde escuro
+                              : const Color(0xFF4A5660),
                   fontSize: 16,
                   fontFamily: 'Inter',
                   fontWeight: FontWeight.w600,
@@ -680,15 +813,79 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
           ),
         ),
         const SizedBox(height: 16),
-        GridView.count(
-          crossAxisCount: 3,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 2.5,
-          children: _horarios.map((horario) => _buildBotaoHorario(horario)).toList(),
-        ),
+
+        // Loading
+        if (_isLoadingSlots)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(
+                color: _corDestaque,
+              ),
+            ),
+          )
+        // Nenhuma data selecionada
+        else if (_dataSelecionada == null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.touch_app, color: _textoSecundario, size: 20),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Selecione uma data no calendário para ver os horários disponíveis',
+                    style: TextStyle(
+                      color: _textoSecundario,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        // Sem horários disponíveis
+        else if (_horarios.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFFB74D)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.warning_amber, color: Color(0xFFF57C00), size: 20),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Nenhum horário disponível nesta data. Escolha outra data.',
+                    style: TextStyle(
+                      color: Color(0xFFE65100),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        // Grid de horários
+        else
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 2.5,
+            children: _horarios.map((horario) => _buildBotaoHorario(horario)).toList(),
+          ),
       ],
     );
   }

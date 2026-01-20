@@ -604,6 +604,33 @@ class ApiService {
     return _dio.delete(path, data: data, queryParameters: queryParameters);
   }
 
+  /// Upload de arquivo multipart
+  Future<Map<String, dynamic>> uploadFile(
+    String path,
+    File file, {
+    Map<String, String>? fields,
+    String fieldName = 'file',
+  }) async {
+    final fileName = file.path.split('/').last;
+    final formData = FormData.fromMap({
+      fieldName: await MultipartFile.fromFile(file.path, filename: fileName),
+      if (fields != null) ...fields,
+    });
+
+    debugPrint('[API] uploadFile() - URL: $path, File: $fileName');
+
+    final response = await _dio.post(
+      path,
+      data: formData,
+      options: Options(
+        contentType: 'multipart/form-data',
+      ),
+    );
+
+    debugPrint('[API] uploadFile() - Status: ${response.statusCode}');
+    return response.data;
+  }
+
   // ==================== MÉTODOS DE AUTENTICAÇÃO ====================
 
   /// Login do usuário
@@ -817,6 +844,13 @@ class ApiService {
     return response.data is List ? response.data : [];
   }
 
+  /// Busca todo conteúdo da clínica do paciente por tipo (tipado como Map)
+  /// Usado pelo RecoveryContentService
+  Future<List<Map<String, dynamic>>> getPatientClinicContentByType(String type) async {
+    final data = await getAllPatientClinicContentByType(type);
+    return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
   /// Busca conteúdo personalizado do paciente
   Future<List<dynamic>> getPatientContent({
     required String type,
@@ -986,6 +1020,19 @@ class ApiService {
     return response.data;
   }
 
+  /// Remove o log de uma medicação (desmarcar como tomado)
+  Future<void> deleteMedicationLog({
+    required String contentId,
+    required String scheduledTime,
+  }) async {
+    await delete(
+      '${ApiConfig.medicationsLogEndpoint}/$contentId',
+      queryParameters: {
+        'scheduledTime': scheduledTime,
+      },
+    );
+  }
+
   /// Busca histórico de medicações do paciente
   Future<List<dynamic>> getMedicationLogs({
     String? startDate,
@@ -1058,6 +1105,34 @@ class ApiService {
     return response.data;
   }
 
+  /// Atualiza uma medicação pessoal do paciente
+  Future<Map<String, dynamic>> updatePatientMedication({
+    required String medicationId,
+    String? title,
+    String? description,
+    String? dosage,
+    String? frequency,
+    List<String>? times,
+  }) async {
+    final response = await patch(
+      '/content/patient/medication/$medicationId',
+      data: {
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (dosage != null) 'dosage': dosage,
+        if (frequency != null) 'frequency': frequency,
+        if (times != null) 'times': times,
+      },
+    );
+    return response.data;
+  }
+
+  /// Remove uma medicação pessoal do paciente
+  Future<Map<String, dynamic>> deletePatientMedication(String medicationId) async {
+    final response = await delete('/content/patient/medication/$medicationId');
+    return response.data;
+  }
+
   // ==================== CHAT IA ====================
 
   /// Envia uma mensagem para o assistente IA
@@ -1087,6 +1162,12 @@ class ApiService {
   /// Lista todas as conversas do paciente
   Future<List<dynamic>> getChatConversations() async {
     final response = await get(ApiConfig.chatConversationsEndpoint);
+    return response.data is List ? response.data : [];
+  }
+
+  /// Lista todas as conversas de pacientes da clínica (para admin)
+  Future<List<dynamic>> getAdminAllConversations() async {
+    final response = await get('/chat/admin/all-conversations');
     return response.data is List ? response.data : [];
   }
 
@@ -1440,6 +1521,28 @@ class ApiService {
         'limit': limit.toString(),
         if (search != null && search.isNotEmpty) 'search': search,
         if (status != null) 'status': status,
+      },
+    );
+    return response.data;
+  }
+
+  /// Convida um paciente (pré-cadastro antes do Magic Link)
+  /// Cria o registro Patient e opcionalmente o agendamento da cirurgia
+  Future<Map<String, dynamic>> invitePatient({
+    required String name,
+    required String email,
+    String? phone,
+    DateTime? surgeryDate,
+    String? surgeryType,
+  }) async {
+    final response = await post(
+      '${ApiConfig.patientsEndpoint}/invite',
+      data: {
+        'name': name,
+        'email': email,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        if (surgeryDate != null) 'surgeryDate': surgeryDate.toIso8601String(),
+        if (surgeryType != null && surgeryType.isNotEmpty) 'surgeryType': surgeryType,
       },
     );
     return response.data;
@@ -1835,6 +1938,26 @@ class ApiService {
     return response.data;
   }
 
+  /// Sincroniza usuário que acessou via Magic Link do Supabase
+  /// Cria o usuário na tabela users se não existir e vincula ao Patient pré-cadastrado
+  Future<Map<String, dynamic>> syncMagicLink({
+    required String authId,
+    required String email,
+    String? name,
+    String? clinicId,
+  }) async {
+    final response = await post(
+      ApiConfig.syncMagicLinkEndpoint,
+      data: {
+        'authId': authId,
+        'email': email,
+        if (name != null) 'name': name,
+        if (clinicId != null) 'clinicId': clinicId,
+      },
+    );
+    return response.data;
+  }
+
   // ==================== HUMAN HANDOFF (ADMIN) ====================
 
   /// Lista conversas em modo HUMAN para atendimento
@@ -1861,6 +1984,40 @@ class ApiService {
     return response.data;
   }
 
+  /// Busca conversa de um paciente pelo patientId (retorna vazia se não existir)
+  Future<Map<String, dynamic>> getPatientConversation(String patientId) async {
+    final response = await get('/chat/admin/patients/$patientId/conversation');
+    return response.data;
+  }
+
+  /// Inicia ou obtém conversa com paciente pelo patientId
+  Future<Map<String, dynamic>> startConversationWithPatient(String patientId) async {
+    final response = await post('/chat/admin/patients/$patientId/start');
+    return response.data;
+  }
+
+  /// Envia mensagem para paciente pelo patientId (cria conversa se não existir)
+  /// Suporta texto e/ou áudio (audioUrl + audioDuration)
+  Future<Map<String, dynamic>> sendMessageToPatient(
+    String patientId,
+    String message, {
+    String? audioUrl,
+    int? audioDuration,
+  }) async {
+    final data = <String, dynamic>{'message': message};
+    if (audioUrl != null) {
+      data['audioUrl'] = audioUrl;
+    }
+    if (audioDuration != null) {
+      data['audioDuration'] = audioDuration;
+    }
+    final response = await post(
+      '/chat/admin/patients/$patientId/message',
+      data: data,
+    );
+    return response.data;
+  }
+
   /// Envia mensagem como staff/admin em uma conversa em modo HUMAN
   Future<Map<String, dynamic>> sendHumanMessage(
     String conversationId,
@@ -1884,6 +2041,16 @@ class ApiService {
       data: {'returnToAi': returnToAi},
     );
     return response.data;
+  }
+
+  /// Marca uma conversa como lida pelo admin
+  Future<void> markConversationAsRead(String conversationId) async {
+    await post('/chat/admin/conversations/$conversationId/read');
+  }
+
+  /// Limpa a conversa de um paciente (deleta todas as mensagens)
+  Future<void> clearPatientConversation(String patientId) async {
+    await delete('/chat/admin/patients/$patientId/clear');
   }
 
   // ==================== CONTENT TEMPLATES (NOVO) ====================
@@ -2077,5 +2244,234 @@ class ApiService {
       queryParameters: {'version': clientVersion.toString()},
     );
     return response.data;
+  }
+
+  // ==================== CLINIC SCHEDULES (Horários de Atendimento) ====================
+
+  /// Lista tipos de atendimento disponíveis
+  Future<List<dynamic>> getAppointmentTypes() async {
+    final response = await get('/schedules/appointment-types');
+    return response.data is List ? response.data : [];
+  }
+
+  /// Lista todos os horários da clínica (opcionalmente filtrado por tipo)
+  Future<List<dynamic>> getClinicSchedules({String? appointmentType}) async {
+    final response = await get(
+      '/schedules',
+      queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+    );
+    return response.data is List ? response.data : [];
+  }
+
+  /// Lista horários agrupados por tipo de atendimento
+  Future<Map<String, dynamic>> getClinicSchedulesGrouped() async {
+    final response = await get('/schedules/grouped');
+    return response.data is Map ? response.data : {};
+  }
+
+  /// Lista horários de um tipo de atendimento específico
+  Future<List<dynamic>> getClinicSchedulesByType(String appointmentType) async {
+    debugPrint('[API] getClinicSchedulesByType: appointmentType=$appointmentType');
+    final response = await get('/schedules/by-type/$appointmentType');
+    debugPrint('[API] getClinicSchedulesByType response: ${(response.data is List ? response.data : []).length} schedules');
+    return response.data is List ? response.data : [];
+  }
+
+  /// Busca horário de um dia específico
+  Future<Map<String, dynamic>?> getClinicScheduleByDay(int dayOfWeek, {String? appointmentType}) async {
+    final response = await get(
+      '/schedules/$dayOfWeek',
+      queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+    );
+    return response.data;
+  }
+
+  /// Cria ou atualiza horário de um dia
+  Future<Map<String, dynamic>> upsertClinicSchedule({
+    required int dayOfWeek,
+    required String openTime,
+    required String closeTime,
+    String? appointmentType,
+    String? breakStart,
+    String? breakEnd,
+    int? slotDuration,
+    int? maxAppointments,
+    bool? isActive,
+  }) async {
+    final response = await post(
+      '/schedules',
+      data: {
+        'dayOfWeek': dayOfWeek,
+        'openTime': openTime,
+        'closeTime': closeTime,
+        if (appointmentType != null) 'appointmentType': appointmentType,
+        if (breakStart != null) 'breakStart': breakStart,
+        if (breakEnd != null) 'breakEnd': breakEnd,
+        if (slotDuration != null) 'slotDuration': slotDuration,
+        if (maxAppointments != null) 'maxAppointments': maxAppointments,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza horário de um dia
+  Future<Map<String, dynamic>> updateClinicSchedule(
+    int dayOfWeek, {
+    String? appointmentType,
+    String? openTime,
+    String? closeTime,
+    String? breakStart,
+    String? breakEnd,
+    int? slotDuration,
+    int? maxAppointments,
+    bool? isActive,
+  }) async {
+    final response = await put(
+      '/schedules/$dayOfWeek',
+      data: {
+        if (openTime != null) 'openTime': openTime,
+        if (closeTime != null) 'closeTime': closeTime,
+        if (breakStart != null) 'breakStart': breakStart,
+        if (breakEnd != null) 'breakEnd': breakEnd,
+        if (slotDuration != null) 'slotDuration': slotDuration,
+        if (maxAppointments != null) 'maxAppointments': maxAppointments,
+        if (isActive != null) 'isActive': isActive,
+      },
+      queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+    );
+    return response.data;
+  }
+
+  /// Ativa/desativa um dia
+  Future<Map<String, dynamic>> toggleClinicSchedule(int dayOfWeek, {String? appointmentType}) async {
+    final response = await patch(
+      '/schedules/$dayOfWeek/toggle',
+      queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+    );
+    return response.data;
+  }
+
+  // ==================== CLINIC BLOCKED DATES (Datas Bloqueadas) ====================
+
+  /// Lista datas bloqueadas da clínica
+  Future<Map<String, dynamic>> getClinicBlockedDates({
+    bool fromToday = true,
+    String? appointmentType,
+  }) async {
+    final Map<String, String> params = {};
+    if (fromToday) params['fromToday'] = 'true';
+    if (appointmentType != null) params['appointmentType'] = appointmentType;
+
+    final response = await get(
+      '/schedules/blocked-dates/list',
+      queryParameters: params.isNotEmpty ? params : null,
+    );
+    return response.data is Map ? response.data : {'global': [], 'byType': [], 'all': []};
+  }
+
+  /// Cria uma data bloqueada
+  Future<Map<String, dynamic>> createClinicBlockedDate({
+    required String date,
+    String? reason,
+    String? appointmentType,
+  }) async {
+    final response = await post(
+      '/schedules/blocked-dates',
+      data: {
+        'date': date,
+        if (reason != null) 'reason': reason,
+        if (appointmentType != null) 'appointmentType': appointmentType,
+      },
+    );
+    return response.data;
+  }
+
+  /// Atualiza uma data bloqueada
+  Future<Map<String, dynamic>> updateClinicBlockedDate(
+    String id, {
+    String? reason,
+  }) async {
+    final response = await put(
+      '/schedules/blocked-dates/$id',
+      data: {
+        if (reason != null) 'reason': reason,
+      },
+    );
+    return response.data;
+  }
+
+  /// Remove uma data bloqueada
+  Future<Map<String, dynamic>> deleteClinicBlockedDate(String id, {String? appointmentType}) async {
+    final response = await delete(
+      '/schedules/blocked-dates/$id',
+      queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+    );
+    return response.data;
+  }
+
+  /// Busca slots disponíveis para uma data
+  Future<Map<String, dynamic>> getAvailableSlots(String date, {String? appointmentType}) async {
+    final url = '/schedules/available-slots/$date${appointmentType != null ? '?appointmentType=$appointmentType' : ''}';
+    debugPrint('[API] getAvailableSlots: URL=$url');
+    try {
+      final response = await get(
+        '/schedules/available-slots/$date',
+        queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+      );
+      debugPrint('[API] getAvailableSlots response: available=${response.data['available']}, reason=${response.data['reason']}, slots=${(response.data['slots'] as List?)?.length ?? 0}');
+      return response.data;
+    } catch (e) {
+      debugPrint('[API] getAvailableSlots ERROR: $e');
+      rethrow;
+    }
+  }
+
+  // ==================== MÉTODOS DE VÍDEO (AZURE STORAGE) ====================
+
+  /// Upload de vídeo para Azure Storage via Backend
+  Future<Response> uploadVideo({
+    required String filePath,
+    required String fileName,
+    required String title,
+    String? description,
+    String? category,
+    required String clinicId,
+  }) async {
+    debugPrint('[API] uploadVideo() - File: $fileName, Clinic: $clinicId');
+
+    final formData = FormData.fromMap({
+      'video': await MultipartFile.fromFile(filePath, filename: fileName),
+      'title': title,
+      if (description != null) 'description': description,
+      if (category != null) 'category': category,
+      'clinicId': clinicId,
+    });
+
+    final response = await _dio.post(
+      '/api/videos/upload',
+      data: formData,
+      options: Options(
+        contentType: 'multipart/form-data',
+        // Timeout maior para uploads de vídeo
+        sendTimeout: const Duration(minutes: 5),
+        receiveTimeout: const Duration(minutes: 5),
+      ),
+    );
+
+    debugPrint('[API] uploadVideo() - Status: ${response.statusCode}');
+    return response;
+  }
+
+  /// Lista vídeos de uma clínica
+  Future<Response> getClinicVideos(String clinicId) async {
+    debugPrint('[API] getClinicVideos() - Clinic: $clinicId');
+    return get('/api/videos/clinic/$clinicId');
+  }
+
+  /// Deleta um vídeo
+  Future<Response> deleteVideo(String videoId, {bool hardDelete = false}) async {
+    debugPrint('[API] deleteVideo() - Video: $videoId, Hard: $hardDelete');
+    return delete('/api/videos/$videoId?hard=$hardDelete');
   }
 }

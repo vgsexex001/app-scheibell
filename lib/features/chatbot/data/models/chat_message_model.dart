@@ -12,6 +12,8 @@ class ChatMessageModel extends ChatMessage {
     super.senderId,
     super.senderType,
     super.senderName,
+    super.deliveredAt,
+    super.readAt,
   });
 
   /// Cria modelo a partir de resposta da OpenAI API
@@ -63,6 +65,13 @@ class ChatMessageModel extends ChatMessage {
       senderId: json['senderId'] as String?,
       senderType: json['senderType'] as String?,
       senderName: json['senderName'] as String?,
+      // Status de leitura
+      deliveredAt: json['deliveredAt'] != null
+          ? DateTime.parse(json['deliveredAt'])
+          : null,
+      readAt: json['readAt'] != null
+          ? DateTime.parse(json['readAt'])
+          : null,
     );
   }
 
@@ -89,6 +98,8 @@ class ChatMessageModel extends ChatMessage {
       senderId: entity.senderId,
       senderType: entity.senderType,
       senderName: entity.senderName,
+      deliveredAt: entity.deliveredAt,
+      readAt: entity.readAt,
     );
   }
 
@@ -104,6 +115,8 @@ class ChatMessageModel extends ChatMessage {
       senderId: senderId,
       senderType: senderType,
       senderName: senderName,
+      deliveredAt: deliveredAt,
+      readAt: readAt,
     );
   }
 

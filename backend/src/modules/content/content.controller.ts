@@ -175,6 +175,33 @@ export class ContentController {
     return this.contentService.addPatientMedication(patientId, data);
   }
 
+  @Patch('patient/medication/:id')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async updatePatientMedication(
+    @CurrentUser('patientId') patientId: string,
+    @Param('id') medicationId: string,
+    @Body() data: {
+      title?: string;
+      description?: string;
+      dosage?: string;
+      frequency?: string;
+      times?: string[];
+    },
+  ) {
+    return this.contentService.updatePatientMedication(patientId, medicationId, data);
+  }
+
+  @Delete('patient/medication/:id')
+  @Roles('PATIENT')
+  @UseGuards(RolesGuard)
+  async deletePatientMedication(
+    @CurrentUser('patientId') patientId: string,
+    @Param('id') medicationId: string,
+  ) {
+    return this.contentService.deletePatientMedication(patientId, medicationId);
+  }
+
   @Get('patient/training-protocol')
   @Roles('PATIENT')
   @UseGuards(RolesGuard)

@@ -15,13 +15,13 @@ enum ContentType {
 
 /// Categorias de conteúdo (espelha o enum do backend)
 enum ContentCategory {
-  normal,
-  warning,
-  emergency,
-  allowed,
-  restricted,
-  prohibited,
-  info,
+  normal,     // Verde - esperado
+  warning,    // Amarelo - avisar
+  emergency,  // Vermelho - emergência
+  allowed,    // Permitido/Recomendado
+  restricted, // Evitar/Com moderação
+  prohibited, // Proibido
+  info,       // Informativo
 }
 
 /// Modelo de conteúdo
@@ -232,22 +232,81 @@ class ContentService {
     return getAllClinicContentByType(ContentType.training);
   }
 
-  /// Busca medicamentos (incluindo medicações personalizadas do paciente)
+  /// Busca medicamentos do paciente (apenas medicamentos adicionados pelo paciente ou pelo médico)
   Future<List<ContentItem>> getMedications() async {
     try {
-      // Usar endpoint que inclui ajustes do paciente (medicações adicionadas)
+      // Usar endpoint que retorna apenas medicamentos específicos do paciente
+      // (adicionados pelo próprio paciente ou pelo médico/admin)
       final data = await _apiService.getPatientContent(
         type: 'MEDICATIONS',
       );
 
-      if (data.isNotEmpty) {
-        return data.map((item) => ContentItem.fromJson(item as Map<String, dynamic>)).toList();
-      }
-
-      return [];
+      return data.map((item) => ContentItem.fromJson(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      // Fallback para conteúdo da clínica apenas
-      return getAllClinicContentByType(ContentType.medications);
+      print('Erro ao buscar medicamentos: $e');
+      return [];
+    }
+  }
+
+  /// Busca medicamentos por categoria (Permitido, Evitar, Proibido)
+  /// Retorna mapa organizado por categoria usando ALLOWED, RESTRICTED, PROHIBITED do backend
+  Future<Map<String, List<ContentItem>>> getMedicationsByCategory() async {
+    try {
+      // Buscar todos os medicamentos da clínica
+      final medications = await getAllClinicContentByType(ContentType.medications);
+
+      // Organizar por categoria
+      return {
+        'allowed': medications
+            .where((m) => m.category == ContentCategory.allowed)
+            .toList(),
+        'restricted': medications
+            .where((m) => m.category == ContentCategory.restricted)
+            .toList(),
+        'prohibited': medications
+            .where((m) => m.category == ContentCategory.prohibited)
+            .toList(),
+      };
+    } catch (e) {
+      print('Erro ao buscar medicamentos por categoria: $e');
+      return {
+        'allowed': [],
+        'restricted': [],
+        'prohibited': [],
+      };
+    }
+  }
+
+  /// Busca medicamentos permitidos
+  Future<List<ContentItem>> getAllowedMedications() async {
+    try {
+      final medications = await getAllClinicContentByType(ContentType.medications);
+      return medications.where((m) => m.category == ContentCategory.allowed).toList();
+    } catch (e) {
+      print('Erro ao buscar medicamentos permitidos: $e');
+      return [];
+    }
+  }
+
+  /// Busca medicamentos a evitar (RESTRICTED)
+  Future<List<ContentItem>> getRestrictedMedications() async {
+    try {
+      final medications = await getAllClinicContentByType(ContentType.medications);
+      return medications.where((m) => m.category == ContentCategory.restricted).toList();
+    } catch (e) {
+      print('Erro ao buscar medicamentos a evitar: $e');
+      return [];
+    }
+  }
+
+  /// Busca medicamentos proibidos
+  Future<List<ContentItem>> getProhibitedMedications() async {
+    try {
+      final medications = await getAllClinicContentByType(ContentType.medications);
+      return medications.where((m) => m.category == ContentCategory.prohibited).toList();
+    } catch (e) {
+      print('Erro ao buscar medicamentos proibidos: $e');
+      return [];
     }
   }
 }

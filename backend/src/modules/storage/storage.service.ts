@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface UploadResult {
   path: string;
@@ -12,8 +14,13 @@ export class StorageService implements OnModuleInit {
   private supabase: SupabaseClient | null = null;
   private readonly logger = new Logger(StorageService.name);
   private isConfigured = false;
+  private useLocalStorage = false;
+  private localStoragePath: string;
 
-  constructor(private configService: ConfigService) {}
+  constructor(private configService: ConfigService) {
+    // Usar path absoluto para o diretório de uploads
+    this.localStoragePath = path.join(__dirname, '..', '..', '..', 'uploads');
+  }
 
   onModuleInit() {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
@@ -24,7 +31,14 @@ export class StorageService implements OnModuleInit {
       this.isConfigured = true;
       this.logger.log('Supabase Storage initialized');
     } else {
-      this.logger.warn('Supabase Storage not configured - SUPABASE_URL and SUPABASE_SERVICE_KEY required');
+      this.logger.warn('Supabase Storage not configured - using local file storage for development');
+      this.useLocalStorage = true;
+      this.isConfigured = true;
+      // Criar diretório de uploads se não existir
+      if (!fs.existsSync(this.localStoragePath)) {
+        fs.mkdirSync(this.localStoragePath, { recursive: true });
+      }
+      this.logger.log(`Upload directory initialized: ${this.localStoragePath}`);
     }
   }
 
@@ -76,17 +90,40 @@ export class StorageService implements OnModuleInit {
    */
   async uploadFile(
     bucket: string,
-    path: string,
+    filePath: string,
     file: Buffer,
     mimeType: string,
   ): Promise<UploadResult> {
+    // Modo de desenvolvimento com storage local
+    if (this.useLocalStorage) {
+      const fullDir = path.join(this.localStoragePath, bucket, path.dirname(filePath));
+      const fullPath = path.join(this.localStoragePath, bucket, filePath);
+
+      // Criar diretório se não existir
+      if (!fs.existsSync(fullDir)) {
+        fs.mkdirSync(fullDir, { recursive: true });
+      }
+
+      // Salvar arquivo
+      fs.writeFileSync(fullPath, file);
+
+      const publicUrl = `http://localhost:3000/uploads/${bucket}/${filePath}`;
+      this.logger.log(`File saved locally: ${fullPath}`);
+
+      return {
+        path: filePath,
+        publicUrl,
+      };
+    }
+
+    // Modo produção com Supabase
     if (!this.supabase) {
-      throw new Error('Supabase Storage not configured');
+      throw new Error('Storage not configured');
     }
 
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .upload(path, file, {
+      .upload(filePath, file, {
         contentType: mimeType,
         upsert: true,
       });
@@ -167,14 +204,23 @@ export class StorageService implements OnModuleInit {
   /**
    * Download de arquivo como Buffer
    */
-  async downloadFile(bucket: string, path: string): Promise<Buffer> {
+  async downloadFile(bucket: string, filePath: string): Promise<Buffer> {
+    // Modo de desenvolvimento com storage local
+    if (this.useLocalStorage) {
+      const fullPath = path.join(this.localStoragePath, bucket, filePath);
+      if (!fs.existsSync(fullPath)) {
+        throw new Error(`File not found: ${fullPath}`);
+      }
+      return fs.readFileSync(fullPath);
+    }
+
     if (!this.supabase) {
-      throw new Error('Supabase Storage not configured');
+      throw new Error('Storage not configured');
     }
 
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .download(path);
+      .download(filePath);
 
     if (error) {
       this.logger.error(`Download failed: ${error.message}`);

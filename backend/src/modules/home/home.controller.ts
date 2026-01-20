@@ -15,9 +15,9 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
-@Controller('api/patient')
+@Controller('patient')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class HomeController {
   constructor(private readonly homeService: HomeService) {}
@@ -57,6 +57,13 @@ export class HomeController {
     @Body() dto: UpdateVideoProgressDto,
   ) {
     return this.homeService.updateVideoProgress(patientId, dto);
+  }
+
+  // GET video progress for all training videos
+  @Get('videos/progress')
+  @Roles('PATIENT')
+  async getVideoProgress(@CurrentUser('patientId') patientId: string) {
+    return this.homeService.getVideoProgress(patientId);
   }
 
   @Post('home/task')

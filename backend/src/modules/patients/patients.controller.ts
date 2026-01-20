@@ -16,13 +16,25 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { CreateAllergyDto, CreateMedicalNoteDto, UpdatePatientDto } from './dto';
+import { CreateAllergyDto, CreateMedicalNoteDto, UpdatePatientDto, InvitePatientDto } from './dto';
 
 @Controller('patients')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
 export class PatientsController {
   constructor(private patientsService: PatientsService) {}
+
+  /**
+   * Convida um paciente (pré-cadastro + agendamento cirurgia)
+   * POST /api/patients/invite
+   */
+  @Post('invite')
+  async invitePatient(
+    @CurrentUser('clinicId') clinicId: string,
+    @Body() dto: InvitePatientDto,
+  ) {
+    return this.patientsService.invitePatient(clinicId, dto);
+  }
 
   /**
    * Lista pacientes da clínica

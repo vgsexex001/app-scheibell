@@ -31,6 +31,9 @@ import {
   ExamListQueryDto,
   PatientUploadFileDto,
   PatientFilesQueryDto,
+  AdminUploadFileDto,
+  ApproveExamDto,
+  PendingReviewQueryDto,
 } from './dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
@@ -85,6 +88,18 @@ export class ExamsController {
     return this.examsService.getExamStats(patientId);
   }
 
+  // GET /api/exams/patient/files - Listar arquivos do paciente (exames e documentos)
+  // IMPORTANTE: Esta rota deve vir ANTES de patient/:id para evitar conflito
+  @Get('patient/files')
+  @Roles('PATIENT')
+  async getPatientFiles(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: PatientFilesQueryDto,
+  ) {
+    const patientId = this.getPatientId(req);
+    return this.examsService.getPatientFiles(patientId, query);
+  }
+
   // GET /api/exams/patient/:id - Detalhes de um exame
   @Get('patient/:id')
   @Roles('PATIENT')
@@ -134,17 +149,6 @@ export class ExamsController {
     return this.examsService.uploadPatientFile(patientId, userId, file, dto);
   }
 
-  // GET /api/exams/patient/files - Listar arquivos do paciente (exames e documentos)
-  @Get('patient/files')
-  @Roles('PATIENT')
-  async getPatientFiles(
-    @Request() req: AuthenticatedRequest,
-    @Query() query: PatientFilesQueryDto,
-  ) {
-    const patientId = this.getPatientId(req);
-    return this.examsService.getPatientFiles(patientId, query);
-  }
-
   // DELETE /api/exams/patient/:id - Deletar arquivo próprio
   @Delete('patient/:id')
   @Roles('PATIENT')
@@ -176,6 +180,63 @@ export class ExamsController {
   async getClinicExamStats(@Request() req: AuthenticatedRequest) {
     const clinicId = this.getClinicId(req);
     return this.examsService.getClinicExamStats(clinicId);
+  }
+
+  // GET /api/exams/admin/pending - Listar exames pendentes de revisão médica
+  @Get('admin/pending')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getPendingReviewExams(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: PendingReviewQueryDto,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getPendingReviewExams(clinicId, query);
+  }
+
+  // PUT /api/exams/admin/:id/approve - Aprovar exame e liberar para paciente
+  @Put('admin/:id/approve')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async approveExam(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') examId: string,
+    @Body() dto: ApproveExamDto,
+  ) {
+    const clinicId = this.getClinicId(req);
+    const userId = req.user.sub;
+    return this.examsService.approveExam(clinicId, examId, userId, dto);
+  }
+
+  // POST /api/exams/admin/upload - Upload de arquivo pelo admin para paciente
+  // IMPORTANTE: Esta rota deve vir ANTES de admin/:id para evitar conflito
+  @Post('admin/upload')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAdminFile(
+    @Request() req: AuthenticatedRequest,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new FileTypeValidator({
+            fileType: /(jpeg|jpg|png|heic|heif|pdf)$/i,
+          }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+    @Body() dto: AdminUploadFileDto,
+  ) {
+    console.log('=== DEBUG UPLOAD ADMIN ===');
+    console.log('DTO recebido:', JSON.stringify(dto, null, 2));
+    console.log('File recebido:', file ? { originalname: file.originalname, mimetype: file.mimetype, size: file.size } : 'NENHUM');
+    console.log('User:', req.user);
+    console.log('=========================');
+
+    const clinicId = this.getClinicId(req);
+    const userId = req.user.sub;
+    const role = req.user.role;
+
+    return this.examsService.uploadAdminFile(clinicId, userId, role, file, dto);
   }
 
   // GET /api/exams/admin/patients/:patientId - Listar exames de um paciente

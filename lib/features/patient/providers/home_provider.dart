@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/content_service.dart';
 import '../../home/domain/entities/entities.dart';
@@ -192,6 +193,10 @@ class HomeProvider extends ChangeNotifier {
   List<CareItem> _careItems = [];
   List<TaskVideoItem> _taskVideos = [];
 
+  // Vídeos em progresso do Supabase (para "Continue Assistindo")
+  List<Map<String, dynamic>> _videosEmProgresso = [];
+  String? _clinicId;
+
   // Dados brutos do backend para compatibilidade
   List<ContentItem> _medicacoesRaw = [];
   List<ContentItem> _cuidadosRaw = [];
@@ -219,6 +224,7 @@ class HomeProvider extends ChangeNotifier {
   List<Medication> get medications => _medications;
   List<CareItem> get careItems => _careItems;
   List<TaskVideoItem> get taskVideos => _taskVideos;
+  List<Map<String, dynamic>> get videosEmProgresso => _videosEmProgresso;
 
   // Getters de compatibilidade com código antigo
   List<ContentItem> get medicacoes => _medicacoesRaw;
@@ -401,6 +407,7 @@ class HomeProvider extends ChangeNotifier {
         _carregarConsultas(),
         _carregarConteudo(),
         _carregarHomeDinamica(),
+        _carregarVideosEmProgresso(),
       ]);
 
       // Aplica progresso salvo localmente
@@ -482,6 +489,91 @@ class HomeProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('⚠️ Erro ao carregar home dinâmica (usando dados locais): $e');
       // Não lança erro - fallback para dados locais
+    }
+  }
+
+  /// Configura o clinicId do paciente
+  void setClinicId(String? clinicId) {
+    _clinicId = clinicId;
+  }
+
+  /// Verifica se Supabase está disponível
+  bool get _isSupabaseAvailable {
+    try {
+      Supabase.instance;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Carrega vídeos em progresso do Supabase (para "Continue Assistindo")
+  Future<void> _carregarVideosEmProgresso() async {
+    if (!_isSupabaseAvailable || _clinicId == null) {
+      debugPrint('⚠️ Supabase não disponível ou clinicId não configurado');
+      return;
+    }
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Buscar vídeos da clínica
+      final videosResponse = await supabase
+          .from('clinic_videos')
+          .select()
+          .eq('clinicId', _clinicId!)
+          .eq('isActive', true)
+          .order('sortOrder');
+
+      final videos = List<Map<String, dynamic>>.from(videosResponse);
+
+      // Buscar progresso dos vídeos
+      Map<String, Map<String, dynamic>> progressMap = {};
+      try {
+        final progressResponse = await _apiService.get('/patient/videos/progress');
+        if (progressResponse.statusCode == 200 && progressResponse.data != null) {
+          final progressList = progressResponse.data as List<dynamic>? ?? [];
+          for (final p in progressList) {
+            final contentId = p['contentId'] as String?;
+            if (contentId != null) {
+              progressMap[contentId] = p as Map<String, dynamic>;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Erro ao buscar progresso: $e');
+      }
+
+      // Filtrar apenas vídeos em progresso (iniciados mas não completos)
+      final videosComProgresso = <Map<String, dynamic>>[];
+
+      for (final video in videos) {
+        final videoId = video['id'] as String;
+        final progress = progressMap[videoId];
+
+        if (progress != null) {
+          final watchedSeconds = progress['watchedSeconds'] as int? ?? 0;
+          final isCompleted = progress['isCompleted'] as bool? ?? false;
+
+          // Só adiciona se tem progresso e não foi completado
+          if (watchedSeconds > 0 && !isCompleted) {
+            video['watchedSeconds'] = watchedSeconds;
+            video['totalSeconds'] = progress['totalSeconds'] as int? ?? video['duration'] ?? 300;
+            // progressPercent pode vir como int ou double do backend
+            final rawProgress = progress['progressPercent'];
+            video['progressPercent'] = rawProgress != null
+                ? (rawProgress is int ? rawProgress.toDouble() : rawProgress as double)
+                : 0.0;
+            video['isCompleted'] = isCompleted;
+            videosComProgresso.add(video);
+          }
+        }
+      }
+
+      _videosEmProgresso = videosComProgresso;
+      debugPrint('✅ Vídeos em progresso: ${_videosEmProgresso.length}');
+    } catch (e) {
+      debugPrint('⚠️ Erro ao carregar vídeos em progresso: $e');
     }
   }
 
@@ -828,6 +920,7 @@ class HomeProvider extends ChangeNotifier {
         _carregarConsultas(),
         _carregarConteudo(),
         _carregarHomeDinamica(),
+        _carregarVideosEmProgresso(),
       ]);
 
       // Reaplicar progresso local

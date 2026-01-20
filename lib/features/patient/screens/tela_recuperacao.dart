@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'tela_medicamentos.dart';
 import '../providers/recovery_provider.dart';
+import '../providers/home_provider.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/progress_provider.dart';
 import '../../../core/utils/recovery_calculator.dart';
+import '../../home/domain/entities/medication.dart';
+import '../../../core/services/content_service.dart';
 
 class TelaRecuperacao extends StatefulWidget {
   const TelaRecuperacao({super.key});
@@ -277,39 +282,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     },
   ];
 
-  // Dados dos Medicamentos
-  final List<Map<String, dynamic>> _medicamentos = [
-    {
-      'nome': 'Ibuprofeno 600mg',
-      'dosagem': '1 comprimido',
-      'frequencia': '3x ao dia',
-      'proximaDose': '14:00',
-      'horarios': ['08:00', '14:00', '20:00'],
-      'observacao': 'Tomar após refeição',
-      'emojiObservacao': '🍽️',
-      'duracao': 'até D+14',
-    },
-    {
-      'nome': 'Amoxicilina 500mg',
-      'dosagem': '1 cápsula',
-      'frequencia': '2x ao dia',
-      'proximaDose': '21:00',
-      'horarios': ['09:00', '21:00'],
-      'observacao': 'Com um copo cheio de água',
-      'emojiObservacao': '🥛',
-      'duracao': 'até D+7',
-    },
-    {
-      'nome': 'Vitamina C 1g',
-      'dosagem': '1 comprimido',
-      'frequencia': '1x ao dia',
-      'proximaDose': 'Amanhã 08:00',
-      'horarios': ['08:00'],
-      'observacao': 'Pela manhã em jejum',
-      'emojiObservacao': '🌅',
-      'duracao': 'Contínuo',
-    },
-  ];
+  // Dados dos Medicamentos - agora vem do HomeProvider (removido mock)
 
   // Dados das Semanas do Protocolo de Treino
   // Estados: 0 = concluída, 1 = atual, 2 = em breve
@@ -523,6 +496,37 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   ];
 
   void _toggleSemana(int numero) {
+    // Verificar se a semana está desbloqueada usando ProgressProvider
+    final progressProvider = context.read<ProgressProvider>();
+
+    if (!progressProvider.isWeekUnlocked(numero)) {
+      final daysRemaining = progressProvider.daysUntilWeekUnlock(numero);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.lock, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  daysRemaining > 0
+                      ? 'Este conteudo sera liberado em $daysRemaining dias'
+                      : 'Este conteudo sera liberado em breve',
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFFE67E22),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       if (_semanasExpandidas.contains(numero)) {
         _semanasExpandidas.remove(numero);
@@ -814,7 +818,66 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     }
   }
 
+  // Mocks padrão de sintomas normais
+  static const List<Map<String, dynamic>> _mockSintomasNormais = [
+    {'title': 'Inchaço leve', 'validFromDay': 0, 'validUntilDay': 14, 'isMock': true},
+    {'title': 'Sensibilidade ao toque', 'validFromDay': 0, 'validUntilDay': 21, 'isMock': true},
+    {'title': 'Hematomas pequenos', 'validFromDay': 0, 'validUntilDay': 10, 'isMock': true},
+    {'title': 'Vermelhidão leve', 'validFromDay': 0, 'validUntilDay': 7, 'isMock': true},
+    {'title': 'Formigamento leve', 'validFromDay': 0, 'validUntilDay': 30, 'isMock': true},
+  ];
+
   Widget _buildConteudoNormais() {
+    final provider = context.watch<RecoveryProvider>();
+    final sintomasApi = provider.usandoSupabase
+        ? provider.sintomasNormaisSupabase
+        : <Map<String, dynamic>>[];
+
+    // Combinar itens da API (primeiro) + mocks (depois)
+    // Itens da API são identificados por não terem 'isMock'
+    final List<Map<String, dynamic>> sintomasCombinados = [
+      ...sintomasApi, // Itens do admin primeiro
+      ..._mockSintomasNormais, // Mocks padrão depois
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeaderConteudo(
+            icon: Icons.check_circle,
+            corIcone: _verdeEscuro,
+            titulo: 'Sintomas Normais',
+            subtitulo: 'Esperados no pós-operatório',
+            corTitulo: _verdeEscuro,
+          ),
+          const SizedBox(height: 16),
+          if (provider.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Color(0xFF4F4A34)),
+              ),
+            )
+          else
+            ...sintomasCombinados.map((sintoma) => _buildCardSintoma(
+                  titulo: sintoma['title'] ?? '',
+                  dias: _formatarDias(sintoma['validFromDay'], sintoma['validUntilDay']),
+                  corTexto: _verdeTexto,
+                  corFundo: _verdeFundo,
+                  corBorda: _verdeBorda,
+                  corBadge: _verdeBadge,
+                  corBadgeTexto: _verdeEscuro,
+                  descricao: sintoma['description'],
+                )),
+        ],
+      ),
+    );
+  }
+
+  // Fallback para quando não houver dados do Supabase
+  Widget _buildConteudoNormaisFallback() {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -878,7 +941,67 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     );
   }
 
+  String _formatarDias(dynamic fromDay, dynamic untilDay) {
+    final from = fromDay as int? ?? 0;
+    final until = untilDay as int?;
+    if (until == null) {
+      return '+$from dias';
+    }
+    return '+$from a +$until dias';
+  }
+
+  // Mocks padrão de sintomas para avisar
+  static const List<Map<String, dynamic>> _mockSintomasAvisar = [
+    {'title': 'Inchaço intenso persistente', 'description': 'Contatar em 24h', 'isMock': true},
+    {'title': 'Dor persistente sem melhora', 'description': 'Contatar em 12h', 'isMock': true},
+    {'title': 'Vermelhidão intensa', 'description': 'Contatar em 24h', 'isMock': true},
+    {'title': 'Calor local excessivo', 'description': 'Contatar em 12h', 'isMock': true},
+    {'title': 'Assimetria acentuada', 'description': 'Contatar em 48h', 'isMock': true},
+  ];
+
   Widget _buildConteudoAvisar() {
+    final provider = context.watch<RecoveryProvider>();
+    final sintomasApi = provider.usandoSupabase
+        ? provider.sintomasAvisarSupabase
+        : <Map<String, dynamic>>[];
+
+    // Combinar itens da API (primeiro) + mocks (depois)
+    final List<Map<String, dynamic>> sintomasCombinados = [
+      ...sintomasApi, // Itens do admin primeiro
+      ..._mockSintomasAvisar, // Mocks padrão depois
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeaderConteudo(
+            icon: Icons.warning_amber,
+            corIcone: const Color(0xFFA65F00),
+            titulo: 'Avisar Equipe',
+            subtitulo: 'Contate a clínica em breve',
+            corTitulo: const Color(0xFFA65F00),
+          ),
+          const SizedBox(height: 16),
+          if (provider.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Color(0xFF4F4A34)),
+              ),
+            )
+          else
+            ...sintomasCombinados.map((sintoma) => _buildCardAvisar(
+                  titulo: sintoma['title'] ?? '',
+                  urgencia: sintoma['description'] ?? 'Entre em contato',
+                )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConteudoAvisarFallback() {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -928,7 +1051,10 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
       decoration: BoxDecoration(
         color: const Color(0xFFFEFCE8),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFFEEF85)),
+        border: Border.all(
+          color: const Color(0xFFFEEF85),
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -957,7 +1083,80 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     );
   }
 
+  // Mocks padrão de sintomas de emergência
+  static const List<Map<String, dynamic>> _mockSintomasEmergencia = [
+    {'title': 'Febre alta (> 38°C)', 'description': 'Urgente', 'isMock': true},
+    {'title': 'Sangramento excessivo', 'description': 'Urgente', 'isMock': true},
+    {'title': 'Secreção purulenta', 'description': 'Urgente', 'isMock': true},
+    {'title': 'Dificuldade para respirar', 'description': 'Imediato', 'isMock': true},
+    {'title': 'Necrose tecidual', 'description': 'Imediato', 'isMock': true},
+    {'title': 'Reação alérgica severa', 'description': 'Imediato', 'isMock': true},
+  ];
+
   Widget _buildConteudoEmergencia() {
+    final provider = context.watch<RecoveryProvider>();
+    final sintomasApi = provider.usandoSupabase
+        ? provider.sintomasEmergenciaSupabase
+        : <Map<String, dynamic>>[];
+
+    // Combinar itens da API (primeiro) + mocks (depois)
+    final List<Map<String, dynamic>> sintomasCombinados = [
+      ...sintomasApi, // Itens do admin primeiro
+      ..._mockSintomasEmergencia, // Mocks padrão depois
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.error, color: Color(0xFFC10007), size: 24),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Emergência',
+                    style: TextStyle(
+                      color: Color(0xFFC10007),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    'Ligue imediatamente para a clínica',
+                    style: TextStyle(
+                      color: Color(0xFF495565),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (provider.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Color(0xFF4F4A34)),
+              ),
+            )
+          else
+            ...sintomasCombinados.map((sintoma) => _buildCardEmergencia(
+                  titulo: sintoma['title'] ?? '',
+                  urgencia: sintoma['description'] ?? 'Urgente',
+                )),
+          const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConteudoEmergenciaFallback() {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1014,18 +1213,23 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
       decoration: BoxDecoration(
         color: const Color(0xFFFEF2F2),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFFFC9C9), width: 2),
+        border: Border.all(
+          color: const Color(0xFFFFC9C9),
+          width: 2,
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            titulo,
-            style: const TextStyle(
-              color: Color(0xFF811719),
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              height: 1.43,
+          Expanded(
+            child: Text(
+              titulo,
+              style: const TextStyle(
+                color: Color(0xFF811719),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                height: 1.43,
+              ),
             ),
           ),
           Container(
@@ -1094,6 +1298,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     required Color corBorda,
     required Color corBadge,
     required Color corBadgeTexto,
+    String? descricao,
   }) {
     return Container(
       width: double.infinity,
@@ -1102,38 +1307,57 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
       decoration: BoxDecoration(
         color: corFundo,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: corBorda),
+        border: Border.all(
+          color: corBorda,
+          width: 1,
+        ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(
-            child: Text(
-              titulo,
-              style: TextStyle(
-                color: corTexto,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.43,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  titulo,
+                  style: TextStyle(
+                    color: corTexto,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.43,
+                  ),
+                ),
               ),
-            ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: corBadge,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  dias,
+                  style: TextStyle(
+                    color: corBadgeTexto,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    height: 1.33,
+                  ),
+                ),
+              ),
+            ],
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: corBadge,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              dias,
+          if (descricao != null && descricao.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              descricao,
               style: TextStyle(
-                color: corBadgeTexto,
+                color: corTexto.withValues(alpha: 0.7),
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1.33,
+                height: 1.4,
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1209,10 +1433,13 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   }
 
   Widget _buildConteudoCuidados() {
+    final provider = context.watch<RecoveryProvider>();
+    final cuidadosSupabase = provider.cuidadosSupabase;
+
     Color corPrincipal, corFundo, corBorda, corBadge, corDescricao, corHorario;
     String tituloHeader, subtituloHeader;
     IconData iconeHeader;
-    List<Map<String, String>> itens;
+    List<Map<String, String>> itensFallback;
 
     switch (_tabCuidado) {
       case 0: // Cuidado (vermelho)
@@ -1225,7 +1452,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         tituloHeader = 'Cuidados Críticos';
         subtituloHeader = 'Primeiros 7 dias (+0 a +7)';
         iconeHeader = Icons.warning;
-        itens = _itensCuidadoCritico;
+        itensFallback = _itensCuidadoCritico;
         break;
       case 1: // Fazer (verde)
         corPrincipal = const Color(0xFF0D532B);
@@ -1237,7 +1464,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         tituloHeader = 'Cuidados Obrigatórios';
         subtituloHeader = 'Fazer diariamente';
         iconeHeader = Icons.check_circle;
-        itens = _itensFazer;
+        itensFallback = _itensFazer;
         break;
       case 2: // Opcional (azul)
         corPrincipal = const Color(0xFF1E40AF);
@@ -1249,7 +1476,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         tituloHeader = 'Cuidados Opcionais';
         subtituloHeader = 'Recomendados mas não obrigatórios';
         iconeHeader = Icons.info;
-        itens = _itensOpcional;
+        itensFallback = _itensOpcional;
         break;
       case 3: // Não Necessário (cinza)
       default:
@@ -1262,9 +1489,13 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         tituloHeader = 'Não Necessário';
         subtituloHeader = 'Pode ignorar nesta fase';
         iconeHeader = Icons.block;
-        itens = _itensNaoNecessario;
+        itensFallback = _itensNaoNecessario;
         break;
     }
+
+    // Combinar dados do backend (primeiro) + fallback (depois)
+    // Itens do admin aparecem primeiro, depois os mocks padrão
+    final temDadosBackend = _tabCuidado == 0 && cuidadosSupabase.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -1300,24 +1531,112 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
           ),
           const SizedBox(height: 16),
 
-          // Cards
-          ...itens.map((item) => _buildCardCuidado(
-                titulo: item['titulo']!,
-                frequencia: item['frequencia']!,
-                descricao: item['descricao']!,
-                horario: item['horario']!,
-                corPrincipal: corPrincipal,
-                corFundo: corFundo,
-                corBorda: corBorda,
-                corBadge: corBadge,
-                corDescricao: corDescricao,
-                corHorario: corHorario,
-              )),
+          // Loading indicator
+          if (provider.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Color(0xFF4F4A34)),
+              ),
+            )
+          else ...[
+            // Cards com dados do backend PRIMEIRO (se houver na tab 0)
+            if (temDadosBackend)
+              ...cuidadosSupabase.map((item) => _buildCardCuidadoSupabase(
+                    titulo: item['title'] ?? '',
+                    descricao: item['description'] ?? '',
+                    dias: _formatarDias(item['validFromDay'], item['validUntilDay']),
+                    corPrincipal: corPrincipal,
+                    corFundo: corFundo,
+                    corBorda: corBorda,
+                    corBadge: corBadge,
+                    corDescricao: corDescricao,
+                  )),
+            // Cards com dados de fallback DEPOIS (sempre mostrar mocks)
+            ...itensFallback.map((item) => _buildCardCuidado(
+                  titulo: item['titulo']!,
+                  frequencia: item['frequencia']!,
+                  descricao: item['descricao']!,
+                  horario: item['horario']!,
+                  corPrincipal: corPrincipal,
+                  corFundo: corFundo,
+                  corBorda: corBorda,
+                  corBadge: corBadge,
+                  corDescricao: corDescricao,
+                  corHorario: corHorario,
+                )),
+          ],
 
           // Card de alerta (apenas na tab Cuidado)
           if (_tabCuidado == 0) _buildCardAlertaEspecial(),
 
           const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardCuidadoSupabase({
+    required String titulo,
+    required String descricao,
+    required String dias,
+    required Color corPrincipal,
+    required Color corFundo,
+    required Color corBorda,
+    required Color corBadge,
+    required Color corDescricao,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: corFundo,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: corBorda,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: TextStyle(
+              color: corPrincipal,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (descricao.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              descricao,
+              style: TextStyle(
+                color: corDescricao,
+                fontSize: 14,
+              ),
+            ),
+          ],
+          if (dias.isNotEmpty && dias != '+0 dias') ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: corBadge,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                dias,
+                style: TextStyle(
+                  color: corPrincipal,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1503,12 +1822,37 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     );
   }
 
+  // Mocks padrão de atividades permitidas
+  static const List<Map<String, dynamic>> _mockAtividadesPermitidas = [
+    {'title': 'Caminhada leve', 'description': 'Passeios curtos em terreno plano', 'isMock': true},
+    {'title': 'Exercícios respiratórios', 'description': 'Respiração profunda', 'isMock': true},
+    {'title': 'Alongamentos suaves', 'description': 'Sem forçar', 'isMock': true},
+  ];
+
+  // Mocks padrão de atividades a evitar
+  static const List<Map<String, dynamic>> _mockAtividadesEvitar = [
+    {'title': 'Exercícios moderados', 'description': 'Aeróbicos leves', 'isMock': true},
+    {'title': 'Carregar peso moderado', 'description': 'Entre 2-5kg', 'isMock': true},
+    {'title': 'Subir escadas demais', 'description': 'Evitar muitos lances', 'isMock': true},
+  ];
+
+  // Mocks padrão de atividades proibidas
+  static const List<Map<String, dynamic>> _mockAtividadesProibidas = [
+    {'title': 'Musculação intensa', 'description': 'Academia com pesos', 'isMock': true},
+    {'title': 'Corrida', 'description': 'Qualquer intensidade', 'isMock': true},
+    {'title': 'Natação', 'description': 'Risco de infecção', 'isMock': true},
+    {'title': 'Esportes de impacto', 'description': 'Futebol, basquete, etc', 'isMock': true},
+  ];
+
   Widget _buildConteudoAtividades() {
+    final provider = context.watch<RecoveryProvider>();
+
     Color corPrincipal, corFundo, corBorda, corBadge, corTitulo;
     String tituloHeader, subtituloHeader;
     IconData iconeHeader;
     String? fcMax;
-    List<Map<String, String>> itens;
+    List<Map<String, dynamic>> itensApi;
+    List<Map<String, dynamic>> itensMock;
 
     switch (_tabAtividade) {
       case 0: // Permitidas (verde)
@@ -1521,7 +1865,8 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         subtituloHeader = 'Pode realizar desde o início';
         iconeHeader = Icons.check_circle;
         fcMax = '85 bpm';
-        itens = _itensPermitidas;
+        itensApi = provider.atividadesPermitidasSupabase;
+        itensMock = _mockAtividadesPermitidas;
         break;
       case 1: // A evitar (amarelo)
         corPrincipal = const Color(0xFFD08700);
@@ -1533,7 +1878,8 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         subtituloHeader = 'Evite durante a recuperação';
         iconeHeader = Icons.warning_amber;
         fcMax = '100 bpm';
-        itens = _itensAEvitar;
+        itensApi = provider.atividadesEvitarSupabase;
+        itensMock = _mockAtividadesEvitar;
         break;
       case 2: // Proibidas (vermelho)
       default:
@@ -1546,9 +1892,16 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         subtituloHeader = 'Não realizar de forma alguma';
         iconeHeader = Icons.block;
         fcMax = null;
-        itens = _itensProibidas;
+        itensApi = provider.atividadesProibidasSupabase;
+        itensMock = _mockAtividadesProibidas;
         break;
     }
+
+    // Combinar itens da API (primeiro) + mocks (depois)
+    final List<Map<String, dynamic>> itensCombinados = [
+      ...itensApi, // Itens do admin primeiro
+      ...itensMock, // Mocks padrão depois
+    ];
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -1565,18 +1918,94 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
           ),
           const SizedBox(height: 16),
 
-          // Cards
-          ...itens.map((item) => _buildCardAtividade(
-                titulo: item['titulo']!,
-                dias: item['dias']!,
-                corPrincipal: corPrincipal,
-                corFundo: corFundo,
-                corBorda: corBorda,
-                corBadge: corBadge,
-                corTitulo: corTitulo,
-              )),
+          // Loading indicator
+          if (provider.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Color(0xFF4F4A34)),
+              ),
+            )
+          else
+            // Cards com dados combinados (API + mocks)
+            ...itensCombinados.map((item) => _buildCardAtividadeSupabase(
+                  titulo: item['title'] ?? '',
+                  descricao: item['description'] ?? '',
+                  dias: _formatarDias(item['validFromDay'], item['validUntilDay']),
+                  corPrincipal: corPrincipal,
+                  corFundo: corFundo,
+                  corBorda: corBorda,
+                  corBadge: corBadge,
+                  corTitulo: corTitulo,
+                )),
 
           const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardAtividadeSupabase({
+    required String titulo,
+    required String descricao,
+    required String dias,
+    required Color corPrincipal,
+    required Color corFundo,
+    required Color corBorda,
+    required Color corBadge,
+    required Color corTitulo,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: corFundo,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: corBorda,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: TextStyle(
+              color: corTitulo,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (descricao.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              descricao,
+              style: TextStyle(
+                color: corTitulo.withOpacity(0.8),
+                fontSize: 14,
+              ),
+            ),
+          ],
+          if (dias.isNotEmpty && dias != '+0 dias') ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: corBadge,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                dias,
+                style: TextStyle(
+                  color: corPrincipal,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1765,11 +2194,36 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     );
   }
 
+  // Mocks padrão de dieta recomendada
+  static const List<Map<String, dynamic>> _mockDietaRecomendada = [
+    {'title': 'Proteínas magras', 'description': 'Frango, peixe, ovos', 'isMock': true},
+    {'title': 'Frutas frescas', 'description': 'Rica em vitaminas', 'isMock': true},
+    {'title': 'Legumes e verduras', 'description': 'Fibras e minerais', 'isMock': true},
+    {'title': 'Água', 'description': 'Mínimo 2L por dia', 'isMock': true},
+  ];
+
+  // Mocks padrão de dieta a evitar
+  static const List<Map<String, dynamic>> _mockDietaEvitar = [
+    {'title': 'Alimentos muito salgados', 'description': 'Aumentam retenção de líquidos', 'isMock': true},
+    {'title': 'Açúcar em excesso', 'description': 'Retarda cicatrização', 'isMock': true},
+    {'title': 'Cafeína em excesso', 'description': 'Máximo 2 xícaras/dia', 'isMock': true},
+  ];
+
+  // Mocks padrão de dieta proibida
+  static const List<Map<String, dynamic>> _mockDietaProibida = [
+    {'title': 'Álcool', 'description': 'Interfere na cicatrização', 'isMock': true},
+    {'title': 'Frituras', 'description': 'Difícil digestão', 'isMock': true},
+    {'title': 'Alimentos ultraprocessados', 'description': 'Pobres em nutrientes', 'isMock': true},
+  ];
+
   Widget _buildConteudoDieta() {
+    final provider = context.watch<RecoveryProvider>();
+
     Color corPrincipal, corFundo, corBorda, corBadge, corTitulo, corExemplos;
     String tituloHeader, subtituloHeader;
     IconData iconeHeader;
-    List<Map<String, String>> itens;
+    List<Map<String, dynamic>> itensApi;
+    List<Map<String, dynamic>> itensMock;
 
     switch (_tabDieta) {
       case 0: // Recomendados (verde)
@@ -1782,7 +2236,8 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         tituloHeader = 'Alimentos Recomendados';
         subtituloHeader = 'Aceleram a recuperação';
         iconeHeader = Icons.check_circle;
-        itens = _itensRecomendados;
+        itensApi = provider.dietaRecomendadaSupabase;
+        itensMock = _mockDietaRecomendada;
         break;
       case 1: // Evitar (amarelo)
         corPrincipal = const Color(0xFFD08700);
@@ -1794,7 +2249,8 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         tituloHeader = 'Alimentos a Evitar';
         subtituloHeader = 'Podem atrasar a recuperação';
         iconeHeader = Icons.warning_amber;
-        itens = _itensEvitarDieta;
+        itensApi = provider.dietaEvitarSupabase;
+        itensMock = _mockDietaEvitar;
         break;
       case 2: // Proibidos (vermelho)
       default:
@@ -1807,9 +2263,16 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
         tituloHeader = 'Alimentos Proibidos';
         subtituloHeader = 'Não consumir durante recuperação';
         iconeHeader = Icons.block;
-        itens = _itensProibidosDieta;
+        itensApi = provider.dietaProibidaSupabase;
+        itensMock = _mockDietaProibida;
         break;
     }
+
+    // Combinar itens da API (primeiro) + mocks (depois)
+    final List<Map<String, dynamic>> itensCombinados = [
+      ...itensApi, // Itens do admin primeiro
+      ...itensMock, // Mocks padrão depois
+    ];
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -1825,21 +2288,99 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
           ),
           const SizedBox(height: 16),
 
-          // Cards
-          ...itens.map((item) => _buildCardDieta(
-                emoji: item['emoji']!,
-                titulo: item['titulo']!,
-                dias: item['dias']!,
-                exemplos: item['exemplos']!,
-                corPrincipal: corPrincipal,
-                corFundo: corFundo,
-                corBorda: corBorda,
-                corBadge: corBadge,
-                corTitulo: corTitulo,
-                corExemplos: corExemplos,
-              )),
+          // Loading indicator
+          if (provider.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Color(0xFF4F4A34)),
+              ),
+            )
+          else
+            // Cards com dados combinados (API + mocks)
+            ...itensCombinados.map((item) => _buildCardDietaSupabase(
+                  titulo: item['title'] ?? '',
+                  descricao: item['description'] ?? '',
+                  dias: _formatarDias(item['validFromDay'], item['validUntilDay']),
+                  corPrincipal: corPrincipal,
+                  corFundo: corFundo,
+                  corBorda: corBorda,
+                  corBadge: corBadge,
+                  corTitulo: corTitulo,
+                  corExemplos: corExemplos,
+                )),
 
           const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardDietaSupabase({
+    required String titulo,
+    required String descricao,
+    required String dias,
+    required Color corPrincipal,
+    required Color corFundo,
+    required Color corBorda,
+    required Color corBadge,
+    required Color corTitulo,
+    required Color corExemplos,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: corFundo,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: corBorda),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: TextStyle(
+                    color: corTitulo,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (dias.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: corBadge,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    dias,
+                    style: TextStyle(
+                      color: corPrincipal,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (descricao.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              descricao,
+              style: TextStyle(
+                color: corExemplos,
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1953,37 +2494,328 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
   // ========== CATEGORIA MEDICAMENTOS ==========
 
   Widget _buildConteudoMedicamentos() {
+    // Usar Consumer para garantir acesso seguro ao HomeProvider
+    return Consumer<HomeProvider>(
+      builder: (context, homeProvider, child) {
+        final medications = homeProvider.medications;
+
+        // Calcular doses tomadas e total
+        int dosesTomadas = 0;
+        int dosesTotal = 0;
+        for (final med in medications) {
+          dosesTomadas += med.dosesTakenToday;
+          dosesTotal += med.totalDosesToday;
+        }
+
+        return _buildConteudoMedicamentosInterno(
+          medications: medications,
+          dosesTomadas: dosesTomadas,
+          dosesTotal: dosesTotal,
+        );
+      },
+    );
+  }
+
+  Widget _buildConteudoMedicamentosInterno({
+    required List<Medication> medications,
+    required int dosesTomadas,
+    required int dosesTotal,
+  }) {
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Banner Gerenciar
         _buildBannerGerenciar(),
 
-        const SizedBox(height: 8),
-
-        // Header Medicações em Uso
-        _buildHeaderMedicacoes(),
-
         const SizedBox(height: 16),
 
-        // Lista de Medicamentos
-        ..._medicamentos.map((med) => _buildCardMedicamento(med)),
-
-        const SizedBox(height: 8),
-
-        // Card Adesão ao Tratamento
-        _buildCardAdesao(
-          dosesTomadas: 3,
-          dosesTotal: 4,
-        ),
-
-        const SizedBox(height: 8),
-
-        // Seção Marcar Doses
-        _buildSecaoMarcarDoses(),
+        // Seção de Medicamentos por Categoria (Permitido, Evitar, Proibido)
+        _MedicamentosPorCategoria(),
 
         const SizedBox(height: 100),
       ],
+    );
+  }
+
+  /// Card de medicamento usando dados reais do Medication (design Figma)
+  Widget _buildCardMedicamentoReal(Medication med) {
+    final proximaDose = med.nextDoseTime;
+    final frequencia = med.frequency ?? '${med.doses.length}x ao dia';
+    final dosagem = med.dosage ?? '1 dose';
+
+    // Calcular dias restantes (se tiver endDate)
+    String? diasRestantes;
+    if (med.endDate != null) {
+      final hoje = DateTime.now();
+      final diff = med.endDate!.difference(hoje).inDays;
+      if (diff > 0) {
+        diasRestantes = 'até D+$diff';
+      } else if (diff == 0) {
+        diasRestantes = 'último dia';
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.only(top: 16, left: 16, bottom: 16, right: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFF00C950), width: 1.5),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x19212621),
+              blurRadius: 3,
+              offset: Offset(0, 1),
+            ),
+            BoxShadow(
+              color: Color(0x0C212621),
+              blurRadius: 2,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ícone com gradiente verde
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF00C850), Color(0xFF00A63D)],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x19212621),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.medication,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Conteúdo
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Nome e badge frequência
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Nome e dosagem
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              med.name,
+                              style: const TextStyle(
+                                color: Color(0xFF212621),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                              ),
+                            ),
+                            Text(
+                              dosagem,
+                              style: const TextStyle(
+                                color: Color(0xFF4F4A34),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                height: 1.33,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Badge frequência
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00A63E),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          frequencia,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            height: 1.33,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Próxima dose
+                  if (proximaDose != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.access_time,
+                            color: Color(0xFF0D532B),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Próxima: ',
+                            style: const TextStyle(
+                              color: Color(0xFF0D532B),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                              height: 1.33,
+                            ),
+                          ),
+                          Text(
+                            proximaDose,
+                            style: const TextStyle(
+                              color: Color(0xFF0D532B),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.33,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (med.allDosesTaken)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(
+                            Icons.check_circle,
+                            color: Color(0xFF0D532B),
+                            size: 16,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Todas as doses tomadas',
+                            style: TextStyle(
+                              color: Color(0xFF0D532B),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.33,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  // Horários
+                  if (med.doses.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: med.doses.map((dose) {
+                        final isTaken = dose.taken;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isTaken ? const Color(0xFFDCFCE7) : Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: const Color(0xFFB8F7CF),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isTaken) ...[
+                                const Icon(
+                                  Icons.check,
+                                  color: Color(0xFF016630),
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                dose.time,
+                                style: TextStyle(
+                                  color: const Color(0xFF016630),
+                                  fontSize: 12,
+                                  fontWeight: isTaken ? FontWeight.w600 : FontWeight.w400,
+                                  height: 1.33,
+                                  decoration: isTaken ? TextDecoration.lineThrough : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  // Instruções/Dica
+                  if (med.instructions != null && med.instructions!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '💡 ${med.instructions}',
+                      style: const TextStyle(
+                        color: Color(0xFF4F4A34),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        height: 1.33,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  // Dias restantes
+                  if (diasRestantes != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today,
+                          color: Color(0xFF008235),
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          diasRestantes,
+                          style: const TextStyle(
+                            color: Color(0xFF008235),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                            height: 1.33,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2062,7 +2894,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     );
   }
 
-  Widget _buildHeaderMedicacoes() {
+  Widget _buildHeaderMedicacoes(int count) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
@@ -2085,6 +2917,7 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
                       color: Color(0xFF008235),
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
+                      height: 1.5,
                     ),
                   ),
                   Text(
@@ -2093,25 +2926,27 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
                       color: Color(0xFF495565),
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
+                      height: 1.33,
                     ),
                   ),
                 ],
               ),
             ],
           ),
-          // Badge quantidade
+          // Badge quantidade (verde sólido como no Figma)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFFDCFCE7),
-              borderRadius: BorderRadius.circular(16),
+              color: const Color(0xFF00A63E),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '${_medicamentos.length} ativas',
+              '$count ativas',
               style: const TextStyle(
-                color: Color(0xFF008235),
+                color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
+                height: 1.33,
               ),
             ),
           ),
@@ -2815,6 +3650,8 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
     final List<String> podeFazer = List<String>.from(semana['podeFazer'] as List);
     final List<String> aindaProibido = List<String>.from(semana['aindaProibido'] as List);
     final List<String> criteriosSeguranca = List<String>.from(semana['criteriosSeguranca'] as List);
+    final List<Map<String, dynamic>> exerciciosPersonalizados =
+        (semana['exerciciosPersonalizados'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
     return Container(
       width: double.infinity,
@@ -2876,10 +3713,103 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
             _buildSecaoAindaProibido(aindaProibido),
           ],
 
+          // Seção "Exercícios Personalizados" (se existir)
+          if (exerciciosPersonalizados.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _buildSecaoExerciciosPersonalizados(exerciciosPersonalizados),
+          ],
+
           const SizedBox(height: 16),
 
           // Card Critérios de Segurança
           _buildCardCriteriosSeguranca(criteriosSeguranca),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecaoExerciciosPersonalizados(List<Map<String, dynamic>> exercicios) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3E8FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF7C3AED).withAlpha(51)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.fitness_center, color: Color(0xFF7C3AED), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Exercícios para você',
+                style: TextStyle(
+                  color: Color(0xFF7C3AED),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...exercicios.map((exercicio) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C3AED).withAlpha(26),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.fitness_center,
+                    color: Color(0xFF7C3AED),
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        exercicio['name'] as String? ?? 'Exercício',
+                        style: const TextStyle(
+                          color: Color(0xFF1A1A1A),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (exercicio['description'] != null &&
+                          (exercicio['description'] as String).isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            exercicio['description'] as String,
+                            style: const TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 12,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )),
         ],
       ),
     );
@@ -3307,4 +4237,356 @@ class _TelaRecuperacaoState extends State<TelaRecuperacao> {
 
   // Nota: _buildBottomNavBar e _buildNavItem removidos
   // A navegação é gerenciada pelo MainNavigationScreen (shell único)
+}
+
+/// Widget para exibir medicamentos por categoria (Permitido, Evitar, Proibido)
+/// Conecta com a gestão de conteúdos do admin
+class _MedicamentosPorCategoria extends StatefulWidget {
+  const _MedicamentosPorCategoria();
+
+  @override
+  State<_MedicamentosPorCategoria> createState() => _MedicamentosPorCategoriaState();
+}
+
+class _MedicamentosPorCategoriaState extends State<_MedicamentosPorCategoria> {
+  final ContentService _contentService = ContentService();
+
+  int _selectedTab = 0; // 0 = Permitido, 1 = Evitar, 2 = Proibido
+  Map<String, List<ContentItem>> _medicationsByCategory = {
+    'allowed': [],
+    'restricted': [],
+    'prohibited': [],
+  };
+  bool _isLoading = true;
+
+  // Mocks padrão de medicamentos permitidos
+  static final List<ContentItem> _mockMedicamentosPermitidos = [
+    ContentItem(id: 'mock-med-1', type: ContentType.medications, category: ContentCategory.allowed, title: 'Paracetamol', description: 'Para dor e febre leve', isCustom: false),
+    ContentItem(id: 'mock-med-2', type: ContentType.medications, category: ContentCategory.allowed, title: 'Dipirona', description: 'Para dor moderada', isCustom: false),
+  ];
+
+  // Mocks padrão de medicamentos a evitar
+  static final List<ContentItem> _mockMedicamentosEvitar = [
+    ContentItem(id: 'mock-med-3', type: ContentType.medications, category: ContentCategory.restricted, title: 'Anti-inflamatórios', description: 'Apenas com prescrição médica', isCustom: false),
+  ];
+
+  // Mocks padrão de medicamentos proibidos
+  static final List<ContentItem> _mockMedicamentosProibidos = [
+    ContentItem(id: 'mock-med-4', type: ContentType.medications, category: ContentCategory.prohibited, title: 'Aspirina (AAS)', description: 'Aumenta risco de sangramento', isCustom: false),
+    ContentItem(id: 'mock-med-5', type: ContentType.medications, category: ContentCategory.prohibited, title: 'Anticoagulantes', description: 'Sem orientação médica', isCustom: false),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMedications();
+  }
+
+  Future<void> _loadMedications() async {
+    setState(() => _isLoading = true);
+    try {
+      final medicationsApi = await _contentService.getMedicationsByCategory();
+      if (mounted) {
+        // Combinar itens da API (primeiro) + mocks padrão (depois)
+        final combinedMedications = <String, List<ContentItem>>{};
+
+        // Allowed: API primeiro, depois mocks
+        final allowedApi = medicationsApi['allowed'] ?? [];
+        combinedMedications['allowed'] = [...allowedApi, ..._mockMedicamentosPermitidos];
+
+        // Restricted: API primeiro, depois mocks
+        final restrictedApi = medicationsApi['restricted'] ?? [];
+        combinedMedications['restricted'] = [...restrictedApi, ..._mockMedicamentosEvitar];
+
+        // Prohibited: API primeiro, depois mocks
+        final prohibitedApi = medicationsApi['prohibited'] ?? [];
+        combinedMedications['prohibited'] = [...prohibitedApi, ..._mockMedicamentosProibidos];
+
+        // Ordenar cada categoria: itens do admin (isCustom=true) primeiro
+        for (final entry in combinedMedications.entries) {
+          entry.value.sort((a, b) {
+            // isCustom = true (admin) vem primeiro
+            if (a.isCustom && !b.isCustom) return -1;
+            if (!a.isCustom && b.isCustom) return 1;
+            // Dentro do mesmo grupo, ordenar por sortOrder
+            return a.sortOrder.compareTo(b.sortOrder);
+          });
+        }
+
+        setState(() {
+          _medicationsByCategory = combinedMedications;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      // Em caso de erro, usar apenas os mocks
+      if (mounted) {
+        setState(() {
+          _medicationsByCategory = {
+            'allowed': _mockMedicamentosPermitidos,
+            'restricted': _mockMedicamentosEvitar,
+            'prohibited': _mockMedicamentosProibidos,
+          };
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Tabs de categoria
+        _buildCategoryTabs(),
+
+        const SizedBox(height: 16),
+
+        // Conteúdo da categoria selecionada
+        _isLoading
+            ? const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(color: Color(0xFFA49E86)),
+                ),
+              )
+            : _buildCategoryContent(),
+      ],
+    );
+  }
+
+  Widget _buildCategoryTabs() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          _buildTab(0, 'Permitido', const Color(0xFF00A63E), Icons.check_circle),
+          _buildTab(1, 'Evitar', const Color(0xFFF59E0B), Icons.warning_rounded),
+          _buildTab(2, 'Proibido', const Color(0xFFE7000B), Icons.cancel),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTab(int index, String label, Color color, IconData icon) {
+    final isSelected = _selectedTab == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedTab = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withAlpha(26) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? color : const Color(0xFF697282),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? color : const Color(0xFF697282),
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryContent() {
+    final categoryKey = _selectedTab == 0 ? 'allowed' : (_selectedTab == 1 ? 'restricted' : 'prohibited');
+    final items = _medicationsByCategory[categoryKey] ?? [];
+
+    final categoryColor = _selectedTab == 0
+        ? const Color(0xFF00A63E)
+        : (_selectedTab == 1 ? const Color(0xFFF59E0B) : const Color(0xFFE7000B));
+
+    final categoryIcon = _selectedTab == 0
+        ? Icons.check_circle
+        : (_selectedTab == 1 ? Icons.warning_rounded : Icons.cancel);
+
+    final categoryLabel = _selectedTab == 0
+        ? 'Permitido'
+        : (_selectedTab == 1 ? 'Evitar' : 'Proibido');
+
+    final categoryDescription = _selectedTab == 0
+        ? 'Medicamentos seguros para uso'
+        : (_selectedTab == 1 ? 'Usar com cautela ou evitar' : 'Não utilizar de forma alguma');
+
+    if (items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Column(
+            children: [
+              Icon(categoryIcon, color: categoryColor.withAlpha(128), size: 40),
+              const SizedBox(height: 12),
+              Text(
+                'Nenhum medicamento "$categoryLabel"',
+                style: const TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                categoryDescription,
+                style: const TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header da categoria
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: categoryColor.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(categoryIcon, color: categoryColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      categoryLabel,
+                      style: TextStyle(
+                        color: categoryColor,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      categoryDescription,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: categoryColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${items.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Lista de medicamentos
+        ...items.map((item) => _buildMedicationCard(item, categoryColor, categoryIcon)),
+      ],
+    );
+  }
+
+  Widget _buildMedicationCard(ContentItem item, Color categoryColor, IconData categoryIcon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: categoryColor.withAlpha(77), width: 1.5),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ícone
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: categoryColor.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(categoryIcon, color: categoryColor, size: 18),
+            ),
+            const SizedBox(width: 12),
+            // Conteúdo
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    style: const TextStyle(
+                      color: Color(0xFF212621),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (item.description != null && item.description!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item.description!,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 12,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

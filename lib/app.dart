@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'core/providers/providers.dart';
+import 'core/providers/progress_provider.dart';
 import 'core/providers/realtime_provider.dart';
 import 'core/routes/app_routes.dart';
+import 'core/services/api_service.dart';
 import 'features/patient/providers/recovery_provider.dart';
 import 'features/patient/providers/home_provider.dart';
 import 'features/chatbot/presentation/controller/chat_controller.dart';
@@ -24,20 +26,30 @@ class _AppState extends State<App> {
   // Chave global do Navigator para navegação centralizada
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
+  // AuthProvider para configurar listener de OAuth
+  late AuthProvider _authProvider;
+
   @override
   void initState() {
     super.initState();
     // Configura a chave global no AuthProvider para navegação centralizada
     AuthProvider.navigatorKey = _navigatorKey;
+
+    // Cria o AuthProvider e configura o listener de OAuth
+    _authProvider = AuthProvider();
+    _authProvider.setupAuthListener();
   }
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        // ApiService precisa ser registrado primeiro pois outros providers podem depender dele
+        Provider<ApiService>(create: (_) => ApiService()),
+        ChangeNotifierProvider.value(value: _authProvider),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => BrandingProvider()),
+        ChangeNotifierProvider(create: (_) => ProgressProvider()),
         ChangeNotifierProvider(create: (_) => RecoveryProvider()),
         ChangeNotifierProvider(create: (_) => HomeProvider()),
         ChangeNotifierProvider(create: (_) => AppointmentProvider()),

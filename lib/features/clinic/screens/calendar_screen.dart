@@ -44,6 +44,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     const SizedBox(height: 16),
                     _buildStatsRow(provider),
                     const SizedBox(height: 16),
+                    _buildTypeFilter(provider),
+                    const SizedBox(height: 16),
                     _buildCalendar(provider),
                     const SizedBox(height: 16),
                     _buildLegends(),
@@ -134,33 +136,76 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildStatsRow(CalendarProvider provider) {
-    return Row(
-      children: [
-        _StatCard(
-          value: provider.totalCount.toString(),
-          label: 'Total',
-          color: const Color(0xFF212621),
-          isFirst: true,
-        ),
-        const SizedBox(width: 8),
-        _StatCard(
-          value: provider.confirmedCount.toString(),
-          label: 'Confirmados',
-          color: const Color(0xFF00A63E),
-        ),
-        const SizedBox(width: 8),
-        _StatCard(
-          value: provider.pendingCount.toString(),
-          label: 'Pendentes',
-          color: const Color(0xFFD08700),
-        ),
-        const SizedBox(width: 8),
-        _StatCard(
-          value: provider.completedCount.toString(),
-          label: 'Concluídos',
-          color: const Color(0xFF495565),
-        ),
-      ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _StatCard(
+            value: provider.totalCount.toString(),
+            label: 'Total',
+            color: const Color(0xFF212621),
+            isFirst: true,
+          ),
+          const SizedBox(width: 8),
+          _StatCard(
+            value: provider.confirmedCount.toString(),
+            label: 'Confirmados',
+            color: const Color(0xFF00A63E),
+          ),
+          const SizedBox(width: 8),
+          _StatCard(
+            value: provider.pendingCount.toString(),
+            label: 'Pendentes',
+            color: const Color(0xFFD08700),
+          ),
+          const SizedBox(width: 8),
+          _StatCard(
+            value: provider.completedCount.toString(),
+            label: 'Concluídos',
+            color: const Color(0xFF495565),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeFilter(CalendarProvider provider) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _TypeFilterChip(
+            label: 'Todos',
+            icon: Icons.calendar_today,
+            isSelected: provider.typeFilter == null,
+            onTap: () => provider.setTypeFilter(null),
+          ),
+          const SizedBox(width: 8),
+          _TypeFilterChip(
+            label: 'Splint',
+            icon: Icons.healing,
+            isSelected: provider.typeFilter == 'SPLINT_REMOVAL',
+            onTap: () => provider.setTypeFilter('SPLINT_REMOVAL'),
+            color: const Color(0xFF9C27B0),
+          ),
+          const SizedBox(width: 8),
+          _TypeFilterChip(
+            label: 'Consulta',
+            icon: Icons.medical_services,
+            isSelected: provider.typeFilter == 'CONSULTATION',
+            onTap: () => provider.setTypeFilter('CONSULTATION'),
+            color: const Color(0xFF2196F3),
+          ),
+          const SizedBox(width: 8),
+          _TypeFilterChip(
+            label: 'Fisio',
+            icon: Icons.fitness_center,
+            isSelected: provider.typeFilter == 'PHYSIOTHERAPY',
+            onTap: () => provider.setTypeFilter('PHYSIOTHERAPY'),
+            color: const Color(0xFF4CAF50),
+          ),
+        ],
+      ),
     );
   }
 
@@ -320,14 +365,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          const Row(
-            children: [
-              _LegendItem(color: Color(0xFF00A63E), label: 'Confirmado'),
-              SizedBox(width: 16),
-              _LegendItem(color: Color(0xFFD08700), label: 'Pendente'),
-              SizedBox(width: 16),
-              _LegendItem(color: Color(0xFF9CA3AF), label: 'Concluído'),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: const [
+                _LegendItem(color: Color(0xFF00A63E), label: 'Confirmado'),
+                SizedBox(width: 16),
+                _LegendItem(color: Color(0xFFD08700), label: 'Pendente'),
+                SizedBox(width: 16),
+                _LegendItem(color: Color(0xFF9CA3AF), label: 'Concluído'),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           const Text(
@@ -398,57 +446,56 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Dia ${selectedDate.day} de ${_getMonthNameShort(selectedDate.month)}',
-                  style: const TextStyle(
-                    color: Color(0xFF212621),
-                    fontSize: 16,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  '${appointments.length} agendamento${appointments.length != 1 ? 's' : ''}',
-                  style: const TextStyle(
-                    color: Color(0xFF495565),
-                    fontSize: 12,
-                    fontFamily: 'Inter',
-                  ),
-                ),
-              ],
+            Text(
+              'Dia ${selectedDate.day} de ${_getMonthNameShort(selectedDate.month)}',
+              style: const TextStyle(
+                color: Color(0xFF212621),
+                fontSize: 16,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            Row(
-              children: [
-                _FilterChip(
-                  label: 'Todos',
-                  isSelected: provider.statusFilter == 'ALL',
-                  onTap: () => provider.setStatusFilter('ALL'),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: 'Confirmados',
-                  isSelected: provider.statusFilter == 'CONFIRMED',
-                  onTap: () => provider.setStatusFilter('CONFIRMED'),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: 'Pendentes',
-                  isSelected: provider.statusFilter == 'PENDING',
-                  onTap: () => provider.setStatusFilter('PENDING'),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: 'Concluídos',
-                  isSelected: provider.statusFilter == 'COMPLETED',
-                  onTap: () => provider.setStatusFilter('COMPLETED'),
-                ),
-              ],
+            Text(
+              '${appointments.length} agendamento${appointments.length != 1 ? 's' : ''}',
+              style: const TextStyle(
+                color: Color(0xFF495565),
+                fontSize: 12,
+                fontFamily: 'Inter',
+              ),
+            ),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _FilterChip(
+                    label: 'Todos',
+                    isSelected: provider.statusFilter == 'ALL',
+                    onTap: () => provider.setStatusFilter('ALL'),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Confirmados',
+                    isSelected: provider.statusFilter == 'CONFIRMED',
+                    onTap: () => provider.setStatusFilter('CONFIRMED'),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Pendentes',
+                    isSelected: provider.statusFilter == 'PENDING',
+                    onTap: () => provider.setStatusFilter('PENDING'),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Concluídos',
+                    isSelected: provider.statusFilter == 'COMPLETED',
+                    onTap: () => provider.setStatusFilter('COMPLETED'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -785,37 +832,37 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: isFirst ? const Color(0xFFF5F3EF) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 20,
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w700,
-              ),
+    return Container(
+      width: 80,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      decoration: BoxDecoration(
+        color: isFirst ? const Color(0xFFF5F3EF) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 20,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF495565),
-                fontSize: 10,
-                fontFamily: 'Inter',
-              ),
-              textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF495565),
+              fontSize: 10,
+              fontFamily: 'Inter',
             ),
-          ],
-        ),
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
@@ -851,6 +898,71 @@ class _FilterChip extends StatelessWidget {
             fontFamily: 'Inter',
             fontWeight: FontWeight.w500,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TypeFilterChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final Color? color;
+
+  const _TypeFilterChip({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final chipColor = color ?? const Color(0xFF4F4A34);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? chipColor : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? chipColor : const Color(0xFFE5E7EB),
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: chipColor.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : chipColor,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF495565),
+                fontSize: 12,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -904,19 +1016,18 @@ class _ConsultationTypeLegend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 16, color: color),
         const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF495565),
-              fontSize: 12,
-              fontFamily: 'Inter',
-            ),
-            overflow: TextOverflow.ellipsis,
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF495565),
+            fontSize: 12,
+            fontFamily: 'Inter',
           ),
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
