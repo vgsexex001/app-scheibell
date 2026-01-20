@@ -5,6 +5,7 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "main": "dist/main.js",
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
   },
@@ -100,6 +101,6 @@
     "testEnvironment": "node"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   }
 }

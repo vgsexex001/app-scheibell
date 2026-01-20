@@ -6,10 +6,11 @@ on:
       - main
     paths:
       - 'backend/**'
+      - '.github/workflows/deploy-azure.yml'
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: app-scheibell-api
+  AZURE_WEBAPP_NAME: api-scheibell
   NODE_VERSION: '20.x'
 
 jobs:
@@ -31,17 +32,27 @@ jobs:
         working-directory: ./backend
         run: npm ci
 
+      - name: Generate Prisma Client
+        working-directory: ./backend
+        run: npx prisma generate
+
       - name: Build
         working-directory: ./backend
         run: npm run build
 
-      - name: Generate Prisma Client
+      - name: Create deployment package
         working-directory: ./backend
-        run: npx prisma generate
+        run: |
+          mkdir -p deploy
+          cp -r dist deploy/
+          cp -r node_modules deploy/
+          cp -r prisma deploy/
+          cp package.json deploy/
+          cp package-lock.json deploy/
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./backend
+          package: ./backend/deploy
