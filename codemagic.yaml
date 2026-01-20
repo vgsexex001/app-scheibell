@@ -33,12 +33,21 @@ workflows:
             build
       - name: Create unsigned IPA
         script: |
-          cd ios/build/Release-iphoneos
+          # Find the Runner.app in DerivedData
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d | head -1)
+          echo "Found app at: $APP_PATH"
+
+          if [ -z "$APP_PATH" ]; then
+            echo "Runner.app not found!"
+            exit 1
+          fi
+
           mkdir -p Payload
-          cp -r Runner.app Payload
-          zip -r ../../app-release-unsigned.ipa Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r app-release-unsigned.ipa Payload
+          rm -rf Payload
     artifacts:
-      - ios/app-release-unsigned.ipa
+      - app-release-unsigned.ipa
 
   android-workflow:
     name: Android Release Build
