@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthService, AuthResponse } from './auth.service';
-import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto, RefreshTokenDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
+import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto, RefreshTokenDto, ForgotPasswordDto, ResetPasswordDto, SwitchClinicDto } from './dto';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
@@ -132,6 +132,38 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Token inválido ou expirado' })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  // ==================== MULTI-CLINIC ====================
+
+  /**
+   * Troca o contexto de clínica para um usuário multi-clínica
+   * POST /api/auth/switch-clinic
+   */
+  @Post('switch-clinic')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Trocar contexto de clínica' })
+  @ApiResponse({ status: 200, description: 'Clínica alterada com sucesso' })
+  @ApiResponse({ status: 400, description: 'Sem acesso à clínica solicitada' })
+  async switchClinic(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SwitchClinicDto,
+  ) {
+    return this.authService.switchClinic(user.sub, dto.clinicId);
+  }
+
+  /**
+   * Lista as clínicas às quais o usuário tem acesso
+   * GET /api/auth/my-clinics
+   */
+  @Get('my-clinics')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Listar clínicas do usuário' })
+  @ApiResponse({ status: 200, description: 'Lista de clínicas' })
+  async getMyClinics(@CurrentUser() user: JwtPayload) {
+    return this.authService.getUserClinics(user.sub);
   }
 
   // ==================== MAGIC LINK SYNC ====================

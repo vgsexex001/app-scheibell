@@ -4,7 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { JwtPayload } from '../../../common/decorators/current-user.decorator';
+import { JwtPayload, ClinicAssociation } from '../../../common/decorators/current-user.decorator';
 
 // Interface para o payload do Supabase JWT
 interface SupabaseJwtPayload {
@@ -177,6 +177,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
     }
 
+    // Carregar associações multi-clínica
+    const clinicAssociations = await this.loadClinicAssociations(user.id, user.role, patientId);
+
     return {
       sub: user.id, // Usa o ID da tabela users (não do auth.users)
       id: user.id,
@@ -184,6 +187,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: user.role,
       clinicId: user.clinicId || undefined,
       patientId,
+      clinicAssociations,
     };
   }
 
@@ -244,6 +248,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
     }
 
+    // Carregar associações multi-clínica
+    const clinicAssociations = await this.loadClinicAssociations(payload.sub, payload.role, patientId);
+
     return {
       sub: payload.sub,
       id: payload.sub,
@@ -251,6 +258,135 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: payload.role,
       clinicId: payload.clinicId,
       patientId,
+      clinicAssociations,
     };
+  }
+
+  /**
+   * Carrega as associações de clínicas do usuário
+   * Para pacientes: busca em patient_clinic_associations
+   * Para staff/admin: busca em user_clinic_assignments
+   *
+   * NOTA: Este método usa $queryRaw para compatibilidade com migrações pendentes.
+   * Após executar as migrações e regenerar o Prisma Client, pode-se usar os métodos tipados.
+   */
+  private async loadClinicAssociations(
+    userId: string,
+    role: string,
+    patientId?: string,
+  ): Promise<ClinicAssociation[]> {
+    const associations: ClinicAssociation[] = [];
+
+    try {
+      if (role === 'PATIENT' && patientId) {
+        // Tentar buscar na nova tabela de associações via raw query
+        try {
+          const patientAssociations = await this.prisma.$queryRaw<Array<{
+            clinic_id: string;
+            clinic_name: string;
+            is_primary: boolean;
+            is_active: boolean;
+          }>>`
+            SELECT pca.clinic_id, c.name as clinic_name, pca.is_primary, c."isActive" as is_active
+            FROM patient_clinic_associations pca
+            JOIN clinics c ON c.id = pca.clinic_id
+            WHERE pca.patient_id = ${patientId}
+              AND pca.status = 'ACTIVE'
+              AND c."isActive" = true
+          `;
+
+          for (const assoc of patientAssociations) {
+            associations.push({
+              clinicId: assoc.clinic_id,
+              clinicName: assoc.clinic_name,
+              role: 'PATIENT',
+              isPrimary: assoc.is_primary,
+              isDefault: assoc.is_primary,
+            });
+          }
+        } catch {
+          // Tabela não existe ainda, ignorar
+        }
+
+        // Fallback: se não tem associações na nova tabela, usar clinicId do patient
+        if (associations.length === 0) {
+          const patient = await this.prisma.patient.findUnique({
+            where: { id: patientId },
+            include: {
+              clinic: {
+                select: { id: true, name: true, isActive: true },
+              },
+            },
+          });
+
+          if (patient?.clinic?.isActive) {
+            associations.push({
+              clinicId: patient.clinicId,
+              clinicName: patient.clinic.name,
+              role: 'PATIENT',
+              isPrimary: true,
+              isDefault: true,
+            });
+          }
+        }
+      } else if (role === 'CLINIC_ADMIN' || role === 'CLINIC_STAFF') {
+        // Tentar buscar na nova tabela de assignments via raw query
+        try {
+          const userAssignments = await this.prisma.$queryRaw<Array<{
+            clinic_id: string;
+            clinic_name: string;
+            role: string;
+            is_default: boolean;
+            is_active: boolean;
+          }>>`
+            SELECT uca.clinic_id, c.name as clinic_name, uca.role, uca.is_default, c."isActive" as is_active
+            FROM user_clinic_assignments uca
+            JOIN clinics c ON c.id = uca.clinic_id
+            WHERE uca.user_id = ${userId}
+              AND uca.is_active = true
+              AND c."isActive" = true
+          `;
+
+          for (const assignment of userAssignments) {
+            associations.push({
+              clinicId: assignment.clinic_id,
+              clinicName: assignment.clinic_name,
+              role: assignment.role,
+              isPrimary: false,
+              isDefault: assignment.is_default,
+            });
+          }
+        } catch {
+          // Tabela não existe ainda, ignorar
+        }
+
+        // Fallback: se não tem assignments na nova tabela, usar clinicId do user
+        if (associations.length === 0) {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+              clinic: {
+                select: { id: true, name: true, isActive: true },
+              },
+            },
+          });
+
+          if (user?.clinic?.isActive) {
+            associations.push({
+              clinicId: user.clinicId!,
+              clinicName: user.clinic.name,
+              role: user.role,
+              isPrimary: true,
+              isDefault: true,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      // Se ocorrer erro, retorna array vazio para manter compatibilidade
+      this.logger.debug(`Erro ao carregar associações de clínica: ${error}`);
+    }
+
+    return associations;
   }
 }

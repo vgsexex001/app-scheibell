@@ -97,7 +97,7 @@ export class LoggerService implements NestLoggerService {
   /**
    * Log de autenticação (login, logout, token refresh)
    */
-  authEvent(event: 'login' | 'logout' | 'register' | 'token_refresh' | 'password_reset' | 'failed_login' | 'magic_link_sync', context: LogContext) {
+  authEvent(event: 'login' | 'logout' | 'register' | 'token_refresh' | 'password_reset' | 'failed_login' | 'magic_link_sync' | 'switch_clinic', context: LogContext) {
     this.info(`Auth event: ${event}`, {
       ...context,
       action: event,

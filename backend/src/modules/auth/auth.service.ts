@@ -14,6 +14,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto, RegisterDto, UpdateProfileDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
 import { UserRole } from '@prisma/client';
 import { LoggerService } from '../../common/services/logger.service';
+import { ClinicAssociation } from '../../common/decorators/current-user.decorator';
 
 export interface AuthResponse {
   user: {
@@ -684,6 +685,289 @@ export class AuthService {
       default:
         return 86400;
     }
+  }
+
+  // ==================== MULTI-CLINIC ====================
+
+  /**
+   * Troca o contexto de clínica para um usuário multi-clínica
+   * Valida se o usuário tem acesso à clínica solicitada
+   * Retorna novo token com a clínica atualizada no contexto
+   */
+  async switchClinic(
+    userId: string,
+    targetClinicId: string,
+  ): Promise<AuthResponse & { clinicAssociations: ClinicAssociation[] }> {
+    // Buscar usuário
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { patient: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    // Verificar se a clínica existe e está ativa
+    const targetClinic = await this.prisma.clinic.findUnique({
+      where: { id: targetClinicId },
+    });
+
+    if (!targetClinic) {
+      throw new BadRequestException('Clínica não encontrada');
+    }
+
+    if (!targetClinic.isActive) {
+      throw new BadRequestException('Clínica não está ativa');
+    }
+
+    // Verificar se o usuário tem acesso à clínica
+    const hasAccess = await this.validateUserClinicAccess(userId, user.role, targetClinicId, user.patient?.id);
+
+    if (!hasAccess) {
+      throw new BadRequestException('Você não tem acesso a esta clínica');
+    }
+
+    // Atualizar clinicId principal do usuário (para compatibilidade)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { clinicId: targetClinicId },
+    });
+
+    // Se é paciente, atualizar clinicId do patient também
+    if (user.role === UserRole.PATIENT && user.patient) {
+      await this.prisma.patient.update({
+        where: { id: user.patient.id },
+        data: { clinicId: targetClinicId },
+      });
+    }
+
+    // Carregar associações de clínica
+    const clinicAssociations = await this.loadClinicAssociations(userId, user.role, user.patient?.id);
+
+    // Gerar novo token com a clínica atualizada
+    const authResponse = await this.generateAuthResponse({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      clinicId: targetClinicId,
+    });
+
+    this.logger.authEvent('switch_clinic', {
+      userId,
+      fromClinicId: user.clinicId,
+      toClinicId: targetClinicId,
+    });
+
+    return {
+      ...authResponse,
+      clinicAssociations,
+    };
+  }
+
+  /**
+   * Lista as clínicas às quais o usuário tem acesso
+   */
+  async getUserClinics(userId: string): Promise<{
+    currentClinicId: string | null;
+    clinics: ClinicAssociation[];
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { patient: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    const clinicAssociations = await this.loadClinicAssociations(userId, user.role, user.patient?.id);
+
+    return {
+      currentClinicId: user.clinicId,
+      clinics: clinicAssociations,
+    };
+  }
+
+  /**
+   * Valida se o usuário tem acesso à clínica especificada
+   */
+  private async validateUserClinicAccess(
+    userId: string,
+    role: string,
+    clinicId: string,
+    patientId?: string,
+  ): Promise<boolean> {
+    // PACIENTES
+    if (role === 'PATIENT' && patientId) {
+      // Tentar buscar na nova tabela via raw query
+      try {
+        const result = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*) as count FROM patient_clinic_associations
+          WHERE patient_id = ${patientId}
+            AND clinic_id = ${clinicId}
+            AND status = 'ACTIVE'
+        `;
+        if (result[0]?.count > 0) return true;
+      } catch {
+        // Tabela não existe ainda
+      }
+
+      // Fallback: verificar clinicId direto no patient
+      const patient = await this.prisma.patient.findFirst({
+        where: {
+          id: patientId,
+          clinicId: clinicId,
+          deletedAt: null,
+        },
+      });
+      return !!patient;
+    }
+
+    // STAFF/ADMIN
+    if (role === 'CLINIC_ADMIN' || role === 'CLINIC_STAFF') {
+      // Tentar buscar na nova tabela via raw query
+      try {
+        const result = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*) as count FROM user_clinic_assignments
+          WHERE user_id = ${userId}
+            AND clinic_id = ${clinicId}
+            AND is_active = true
+        `;
+        if (result[0]?.count > 0) return true;
+      } catch {
+        // Tabela não existe ainda
+      }
+
+      // Fallback: verificar clinicId direto no user
+      const userRecord = await this.prisma.user.findFirst({
+        where: {
+          id: userId,
+          clinicId: clinicId,
+          deletedAt: null,
+        },
+      });
+      return !!userRecord;
+    }
+
+    return false;
+  }
+
+  /**
+   * Carrega as associações de clínicas do usuário
+   */
+  private async loadClinicAssociations(
+    userId: string,
+    role: string,
+    patientId?: string,
+  ): Promise<ClinicAssociation[]> {
+    const associations: ClinicAssociation[] = [];
+
+    try {
+      if (role === 'PATIENT' && patientId) {
+        // Tentar buscar na nova tabela
+        try {
+          const patientAssociations = await this.prisma.$queryRaw<Array<{
+            clinic_id: string;
+            clinic_name: string;
+            is_primary: boolean;
+          }>>`
+            SELECT pca.clinic_id, c.name as clinic_name, pca.is_primary
+            FROM patient_clinic_associations pca
+            JOIN clinics c ON c.id = pca.clinic_id
+            WHERE pca.patient_id = ${patientId}
+              AND pca.status = 'ACTIVE'
+              AND c."isActive" = true
+          `;
+
+          for (const assoc of patientAssociations) {
+            associations.push({
+              clinicId: assoc.clinic_id,
+              clinicName: assoc.clinic_name,
+              role: 'PATIENT',
+              isPrimary: assoc.is_primary,
+              isDefault: assoc.is_primary,
+            });
+          }
+        } catch {
+          // Tabela não existe ainda
+        }
+
+        // Fallback
+        if (associations.length === 0) {
+          const patient = await this.prisma.patient.findUnique({
+            where: { id: patientId },
+            include: {
+              clinic: { select: { id: true, name: true, isActive: true } },
+            },
+          });
+
+          if (patient?.clinic?.isActive) {
+            associations.push({
+              clinicId: patient.clinicId,
+              clinicName: patient.clinic.name,
+              role: 'PATIENT',
+              isPrimary: true,
+              isDefault: true,
+            });
+          }
+        }
+      } else if (role === 'CLINIC_ADMIN' || role === 'CLINIC_STAFF') {
+        // Tentar buscar na nova tabela
+        try {
+          const userAssignments = await this.prisma.$queryRaw<Array<{
+            clinic_id: string;
+            clinic_name: string;
+            role: string;
+            is_default: boolean;
+          }>>`
+            SELECT uca.clinic_id, c.name as clinic_name, uca.role, uca.is_default
+            FROM user_clinic_assignments uca
+            JOIN clinics c ON c.id = uca.clinic_id
+            WHERE uca.user_id = ${userId}
+              AND uca.is_active = true
+              AND c."isActive" = true
+          `;
+
+          for (const assignment of userAssignments) {
+            associations.push({
+              clinicId: assignment.clinic_id,
+              clinicName: assignment.clinic_name,
+              role: assignment.role,
+              isPrimary: false,
+              isDefault: assignment.is_default,
+            });
+          }
+        } catch {
+          // Tabela não existe ainda
+        }
+
+        // Fallback
+        if (associations.length === 0) {
+          const userRecord = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+              clinic: { select: { id: true, name: true, isActive: true } },
+            },
+          });
+
+          if (userRecord?.clinic?.isActive) {
+            associations.push({
+              clinicId: userRecord.clinicId!,
+              clinicName: userRecord.clinic.name,
+              role: userRecord.role,
+              isPrimary: true,
+              isDefault: true,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error('Erro ao carregar associações de clínica', error);
+    }
+
+    return associations;
   }
 
   // ==================== MAGIC LINK SYNC ====================

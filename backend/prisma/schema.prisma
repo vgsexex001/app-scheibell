@@ -9,7 +9,7 @@ datasource db {
 
 model User {
   id                   String               @id @default(uuid())
-  authId               String?              @unique // ID do auth.users do Supabase
+  authId               String?              @unique
   email                String               @unique
   passwordHash         String
   name                 String
@@ -29,6 +29,11 @@ model User {
   patient              Patient?
   refreshTokens        RefreshToken[]
   clinic               Clinic?              @relation(fields: [clinicId], references: [id])
+
+  // Multi-clínica: associações
+  clinicAssignments          UserClinicAssignment[]       @relation()
+  createdUserAssignments     UserClinicAssignment[]       @relation("CreatedUserAssignments")
+  createdPatientAssociations PatientClinicAssociation[]   @relation("CreatedPatientAssociations")
 
   @@index([clinicId])
   @@index([role])
@@ -80,6 +85,11 @@ model Clinic {
   trainingProtocols  TrainingProtocol[]
   users              User[]
 
+  // Multi-clínica: associações N:N
+  patientAssociations PatientClinicAssociation[] @relation("ClinicPatientAssociations")
+  userAssignments     UserClinicAssignment[]     @relation("ClinicUserAssignments")
+  transferredPatients PatientClinicAssociation[] @relation("TransferredFromClinic")
+
   @@index([isActive])
   @@map("clinics")
 }
@@ -122,6 +132,9 @@ model Patient {
   clinic             Clinic                     @relation(fields: [clinicId], references: [id])
   user               User?                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   videoProgress      VideoProgress[]
+
+  // Multi-clínica: associações com múltiplas clínicas
+  clinicAssociations PatientClinicAssociation[]
 
   @@index([clinicId])
   @@index([clinicId, surgeryType])
@@ -1045,4 +1058,92 @@ enum SubtitleStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+// =====================================================
+// MULTI-CLÍNICA: Tabelas de Associação
+// =====================================================
+
+/// Status da associação paciente-clínica
+enum PatientClinicStatus {
+  ACTIVE
+  INACTIVE
+  TRANSFERRED
+}
+
+/// Associação N:N entre Pacientes e Clínicas
+model PatientClinicAssociation {
+  id                      String              @id @default(uuid())
+  patientId               String              @map("patient_id")
+  clinicId                String              @map("clinic_id")
+
+  // Dados específicos desta associação
+  surgeryDate             DateTime?           @map("surgery_date")
+  surgeryType             String?             @map("surgery_type")
+  surgeon                 String?
+
+  // Controle de status
+  status                  PatientClinicStatus @default(ACTIVE)
+  isPrimary               Boolean             @default(false) @map("is_primary")
+
+  // Histórico de transferência
+  transferredFromClinicId String?             @map("transferred_from_clinic_id")
+  transferReason          String?             @map("transfer_reason")
+  transferredAt           DateTime?           @map("transferred_at")
+
+  // Auditoria
+  createdAt               DateTime            @default(now()) @map("created_at")
+  updatedAt               DateTime            @default(now()) @updatedAt @map("updated_at")
+  createdById             String?             @map("created_by")
+
+  // Relacionamentos
+  patient                 Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic                  Clinic              @relation("ClinicPatientAssociations", fields: [clinicId], references: [id], onDelete: Cascade)
+  transferredFromClinic   Clinic?             @relation("TransferredFromClinic", fields: [transferredFromClinicId], references: [id])
+  createdBy               User?               @relation("CreatedPatientAssociations", fields: [createdById], references: [id])
+
+  @@unique([patientId, clinicId])
+  @@index([patientId])
+  @@index([clinicId])
+  @@index([status])
+  @@map("patient_clinic_associations")
+}
+
+/// Role específica por clínica
+enum ClinicAssignmentRole {
+  CLINIC_ADMIN
+  CLINIC_STAFF
+  VIEWER
+}
+
+/// Associação N:N entre Usuários (staff) e Clínicas
+model UserClinicAssignment {
+  id          String               @id @default(uuid())
+  userId      String               @map("user_id")
+  clinicId    String               @map("clinic_id")
+
+  // Role específica nesta clínica
+  role        ClinicAssignmentRole
+
+  // Permissões granulares
+  permissions Json                 @default("[]")
+
+  // Controle de status
+  isActive    Boolean              @default(true) @map("is_active")
+  isDefault   Boolean              @default(false) @map("is_default")
+
+  // Auditoria
+  startedAt   DateTime             @default(now()) @map("started_at")
+  endedAt     DateTime?            @map("ended_at")
+  createdById String?              @map("created_by")
+
+  // Relacionamentos
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic      Clinic               @relation("ClinicUserAssignments", fields: [clinicId], references: [id], onDelete: Cascade)
+  createdBy   User?                @relation("CreatedUserAssignments", fields: [createdById], references: [id])
+
+  @@unique([userId, clinicId])
+  @@index([userId])
+  @@index([clinicId])
+  @@map("user_clinic_assignments")
 }
