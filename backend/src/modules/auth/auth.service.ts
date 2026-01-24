@@ -236,43 +236,90 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        clinicId: true,
-        createdAt: true,
-        updatedAt: true,
-        clinic: {
-          select: {
-            name: true,
-          },
-        },
-        patient: {
-          select: {
-            id: true,
-            cpf: true,
-            phone: true,
-            birthDate: true,
-            surgeryDate: true,
-            surgeryType: true,
-          },
-        },
-      },
-    });
+    this.logger.debug(`[getProfile] Buscando perfil para userId: ${userId}`);
 
-    if (!user) {
-      throw new NotFoundException('Usuário não encontrado');
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          clinicId: true,
+          createdAt: true,
+          updatedAt: true,
+          clinic: {
+            select: {
+              name: true,
+            },
+          },
+          patient: {
+            select: {
+              id: true,
+              cpf: true,
+              phone: true,
+              birthDate: true,
+              surgeryDate: true,
+              surgeryType: true,
+              // Adicionar campos de endereço
+              cep: true,
+              street: true,
+              streetNumber: true,
+              city: true,
+              state: true,
+              // Campos de saúde
+              bloodType: true,
+              allergiesText: true,
+              medicalNotesText: true,
+              // Campos de emergência
+              emergencyContact: true,
+              emergencyPhone: true,
+              emergencyContactRelation: true,
+            },
+          },
+        },
+      });
+
+      this.logger.debug(`[getProfile] Resultado da busca: ${user ? 'encontrado' : 'não encontrado'}`);
+
+      if (!user) {
+        this.logger.warn(`[getProfile] Usuário não encontrado: ${userId}`);
+        throw new NotFoundException('Usuário não encontrado');
+      }
+
+      // Flatten para facilitar uso no frontend
+      const profile = {
+        ...user,
+        clinicName: user.clinic?.name ?? null,
+        // Flatten campos do patient para nível raiz
+        cpf: user.patient?.cpf ?? null,
+        phone: user.patient?.phone ?? null,
+        birthDate: user.patient?.birthDate ?? null,
+        surgeryDate: user.patient?.surgeryDate ?? null,
+        surgeryType: user.patient?.surgeryType ?? null,
+        // Endereço
+        cep: user.patient?.cep ?? null,
+        street: user.patient?.street ?? null,
+        streetNumber: user.patient?.streetNumber ?? null,
+        city: user.patient?.city ?? null,
+        state: user.patient?.state ?? null,
+        // Saúde
+        bloodType: user.patient?.bloodType ?? null,
+        allergies: user.patient?.allergiesText ?? null,
+        medicalNotes: user.patient?.medicalNotesText ?? null,
+        // Emergência
+        emergencyContactName: user.patient?.emergencyContact ?? null,
+        emergencyContactPhone: user.patient?.emergencyPhone ?? null,
+        emergencyContactRelation: user.patient?.emergencyContactRelation ?? null,
+      };
+
+      this.logger.debug(`[getProfile] Perfil construído com sucesso`);
+      return profile;
+    } catch (error) {
+      this.logger.error(`[getProfile] Erro ao buscar perfil: ${error}`);
+      throw error;
     }
-
-    // Flatten clinic name for easier frontend consumption
-    return {
-      ...user,
-      clinicName: user.clinic?.name ?? null,
-    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -299,6 +346,7 @@ export class AuthService {
       if (user.patient) {
         const patientData: any = {};
 
+        // Dados pessoais
         if (dto.phone !== undefined) patientData.phone = dto.phone;
         if (dto.cpf !== undefined) patientData.cpf = dto.cpf;
         if (dto.birthDate !== undefined)
@@ -307,6 +355,26 @@ export class AuthService {
           patientData.surgeryDate = new Date(dto.surgeryDate);
         if (dto.surgeryType !== undefined)
           patientData.surgeryType = dto.surgeryType;
+
+        // Endereço
+        if (dto.cep !== undefined) patientData.cep = dto.cep;
+        if (dto.street !== undefined) patientData.street = dto.street;
+        if (dto.streetNumber !== undefined) patientData.streetNumber = dto.streetNumber;
+        if (dto.city !== undefined) patientData.city = dto.city;
+        if (dto.state !== undefined) patientData.state = dto.state;
+
+        // Saúde
+        if (dto.bloodType !== undefined) patientData.bloodType = dto.bloodType;
+        if (dto.allergies !== undefined) patientData.allergiesText = dto.allergies;
+        if (dto.medicalNotes !== undefined) patientData.medicalNotesText = dto.medicalNotes;
+
+        // Contato de emergência
+        if (dto.emergencyContactName !== undefined)
+          patientData.emergencyContact = dto.emergencyContactName;
+        if (dto.emergencyContactPhone !== undefined)
+          patientData.emergencyPhone = dto.emergencyContactPhone;
+        if (dto.emergencyContactRelation !== undefined)
+          patientData.emergencyContactRelation = dto.emergencyContactRelation;
 
         if (Object.keys(patientData).length > 0) {
           await tx.patient.update({
@@ -333,6 +401,17 @@ export class AuthService {
               birthDate: true,
               surgeryDate: true,
               surgeryType: true,
+              bloodType: true,
+              emergencyContact: true,
+              emergencyPhone: true,
+              emergencyContactRelation: true,
+              cep: true,
+              street: true,
+              streetNumber: true,
+              city: true,
+              state: true,
+              allergiesText: true,
+              medicalNotesText: true,
             },
           },
         },
