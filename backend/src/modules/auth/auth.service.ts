@@ -39,6 +39,19 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponse> {
+    // VALIDAÇÃO: Verificar se clinicId existe e está ativa
+    const clinic = await this.prisma.clinic.findUnique({
+      where: { id: dto.clinicId },
+    });
+
+    if (!clinic) {
+      throw new BadRequestException('Clínica não encontrada');
+    }
+
+    if (!clinic.isActive) {
+      throw new BadRequestException('Clínica não está ativa para novos cadastros');
+    }
+
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -50,7 +63,6 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const role = dto.role || UserRole.PATIENT;
 
-    // clinicId é obrigatório (validado pelo DTO)
     // Usar transação para criar User e Patient juntos
     const result = await this.prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({

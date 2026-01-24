@@ -134,19 +134,47 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     this.logger.debug(`Usuário encontrado: ${user.email}, role: ${user.role}`);
 
     // Se o usuário é PATIENT mas não tem registro na tabela patients, criar automaticamente
+    // Usar UPSERT para evitar race condition em requests simultâneos
     let patientId = user.patient?.id;
     if (user.role === 'PATIENT' && !user.patient && user.clinicId) {
-      this.logger.debug(`Criando registro Patient para usuário ${user.id}`);
-      const newPatient = await this.prisma.patient.create({
-        data: {
-          userId: user.id,
-          clinicId: user.clinicId,
-          name: user.name,
-          email: user.email,
-        },
+      // Validar se clínica está ativa antes de criar Patient
+      const clinic = await this.prisma.clinic.findUnique({
+        where: { id: user.clinicId },
+        select: { isActive: true },
       });
-      patientId = newPatient.id;
-      this.logger.debug(`Patient criado com ID: ${patientId}`);
+
+      if (!clinic?.isActive) {
+        this.logger.warn(`Clínica ${user.clinicId} inativa ou não encontrada para user ${user.id}`);
+        throw new UnauthorizedException('Clínica não está ativa');
+      }
+
+      this.logger.debug(`Criando registro Patient para usuário ${user.id}`);
+      try {
+        // UPSERT evita race condition: se já existe, retorna o existente
+        const patient = await this.prisma.patient.upsert({
+          where: { userId: user.id },
+          update: {}, // Não atualiza nada se já existe
+          create: {
+            userId: user.id,
+            clinicId: user.clinicId,
+            name: user.name,
+            email: user.email,
+          },
+        });
+        patientId = patient.id;
+        this.logger.debug(`Patient criado/encontrado com ID: ${patientId}`);
+      } catch (error: any) {
+        // Se unique constraint violado, buscar o patient existente
+        if (error.code === 'P2002') {
+          this.logger.debug(`Patient já existe para user ${user.id}, buscando...`);
+          const existingPatient = await this.prisma.patient.findUnique({
+            where: { userId: user.id },
+          });
+          patientId = existingPatient?.id;
+        } else {
+          throw error;
+        }
+      }
     }
 
     return {
@@ -173,19 +201,47 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     // Se o usuário é PATIENT mas não tem registro na tabela patients, criar automaticamente
+    // Usar UPSERT para evitar race condition em requests simultâneos
     let patientId = user.patient?.id;
     if (user.role === 'PATIENT' && !user.patient && user.clinicId) {
-      this.logger.debug(`Criando registro Patient para usuário ${user.id}`);
-      const newPatient = await this.prisma.patient.create({
-        data: {
-          userId: user.id,
-          clinicId: user.clinicId,
-          name: user.name,
-          email: user.email,
-        },
+      // Validar se clínica está ativa antes de criar Patient
+      const clinic = await this.prisma.clinic.findUnique({
+        where: { id: user.clinicId },
+        select: { isActive: true },
       });
-      patientId = newPatient.id;
-      this.logger.debug(`Patient criado com ID: ${patientId}`);
+
+      if (!clinic?.isActive) {
+        this.logger.warn(`Clínica ${user.clinicId} inativa ou não encontrada para user ${user.id}`);
+        throw new UnauthorizedException('Clínica não está ativa');
+      }
+
+      this.logger.debug(`Criando registro Patient para usuário ${user.id}`);
+      try {
+        // UPSERT evita race condition: se já existe, retorna o existente
+        const patient = await this.prisma.patient.upsert({
+          where: { userId: user.id },
+          update: {}, // Não atualiza nada se já existe
+          create: {
+            userId: user.id,
+            clinicId: user.clinicId,
+            name: user.name,
+            email: user.email,
+          },
+        });
+        patientId = patient.id;
+        this.logger.debug(`Patient criado/encontrado com ID: ${patientId}`);
+      } catch (error: any) {
+        // Se unique constraint violado, buscar o patient existente
+        if (error.code === 'P2002') {
+          this.logger.debug(`Patient já existe para user ${user.id}, buscando...`);
+          const existingPatient = await this.prisma.patient.findUnique({
+            where: { userId: user.id },
+          });
+          patientId = existingPatient?.id;
+        } else {
+          throw error;
+        }
+      }
     }
 
     return {
