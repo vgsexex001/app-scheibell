@@ -30,11 +30,6 @@ model User {
   refreshTokens        RefreshToken[]
   clinic               Clinic?              @relation(fields: [clinicId], references: [id])
 
-  // Multi-clínica: associações
-  clinicAssignments          UserClinicAssignment[]       @relation()
-  createdUserAssignments     UserClinicAssignment[]       @relation("CreatedUserAssignments")
-  createdPatientAssociations PatientClinicAssociation[]   @relation("CreatedPatientAssociations")
-
   @@index([clinicId])
   @@index([role])
   @@index([email])
@@ -85,56 +80,58 @@ model Clinic {
   trainingProtocols  TrainingProtocol[]
   users              User[]
 
-  // Multi-clínica: associações N:N
-  patientAssociations PatientClinicAssociation[] @relation("ClinicPatientAssociations")
-  userAssignments     UserClinicAssignment[]     @relation("ClinicUserAssignments")
-  transferredPatients PatientClinicAssociation[] @relation("TransferredFromClinic")
-
   @@index([isActive])
   @@map("clinics")
 }
 
 model Patient {
-  id                 String                     @id @default(uuid())
-  userId             String?                    @unique
-  name               String?
-  email              String?
-  clinicId           String
-  cpf                String?
-  phone              String?
-  birthDate          DateTime?
-  bloodType          String?
-  weightKg           Float?
-  heightCm           Float?
-  emergencyContact   String?
-  emergencyPhone     String?
-  surgeryDate        DateTime?
-  surgeryType        String?
-  surgeon            String?
-  createdAt          DateTime                   @default(now())
-  updatedAt          DateTime                   @updatedAt
-  deletedAt          DateTime?
-  alerts             Alert[]
-  appointments       Appointment[]
-  chatConversations  ChatConversation[]
-  exams              Exam[]
-  externalEvents     ExternalEvent[]
-  medicalNotes       MedicalNote[]
-  medicationLogs     MedicationLog[]
-  allergies          PatientAllergy[]
-  connections        PatientConnection[]
-  contentAdjustments PatientContentAdjustment[]
-  contentOverrides   PatientContentOverride[]
-  contentState       PatientContentState?
-  sessionCompletions PatientSessionCompletion[]
-  tasks              PatientTask[]
-  trainingProgress   PatientTrainingProgress[]
-  clinic             Clinic                     @relation(fields: [clinicId], references: [id])
-  user               User?                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  videoProgress      VideoProgress[]
-
-  // Multi-clínica: associações com múltiplas clínicas
-  clinicAssociations PatientClinicAssociation[]
+  id                       String                     @id @default(uuid())
+  userId                   String?                    @unique
+  name                     String?
+  email                    String?
+  clinicId                 String
+  cpf                      String?
+  phone                    String?
+  birthDate                DateTime?
+  bloodType                String?
+  weightKg                 Float?
+  heightCm                 Float?
+  emergencyContact         String?
+  emergencyPhone           String?
+  surgeryDate              DateTime?
+  surgeryType              String?
+  surgeon                  String?
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  deletedAt                DateTime?
+  cep                      String?
+  street                   String?
+  streetNumber             String?                    @map("street_number")
+  complement               String?
+  neighborhood             String?
+  city                     String?
+  state                    String?
+  allergiesText            String?                    @map("allergies_text")
+  medicalNotesText         String?                    @map("medical_notes_text")
+  emergencyContactRelation String?                    @map("emergency_contact_relation")
+  alerts                   Alert[]
+  appointments             Appointment[]
+  chatConversations        ChatConversation[]
+  exams                    Exam[]
+  externalEvents           ExternalEvent[]
+  medicalNotes             MedicalNote[]
+  medicationLogs           MedicationLog[]
+  allergies                PatientAllergy[]
+  connections              PatientConnection[]
+  contentAdjustments       PatientContentAdjustment[]
+  contentOverrides         PatientContentOverride[]
+  contentState             PatientContentState?
+  sessionCompletions       PatientSessionCompletion[]
+  tasks                    PatientTask[]
+  trainingProgress         PatientTrainingProgress[]
+  clinic                   Clinic                     @relation(fields: [clinicId], references: [id])
+  user                     User?                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoProgress            VideoProgress[]
 
   @@index([clinicId])
   @@index([clinicId, surgeryType])
@@ -848,6 +845,65 @@ model ClinicDocument {
   @@map("clinic_documents")
 }
 
+model fotos_pre_consulta {
+  id                        String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  envio_id                  String                    @db.Uuid
+  tipo_foto                 String
+  url                       String
+  thumbnail_url             String?
+  storage_path              String?
+  status                    String                    @default("pendente")
+  observacao_medico         String?
+  motivo_rejeicao           String?
+  data_revisao              DateTime?                 @db.Timestamptz(6)
+  medico_revisor_id         String?
+  created_at                DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime                  @default(now()) @db.Timestamptz(6)
+  fotos_pre_consulta_envios fotos_pre_consulta_envios @relation(fields: [envio_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([envio_id], map: "idx_fotos_envio")
+  @@index([status], map: "idx_fotos_status")
+}
+
+model fotos_pre_consulta_envios {
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paciente_id         String
+  clinica_id          String
+  status              String               @default("pendente")
+  observacao_paciente String?
+  numero_envio        Int                  @default(1)
+  data_envio          DateTime             @default(now()) @db.Timestamptz(6)
+  fotos_pendentes     Int                  @default(0)
+  fotos_aprovadas     Int                  @default(0)
+  fotos_rejeitadas    Int                  @default(0)
+  created_at          DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime             @default(now()) @db.Timestamptz(6)
+  fotos_pre_consulta  fotos_pre_consulta[]
+
+  @@index([clinica_id], map: "idx_fotos_envios_clinica")
+  @@index([paciente_id], map: "idx_fotos_envios_paciente")
+  @@index([status], map: "idx_fotos_envios_status")
+}
+
+model paciente_pendencias {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paciente_id    String
+  tipo           String
+  referencia_id  String?
+  titulo         String
+  descricao      String?
+  motivo         String?
+  dados_extra    Json?
+  resolvida      Boolean   @default(false)
+  data_resolucao DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([paciente_id], map: "idx_pendencias_paciente")
+  @@index([resolvida], map: "idx_pendencias_resolvida")
+  @@index([tipo], map: "idx_pendencias_tipo")
+}
+
 enum ContentType {
   SYMPTOMS
   DIET
@@ -1058,92 +1114,4 @@ enum SubtitleStatus {
   PROCESSING
   COMPLETED
   FAILED
-}
-
-// =====================================================
-// MULTI-CLÍNICA: Tabelas de Associação
-// =====================================================
-
-/// Status da associação paciente-clínica
-enum PatientClinicStatus {
-  ACTIVE
-  INACTIVE
-  TRANSFERRED
-}
-
-/// Associação N:N entre Pacientes e Clínicas
-model PatientClinicAssociation {
-  id                      String              @id @default(uuid())
-  patientId               String              @map("patient_id")
-  clinicId                String              @map("clinic_id")
-
-  // Dados específicos desta associação
-  surgeryDate             DateTime?           @map("surgery_date")
-  surgeryType             String?             @map("surgery_type")
-  surgeon                 String?
-
-  // Controle de status
-  status                  PatientClinicStatus @default(ACTIVE)
-  isPrimary               Boolean             @default(false) @map("is_primary")
-
-  // Histórico de transferência
-  transferredFromClinicId String?             @map("transferred_from_clinic_id")
-  transferReason          String?             @map("transfer_reason")
-  transferredAt           DateTime?           @map("transferred_at")
-
-  // Auditoria
-  createdAt               DateTime            @default(now()) @map("created_at")
-  updatedAt               DateTime            @default(now()) @updatedAt @map("updated_at")
-  createdById             String?             @map("created_by")
-
-  // Relacionamentos
-  patient                 Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  clinic                  Clinic              @relation("ClinicPatientAssociations", fields: [clinicId], references: [id], onDelete: Cascade)
-  transferredFromClinic   Clinic?             @relation("TransferredFromClinic", fields: [transferredFromClinicId], references: [id])
-  createdBy               User?               @relation("CreatedPatientAssociations", fields: [createdById], references: [id])
-
-  @@unique([patientId, clinicId])
-  @@index([patientId])
-  @@index([clinicId])
-  @@index([status])
-  @@map("patient_clinic_associations")
-}
-
-/// Role específica por clínica
-enum ClinicAssignmentRole {
-  CLINIC_ADMIN
-  CLINIC_STAFF
-  VIEWER
-}
-
-/// Associação N:N entre Usuários (staff) e Clínicas
-model UserClinicAssignment {
-  id          String               @id @default(uuid())
-  userId      String               @map("user_id")
-  clinicId    String               @map("clinic_id")
-
-  // Role específica nesta clínica
-  role        ClinicAssignmentRole
-
-  // Permissões granulares
-  permissions Json                 @default("[]")
-
-  // Controle de status
-  isActive    Boolean              @default(true) @map("is_active")
-  isDefault   Boolean              @default(false) @map("is_default")
-
-  // Auditoria
-  startedAt   DateTime             @default(now()) @map("started_at")
-  endedAt     DateTime?            @map("ended_at")
-  createdById String?              @map("created_by")
-
-  // Relacionamentos
-  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinic      Clinic               @relation("ClinicUserAssignments", fields: [clinicId], references: [id], onDelete: Cascade)
-  createdBy   User?                @relation("CreatedUserAssignments", fields: [createdById], references: [id])
-
-  @@unique([userId, clinicId])
-  @@index([userId])
-  @@index([clinicId])
-  @@map("user_clinic_assignments")
 }

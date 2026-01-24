@@ -122,22 +122,8 @@ export class ClinicContextGuard implements CanActivate {
     user: JwtPayload,
     clinicId: string,
   ): Promise<boolean> {
-    // PACIENTES: verificar patient_clinic_associations
+    // PACIENTES: verificar clinicId direto no patient
     if (user.role === 'PATIENT') {
-      // Primeiro tenta na nova tabela de associações
-      const association = await this.prisma.patientClinicAssociation.findFirst({
-        where: {
-          patient: { userId: user.id },
-          clinicId: clinicId,
-          status: 'ACTIVE',
-        },
-      });
-
-      if (association) {
-        return true;
-      }
-
-      // Fallback: verificar clinicId direto no patient (compatibilidade)
       const patient = await this.prisma.patient.findFirst({
         where: {
           userId: user.id,
@@ -149,42 +135,15 @@ export class ClinicContextGuard implements CanActivate {
       return !!patient;
     }
 
-    // STAFF/ADMIN: verificar user_clinic_assignments
-    if (user.role === 'CLINIC_ADMIN' || user.role === 'CLINIC_STAFF') {
-      // Primeiro tenta na nova tabela de assignments
-      const assignment = await this.prisma.userClinicAssignment.findFirst({
-        where: {
-          userId: user.id,
-          clinicId: clinicId,
-          isActive: true,
-        },
-      });
-
-      if (assignment) {
-        return true;
-      }
-
-      // Fallback: verificar clinicId direto no user (compatibilidade)
-      const userRecord = await this.prisma.user.findFirst({
-        where: {
-          id: user.id,
-          clinicId: clinicId,
-          deletedAt: null,
-        },
-      });
-
-      return !!userRecord;
-    }
-
-    // THIRD_PARTY ou outros roles: verificar apenas user_clinic_assignments
-    const assignment = await this.prisma.userClinicAssignment.findFirst({
+    // STAFF/ADMIN/THIRD_PARTY: verificar clinicId direto no user
+    const userRecord = await this.prisma.user.findFirst({
       where: {
-        userId: user.id,
+        id: user.id,
         clinicId: clinicId,
-        isActive: true,
+        deletedAt: null,
       },
     });
 
-    return !!assignment;
+    return !!userRecord;
   }
 }
