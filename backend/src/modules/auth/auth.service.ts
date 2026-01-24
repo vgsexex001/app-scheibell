@@ -51,14 +51,31 @@ export class AuthService {
     const role = dto.role || UserRole.PATIENT;
 
     // clinicId é obrigatório (validado pelo DTO)
-    const result = await this.prisma.user.create({
-      data: {
-        name: dto.name,
-        email: dto.email,
-        passwordHash: hashedPassword,
-        role: role,
-        clinicId: dto.clinicId,
-      },
+    // Usar transação para criar User e Patient juntos
+    const result = await this.prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          name: dto.name,
+          email: dto.email,
+          passwordHash: hashedPassword,
+          role: role,
+          clinicId: dto.clinicId,
+        },
+      });
+
+      // Se o usuário é PATIENT, criar registro na tabela patients automaticamente
+      if (role === UserRole.PATIENT && dto.clinicId) {
+        await tx.patient.create({
+          data: {
+            userId: newUser.id,
+            clinicId: dto.clinicId,
+            email: dto.email,
+            name: dto.name,
+          },
+        });
+      }
+
+      return newUser;
     });
 
     return await this.generateAuthResponse(result);
