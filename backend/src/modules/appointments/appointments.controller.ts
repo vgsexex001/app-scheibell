@@ -33,6 +33,9 @@ export class AppointmentsController {
     @CurrentUser('patientId') patientId: string,
     @Query('status') status?: AppointmentStatus,
   ) {
+    if (!patientId) {
+      throw new BadRequestException('Perfil de paciente não encontrado. Por favor, entre em contato com a clínica.');
+    }
     return this.appointmentsService.getPatientAppointments(patientId, status);
   }
 
@@ -47,6 +50,9 @@ export class AppointmentsController {
     @CurrentUser('patientId') patientId: string,
     @Query('limit') limit?: string,
   ) {
+    if (!patientId) {
+      return []; // Retorna lista vazia se não tem patientId
+    }
     const limitNum = limit ? parseInt(limit) : 5;
     return this.appointmentsService.getUpcomingAppointments(patientId, limitNum);
   }
@@ -59,6 +65,9 @@ export class AppointmentsController {
   @Roles('PATIENT')
   @UseGuards(RolesGuard)
   async getAppointmentHistory(@CurrentUser('patientId') patientId: string) {
+    if (!patientId) {
+      return []; // Retorna lista vazia se não tem patientId
+    }
     return this.appointmentsService.getAppointmentHistory(patientId);
   }
 

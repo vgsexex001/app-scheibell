@@ -35,7 +35,7 @@ export class MedicationsController {
   private getPatientId(req: AuthenticatedRequest): string {
     const patientId = req.user.patientId;
     if (!patientId) {
-      throw new BadRequestException('Patient ID not found');
+      throw new BadRequestException('Perfil de paciente não encontrado. Por favor, entre em contato com a clínica.');
     }
     return patientId;
   }
@@ -85,7 +85,22 @@ export class MedicationsController {
     @Request() req: AuthenticatedRequest,
     @Query('days') days?: string,
   ) {
-    const patientId = this.getPatientId(req);
+    const patientId = req.user.patientId;
+    // Se não tem patientId, retorna valores padrão em vez de erro
+    if (!patientId) {
+      return {
+        adherence: 0,
+        taken: 0,
+        expected: 0,
+        days: days ? parseInt(days, 10) : 7,
+        medicationsCount: 0,
+        details: {
+          fromClinic: 0,
+          addedForPatient: 0,
+          disabled: 0,
+        },
+      };
+    }
     return this.medicationsService.getAdherence(patientId, {
       days: days ? parseInt(days, 10) : undefined,
     });

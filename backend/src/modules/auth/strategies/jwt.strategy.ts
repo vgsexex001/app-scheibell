@@ -133,13 +133,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     this.logger.debug(`Usuário encontrado: ${user.email}, role: ${user.role}`);
 
+    // Se o usuário é PATIENT mas não tem registro na tabela patients, criar automaticamente
+    let patientId = user.patient?.id;
+    if (user.role === 'PATIENT' && !user.patient && user.clinicId) {
+      this.logger.debug(`Criando registro Patient para usuário ${user.id}`);
+      const newPatient = await this.prisma.patient.create({
+        data: {
+          userId: user.id,
+          clinicId: user.clinicId,
+          name: user.name,
+          email: user.email,
+        },
+      });
+      patientId = newPatient.id;
+      this.logger.debug(`Patient criado com ID: ${patientId}`);
+    }
+
     return {
       sub: user.id, // Usa o ID da tabela users (não do auth.users)
       id: user.id,
       email: user.email,
       role: user.role,
       clinicId: user.clinicId || undefined,
-      patientId: user.patient?.id,
+      patientId,
     };
   }
 
@@ -156,13 +172,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
 
+    // Se o usuário é PATIENT mas não tem registro na tabela patients, criar automaticamente
+    let patientId = user.patient?.id;
+    if (user.role === 'PATIENT' && !user.patient && user.clinicId) {
+      this.logger.debug(`Criando registro Patient para usuário ${user.id}`);
+      const newPatient = await this.prisma.patient.create({
+        data: {
+          userId: user.id,
+          clinicId: user.clinicId,
+          name: user.name,
+          email: user.email,
+        },
+      });
+      patientId = newPatient.id;
+      this.logger.debug(`Patient criado com ID: ${patientId}`);
+    }
+
     return {
       sub: payload.sub,
       id: payload.sub,
       email: payload.email,
       role: payload.role,
       clinicId: payload.clinicId,
-      patientId: user.patient?.id,
+      patientId,
     };
   }
 }
