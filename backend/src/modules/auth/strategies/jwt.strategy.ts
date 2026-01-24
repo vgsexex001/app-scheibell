@@ -63,12 +63,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             });
             jwksClient(request, rawJwtToken, done);
           } else {
-            // Token HS256 - usa secret tradicional
-            done(null, supabaseJwtSecret || jwtSecret);
+            // Token HS256 - usa JWT_SECRET primeiro (tokens do backend próprio)
+            // O SUPABASE_JWT_SECRET é usado apenas para tokens do Supabase que chegam como HS256
+            done(null, jwtSecret || supabaseJwtSecret);
           }
         } catch (err) {
           // Fallback para secret tradicional
-          done(null, supabaseJwtSecret || jwtSecret);
+          done(null, jwtSecret || supabaseJwtSecret);
         }
       },
       algorithms: ['ES256', 'HS256'],
