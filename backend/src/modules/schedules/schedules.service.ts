@@ -72,15 +72,33 @@ export class SchedulesService {
   // ==================== CLINIC SCHEDULES ====================
 
   async getSchedules(clinicId: string, appointmentType?: AppointmentType) {
-    const schedules = await this.prisma.clinicSchedule.findMany({
-      where: {
-        clinicId,
-        appointmentType: appointmentType ?? null, // null = configuração geral legada
-      },
-      orderBy: { dayOfWeek: 'asc' },
-    });
+    this.logger.debug(`getSchedules: clinicId=${clinicId}, appointmentType=${appointmentType}`);
 
-    return schedules;
+    // Validar clinicId
+    if (!clinicId) {
+      this.logger.warn('getSchedules: clinicId não fornecido');
+      return [];
+    }
+
+    try {
+      // Se appointmentType for fornecido, busca por esse tipo
+      // Se não, busca todos os schedules da clínica
+      const where: any = { clinicId };
+      if (appointmentType) {
+        where.appointmentType = appointmentType;
+      }
+
+      const schedules = await this.prisma.clinicSchedule.findMany({
+        where,
+        orderBy: { dayOfWeek: 'asc' },
+      });
+
+      this.logger.debug(`getSchedules: encontrados ${schedules.length} horários`);
+      return schedules;
+    } catch (error) {
+      this.logger.error(`getSchedules: erro ao buscar horários - ${error}`);
+      throw error;
+    }
   }
 
   async getSchedulesByType(clinicId: string, appointmentType: AppointmentType) {
