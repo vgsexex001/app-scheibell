@@ -72,7 +72,7 @@ export class SchedulesService {
   // ==================== CLINIC SCHEDULES ====================
 
   async getSchedules(clinicId: string, appointmentType?: AppointmentType) {
-    this.logger.debug(`getSchedules: clinicId=${clinicId}, appointmentType=${appointmentType}`);
+    this.logger.debug(`getSchedules: clinicId=${clinicId}, appointmentType=${appointmentType}, typeOf=${typeof appointmentType}`);
 
     // Validar clinicId
     if (!clinicId) {
@@ -81,12 +81,33 @@ export class SchedulesService {
     }
 
     try {
+      // Verificar se a clínica existe
+      const clinic = await this.prisma.clinic.findUnique({
+        where: { id: clinicId },
+        select: { id: true, name: true, isActive: true },
+      });
+
+      if (!clinic) {
+        this.logger.warn(`getSchedules: clínica não encontrada - clinicId=${clinicId}`);
+        return [];
+      }
+
+      this.logger.debug(`getSchedules: clínica encontrada - ${clinic.name} (active: ${clinic.isActive})`);
+
       // Se appointmentType for fornecido, busca por esse tipo
       // Se não, busca todos os schedules da clínica
       const where: any = { clinicId };
       if (appointmentType) {
+        // Validar se o appointmentType é um valor válido do enum
+        const validTypes = Object.values(AppointmentType);
+        if (!validTypes.includes(appointmentType)) {
+          this.logger.warn(`getSchedules: appointmentType inválido - ${appointmentType}`);
+          return [];
+        }
         where.appointmentType = appointmentType;
       }
+
+      this.logger.debug(`getSchedules: query where = ${JSON.stringify(where)}`);
 
       const schedules = await this.prisma.clinicSchedule.findMany({
         where,
@@ -95,9 +116,11 @@ export class SchedulesService {
 
       this.logger.debug(`getSchedules: encontrados ${schedules.length} horários`);
       return schedules;
-    } catch (error) {
-      this.logger.error(`getSchedules: erro ao buscar horários - ${error}`);
-      throw error;
+    } catch (error: any) {
+      this.logger.error(`getSchedules: erro ao buscar horários - ${error.message}`);
+      this.logger.error(`getSchedules: stack - ${error.stack}`);
+      // Retorna array vazio em vez de lançar erro para evitar 500
+      return [];
     }
   }
 
