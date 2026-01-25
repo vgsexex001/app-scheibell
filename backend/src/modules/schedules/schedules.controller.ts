@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
   ParseIntPipe,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,6 +26,8 @@ import { CreateScheduleDto, UpdateScheduleDto, CreateBlockedDateDto, UpdateBlock
 @Controller('schedules')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SchedulesController {
+  private readonly logger = new Logger(SchedulesController.name);
+
   constructor(private readonly schedulesService: SchedulesService) {}
 
   // ==================== APPOINTMENT TYPES ====================
@@ -46,11 +49,27 @@ export class SchedulesController {
     @CurrentUser() user: any,
     @Query('appointmentType') appointmentType?: AppointmentType,
   ) {
+    this.logger.debug(`getSchedules: user=${JSON.stringify(user)}, appointmentType=${appointmentType}`);
+
+    if (!user) {
+      this.logger.warn('getSchedules: user is undefined');
+      return [];
+    }
+
     const clinicId = user.clinicId;
+    this.logger.debug(`getSchedules: clinicId=${clinicId}`);
+
     if (!clinicId) {
+      this.logger.warn('getSchedules: user não tem clinicId');
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
-    return this.schedulesService.getSchedules(clinicId, appointmentType);
+
+    try {
+      return await this.schedulesService.getSchedules(clinicId, appointmentType);
+    } catch (error: any) {
+      this.logger.error(`getSchedules: erro - ${error.message}`);
+      return [];
+    }
   }
 
   @Get('grouped')
