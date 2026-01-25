@@ -17,6 +17,11 @@ export class PatientsService {
     search?: string,
     status?: string,
   ) {
+    // Validar clinicId
+    if (!clinicId) {
+      throw new NotFoundException('Clínica não encontrada. Verifique se você está associado a uma clínica.');
+    }
+
     const skip = (page - 1) * limit;
     const now = new Date();
 
