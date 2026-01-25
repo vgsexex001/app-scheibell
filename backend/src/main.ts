@@ -103,6 +103,7 @@ async function bootstrap() {
   logger.log(`Application running on: http://localhost:${port}/api`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(`Deploy version: 2026-01-25-v2`);
 }
 
 bootstrap();
