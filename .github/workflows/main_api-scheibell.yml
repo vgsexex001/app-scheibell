@@ -53,6 +53,19 @@ jobs:
           cp package.json deploy/
           cp package-lock.json deploy/
 
+          # Copiar o Prisma Client gerado para dentro do node_modules do deploy
+          # O Prisma gera os arquivos em node_modules/.prisma/client
+          if [ -d "node_modules/.prisma" ]; then
+            echo "Copiando Prisma Client gerado..."
+            cp -r node_modules/.prisma deploy/node_modules/
+          fi
+
+          # Criar arquivo .deployment para desabilitar Oryx build
+          cat > deploy/.deployment << 'EOF'
+          [config]
+          SCM_DO_BUILD_DURING_DEPLOYMENT=false
+          EOF
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
@@ -65,6 +78,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
       - name: Download artifact from build job
