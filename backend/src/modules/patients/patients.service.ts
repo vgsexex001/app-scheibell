@@ -30,14 +30,14 @@ export class PatientsService {
       clinicId,
     };
 
-    // Filtro por busca (nome ou email)
+    // Filtro por busca (nome ou email) - busca nos campos do paciente E do usuário
     if (search) {
-      where.user = {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-        ],
-      };
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ];
     }
 
     // Filtro por status
