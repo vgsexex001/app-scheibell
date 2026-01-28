@@ -58,10 +58,11 @@ jobs:
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_888BDD5568EC45CD8F955CC6E0BB65AE }}
 
       - name: Disable Oryx build
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          app-settings-json: '[{"name":"SCM_DO_BUILD_DURING_DEPLOYMENT","value":"false"},{"name":"ENABLE_ORYX_BUILD","value":"false"}]'
+        run: |
+          az webapp config appsettings set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group $(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --query resourceGroup -o tsv) \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false ENABLE_ORYX_BUILD=false
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
