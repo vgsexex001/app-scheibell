@@ -336,7 +336,7 @@ export class ChatController {
 
   // POST /api/chat/audio - Upload de mensagem de áudio
   @Post('audio')
-  @Roles('PATIENT')
+  @Roles('PATIENT', 'CLINIC_ADMIN', 'CLINIC_STAFF')
   @UseInterceptors(FileInterceptor('file'))
   async uploadAudio(
     @Request() req: AuthenticatedRequest,
@@ -389,7 +389,7 @@ export class ChatController {
 
   // POST /api/chat/audio/transcribe - Transcrever áudio
   @Post('audio/transcribe')
-  @Roles('PATIENT')
+  @Roles('PATIENT', 'CLINIC_ADMIN', 'CLINIC_STAFF')
   async transcribeAudio(
     @Request() req: AuthenticatedRequest,
     @Body() dto: TranscribeAudioDto,
@@ -412,7 +412,7 @@ export class ChatController {
 
   // GET /api/chat/audio/:id/file - Servir arquivo de áudio
   @Get('audio/:id/file')
-  @Roles('PATIENT')
+  @Roles('PATIENT', 'CLINIC_ADMIN', 'CLINIC_STAFF')
   async getAudioFile(
     @Request() req: AuthenticatedRequest,
     @Param('id') attachmentId: string,
