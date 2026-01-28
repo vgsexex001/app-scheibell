@@ -25,6 +25,7 @@ import { SchedulesModule } from './modules/schedules/schedules.module';
 import { TranscriptionModule } from './modules/transcription/transcription.module';
 import { HomeModule } from './modules/home/home.module';
 import { VideosModule } from './modules/videos/videos.module';
+import { AppointmentTypesModule } from './modules/appointment-types/appointment-types.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { VideosModule } from './modules/videos/videos.module';
     TranscriptionModule,
     HomeModule,
     VideosModule,
+    AppointmentTypesModule,
   ],
   controllers: [],
   providers: [

@@ -31,12 +31,13 @@ export class PatientsService {
     };
 
     // Filtro por busca (nome ou email) - busca nos campos do paciente E do usuário
+    // Nota: filtros em relações aninhadas requerem 'is' para funcionar corretamente quando o campo pode ser null
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
-        { user: { email: { contains: search, mode: 'insensitive' } } },
+        { user: { is: { name: { contains: search, mode: 'insensitive' } } } },
+        { user: { is: { email: { contains: search, mode: 'insensitive' } } } },
       ];
     }
 

@@ -26,7 +26,7 @@ export class HomeSummaryDto {
 export class NextAppointmentDto {
   id: string;
   date: string;
-  type: string;
+  type: string | null;
   title: string;
 }
 

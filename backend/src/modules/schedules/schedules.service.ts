@@ -142,6 +142,9 @@ export class SchedulesService {
   async getAllSchedulesGroupedByType(clinicId: string) {
     const schedules = await this.prisma.clinicSchedule.findMany({
       where: { clinicId },
+      include: {
+        clinicAppointmentType: true,
+      },
       orderBy: [{ appointmentType: 'asc' }, { dayOfWeek: 'asc' }],
     });
 
@@ -149,7 +152,7 @@ export class SchedulesService {
     const grouped: Record<string, any[]> = {};
 
     for (const schedule of schedules) {
-      const key = schedule.appointmentType ?? 'GENERAL';
+      const key = schedule.appointmentTypeId ?? schedule.appointmentType ?? 'GENERAL';
       if (!grouped[key]) {
         grouped[key] = [];
       }
@@ -157,6 +160,47 @@ export class SchedulesService {
     }
 
     return grouped;
+  }
+
+  /**
+   * Busca schedules por appointmentTypeId (tipo de consulta personalizado)
+   */
+  async getSchedulesByAppointmentTypeId(clinicId: string, appointmentTypeId: string) {
+    this.logger.log(`getSchedulesByAppointmentTypeId: clinicId=${clinicId}, appointmentTypeId=${appointmentTypeId}`);
+
+    const schedules = await this.prisma.clinicSchedule.findMany({
+      where: {
+        clinicId,
+        appointmentTypeId,
+      },
+      include: {
+        clinicAppointmentType: true,
+      },
+      orderBy: { dayOfWeek: 'asc' },
+    });
+
+    this.logger.log(`getSchedulesByAppointmentTypeId: found ${schedules.length} schedules`);
+    return schedules;
+  }
+
+  /**
+   * Busca schedules gerais (sem appointmentTypeId e sem appointmentType)
+   * Estes são os horários de fallback usados quando um tipo não tem horários específicos
+   */
+  async getGeneralSchedules(clinicId: string) {
+    this.logger.log(`getGeneralSchedules: clinicId=${clinicId}`);
+
+    const schedules = await this.prisma.clinicSchedule.findMany({
+      where: {
+        clinicId,
+        appointmentTypeId: null,
+        appointmentType: null,
+      },
+      orderBy: { dayOfWeek: 'asc' },
+    });
+
+    this.logger.log(`getGeneralSchedules: found ${schedules.length} schedules`);
+    return schedules;
   }
 
   async getScheduleByDay(clinicId: string, dayOfWeek: number, appointmentType?: AppointmentType) {
@@ -172,15 +216,30 @@ export class SchedulesService {
   }
 
   async createOrUpdateSchedule(clinicId: string, dto: CreateScheduleDto) {
-    const { dayOfWeek, appointmentType, ...data } = dto;
+    const { dayOfWeek, appointmentType, appointmentTypeId, ...data } = dto;
+
+    // Determina o critério de busca baseado em appointmentTypeId ou appointmentType
+    const whereClause: any = {
+      clinicId,
+      dayOfWeek,
+    };
+
+    if (appointmentTypeId) {
+      // Se temos appointmentTypeId, usamos ele (tipo personalizado)
+      whereClause.appointmentTypeId = appointmentTypeId;
+    } else if (appointmentType) {
+      // Se temos appointmentType (enum legado), usamos ele
+      whereClause.appointmentType = appointmentType;
+      whereClause.appointmentTypeId = null;
+    } else {
+      // Horário geral (sem tipo específico)
+      whereClause.appointmentType = null;
+      whereClause.appointmentTypeId = null;
+    }
 
     // Encontrar registro existente
     const existing = await this.prisma.clinicSchedule.findFirst({
-      where: {
-        clinicId,
-        dayOfWeek,
-        appointmentType: appointmentType ?? null,
-      },
+      where: whereClause,
     });
 
     if (existing) {
@@ -193,7 +252,7 @@ export class SchedulesService {
         },
       });
 
-      this.logger.log(`Schedule updated for clinic ${clinicId}, day ${dayOfWeek}, type ${appointmentType ?? 'GENERAL'}`);
+      this.logger.log(`Schedule updated for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}`);
       return schedule;
     }
 
@@ -202,7 +261,8 @@ export class SchedulesService {
       data: {
         clinicId,
         dayOfWeek,
-        appointmentType: appointmentType ?? null,
+        appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
+        appointmentTypeId: appointmentTypeId ?? null,
         openTime: dto.openTime,
         closeTime: dto.closeTime,
         breakStart: dto.breakStart,
@@ -213,17 +273,25 @@ export class SchedulesService {
       },
     });
 
-    this.logger.log(`Schedule created for clinic ${clinicId}, day ${dayOfWeek}, type ${appointmentType ?? 'GENERAL'}`);
+    this.logger.log(`Schedule created for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}`);
     return schedule;
   }
 
-  async updateSchedule(clinicId: string, dayOfWeek: number, dto: UpdateScheduleDto, appointmentType?: AppointmentType) {
+  async updateSchedule(clinicId: string, dayOfWeek: number, dto: UpdateScheduleDto, appointmentType?: AppointmentType, appointmentTypeId?: string) {
+    // Monta o where clause baseado em appointmentTypeId ou appointmentType
+    const whereClause: any = { clinicId, dayOfWeek };
+    if (appointmentTypeId) {
+      whereClause.appointmentTypeId = appointmentTypeId;
+    } else if (appointmentType) {
+      whereClause.appointmentType = appointmentType;
+      whereClause.appointmentTypeId = null;
+    } else {
+      whereClause.appointmentType = null;
+      whereClause.appointmentTypeId = null;
+    }
+
     const existing = await this.prisma.clinicSchedule.findFirst({
-      where: {
-        clinicId,
-        dayOfWeek,
-        appointmentType: appointmentType ?? null,
-      },
+      where: whereClause,
     });
 
     if (!existing) {
@@ -238,17 +306,25 @@ export class SchedulesService {
       },
     });
 
-    this.logger.log(`Schedule updated for clinic ${clinicId}, day ${dayOfWeek}, type ${appointmentType ?? 'GENERAL'}`);
+    this.logger.log(`Schedule updated for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}`);
     return schedule;
   }
 
-  async toggleSchedule(clinicId: string, dayOfWeek: number, appointmentType?: AppointmentType) {
+  async toggleSchedule(clinicId: string, dayOfWeek: number, appointmentType?: AppointmentType, appointmentTypeId?: string) {
+    // Monta o where clause baseado em appointmentTypeId ou appointmentType
+    const whereClause: any = { clinicId, dayOfWeek };
+    if (appointmentTypeId) {
+      whereClause.appointmentTypeId = appointmentTypeId;
+    } else if (appointmentType) {
+      whereClause.appointmentType = appointmentType;
+      whereClause.appointmentTypeId = null;
+    } else {
+      whereClause.appointmentType = null;
+      whereClause.appointmentTypeId = null;
+    }
+
     const existing = await this.prisma.clinicSchedule.findFirst({
-      where: {
-        clinicId,
-        dayOfWeek,
-        appointmentType: appointmentType ?? null,
-      },
+      where: whereClause,
     });
 
     if (!existing) {
@@ -259,7 +335,8 @@ export class SchedulesService {
         data: {
           clinicId,
           dayOfWeek,
-          appointmentType: appointmentType ?? null,
+          appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
+          appointmentTypeId: appointmentTypeId ?? null,
           openTime: '08:00',
           closeTime: '18:00',
           slotDuration: defaultDuration,
@@ -277,17 +354,25 @@ export class SchedulesService {
       },
     });
 
-    this.logger.log(`Schedule toggled for clinic ${clinicId}, day ${dayOfWeek}, type ${appointmentType ?? 'GENERAL'}: ${schedule.isActive}`);
+    this.logger.log(`Schedule toggled for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}: ${schedule.isActive}`);
     return schedule;
   }
 
-  async deleteSchedule(clinicId: string, dayOfWeek: number, appointmentType?: AppointmentType) {
+  async deleteSchedule(clinicId: string, dayOfWeek: number, appointmentType?: AppointmentType, appointmentTypeId?: string) {
+    // Monta o where clause baseado em appointmentTypeId ou appointmentType
+    const whereClause: any = { clinicId, dayOfWeek };
+    if (appointmentTypeId) {
+      whereClause.appointmentTypeId = appointmentTypeId;
+    } else if (appointmentType) {
+      whereClause.appointmentType = appointmentType;
+      whereClause.appointmentTypeId = null;
+    } else {
+      whereClause.appointmentType = null;
+      whereClause.appointmentTypeId = null;
+    }
+
     const existing = await this.prisma.clinicSchedule.findFirst({
-      where: {
-        clinicId,
-        dayOfWeek,
-        appointmentType: appointmentType ?? null,
-      },
+      where: whereClause,
     });
 
     if (!existing) {
@@ -298,7 +383,7 @@ export class SchedulesService {
       where: { id: existing.id },
     });
 
-    this.logger.log(`Schedule deleted for clinic ${clinicId}, day ${dayOfWeek}, type ${appointmentType ?? 'GENERAL'}`);
+    this.logger.log(`Schedule deleted for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}`);
     return { message: 'Schedule deleted successfully' };
   }
 
@@ -527,13 +612,13 @@ export class SchedulesService {
     return false;
   }
 
-  async getAvailableSlots(clinicId: string, date: Date, appointmentType?: AppointmentType) {
+  async getAvailableSlots(clinicId: string, date: Date, appointmentType?: AppointmentType, appointmentTypeId?: string) {
     // IMPORTANTE: Usar getUTCDay() para evitar problemas de timezone
     // A data vem como "2026-01-19T00:00:00.000Z" (meia-noite UTC)
     // Se usarmos getDay() no Brasil (UTC-3), pode retornar o dia anterior
     const dayOfWeek = date.getUTCDay();
 
-    this.logger.log(`getAvailableSlots: clinicId=${clinicId}, date=${date.toISOString()}, dayOfWeek=${dayOfWeek} (UTC), appointmentType=${appointmentType}`);
+    this.logger.log(`getAvailableSlots: clinicId=${clinicId}, date=${date.toISOString()}, dayOfWeek=${dayOfWeek} (UTC), appointmentType=${appointmentType}, appointmentTypeId=${appointmentTypeId}`);
 
     // Verifica se a data está bloqueada
     if (await this.isDateBlocked(clinicId, date, appointmentType)) {
@@ -541,26 +626,43 @@ export class SchedulesService {
       return { available: false, reason: 'Data bloqueada', slots: [] };
     }
 
-    // Busca o schedule do dia (por tipo ou geral)
-    this.logger.log(`getAvailableSlots: Buscando schedule com appointmentType=${appointmentType ?? 'null'}`);
-    let schedule = await this.prisma.clinicSchedule.findFirst({
-      where: {
-        clinicId,
-        dayOfWeek,
-        appointmentType: appointmentType ?? null,
-      },
-    });
+    let schedule = null;
 
-    this.logger.log(`getAvailableSlots: Schedule encontrado por tipo? ${schedule ? 'SIM' : 'NÃO'}`);
+    // Primeiro, tenta buscar por appointmentTypeId (tipo personalizado)
+    if (appointmentTypeId) {
+      this.logger.log(`getAvailableSlots: Buscando schedule com appointmentTypeId=${appointmentTypeId}`);
+      schedule = await this.prisma.clinicSchedule.findFirst({
+        where: {
+          clinicId,
+          dayOfWeek,
+          appointmentTypeId,
+        },
+      });
+      this.logger.log(`getAvailableSlots: Schedule encontrado por appointmentTypeId? ${schedule ? 'SIM' : 'NÃO'}`);
+    }
+
+    // Se não encontrou por appointmentTypeId, busca por appointmentType (enum legado)
+    if (!schedule && appointmentType) {
+      this.logger.log(`getAvailableSlots: Buscando schedule com appointmentType=${appointmentType}`);
+      schedule = await this.prisma.clinicSchedule.findFirst({
+        where: {
+          clinicId,
+          dayOfWeek,
+          appointmentType,
+        },
+      });
+      this.logger.log(`getAvailableSlots: Schedule encontrado por tipo? ${schedule ? 'SIM' : 'NÃO'}`);
+    }
 
     // Se não encontrou por tipo, tentar buscar schedule geral (legado)
-    if (!schedule && appointmentType) {
+    if (!schedule) {
       this.logger.log(`getAvailableSlots: Tentando buscar schedule geral (legado)`);
       schedule = await this.prisma.clinicSchedule.findFirst({
         where: {
           clinicId,
           dayOfWeek,
           appointmentType: null,
+          appointmentTypeId: null,
         },
       });
       this.logger.log(`getAvailableSlots: Schedule geral encontrado? ${schedule ? 'SIM' : 'NÃO'}`);

@@ -45,11 +45,15 @@ export class SchedulesController {
   @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
   @ApiOperation({ summary: 'Lista todos os horários da clínica' })
   @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  @ApiQuery({ name: 'appointmentTypeId', required: false, description: 'ID do tipo de consulta personalizado' })
+  @ApiQuery({ name: 'generalOnly', required: false, description: 'Se true, retorna apenas horários gerais (sem appointmentTypeId)' })
   async getSchedules(
     @CurrentUser() user: any,
     @Query('appointmentType') appointmentType?: AppointmentType,
+    @Query('appointmentTypeId') appointmentTypeId?: string,
+    @Query('generalOnly') generalOnly?: string,
   ) {
-    this.logger.debug(`getSchedules: user=${JSON.stringify(user)}, appointmentType=${appointmentType}`);
+    this.logger.debug(`getSchedules: user=${JSON.stringify(user)}, appointmentType=${appointmentType}, appointmentTypeId=${appointmentTypeId}`);
 
     if (!user) {
       this.logger.warn('getSchedules: user is undefined');
@@ -65,6 +69,15 @@ export class SchedulesController {
     }
 
     try {
+      // Se generalOnly=true, busca apenas horários gerais (sem appointmentTypeId)
+      if (generalOnly === 'true') {
+        return await this.schedulesService.getGeneralSchedules(clinicId);
+      }
+      // Se appointmentTypeId foi passado, busca por ele
+      if (appointmentTypeId) {
+        return await this.schedulesService.getSchedulesByAppointmentTypeId(clinicId, appointmentTypeId);
+      }
+      // Senão, busca por appointmentType (enum legado)
       return await this.schedulesService.getSchedules(clinicId, appointmentType);
     } catch (error: any) {
       this.logger.error(`getSchedules: erro - ${error.message}`);
@@ -85,7 +98,7 @@ export class SchedulesController {
 
   @Get('by-type/:appointmentType')
   @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF, UserRole.PATIENT)
-  @ApiOperation({ summary: 'Lista horários de um tipo de atendimento específico' })
+  @ApiOperation({ summary: 'Lista horários de um tipo de atendimento específico (ENUM legado)' })
   async getSchedulesByType(
     @CurrentUser() user: any,
     @Param('appointmentType') appointmentType: AppointmentType,
@@ -95,6 +108,20 @@ export class SchedulesController {
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
     return this.schedulesService.getSchedulesByType(clinicId, appointmentType);
+  }
+
+  @Get('by-appointment-type-id/:appointmentTypeId')
+  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF, UserRole.PATIENT)
+  @ApiOperation({ summary: 'Lista horários de um tipo de consulta personalizado' })
+  async getSchedulesByAppointmentTypeId(
+    @CurrentUser() user: any,
+    @Param('appointmentTypeId') appointmentTypeId: string,
+  ) {
+    const clinicId = user.clinicId;
+    if (!clinicId) {
+      return { error: 'Usuário não está vinculado a uma clínica' };
+    }
+    return this.schedulesService.getSchedulesByAppointmentTypeId(clinicId, appointmentTypeId);
   }
 
   @Get(':dayOfWeek')
@@ -131,49 +158,55 @@ export class SchedulesController {
   @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
   @ApiOperation({ summary: 'Atualiza horário de um dia' })
   @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  @ApiQuery({ name: 'appointmentTypeId', required: false, description: 'ID do tipo de consulta personalizado' })
   async updateSchedule(
     @CurrentUser() user: any,
     @Param('dayOfWeek', ParseIntPipe) dayOfWeek: number,
     @Body() dto: UpdateScheduleDto,
     @Query('appointmentType') appointmentType?: AppointmentType,
+    @Query('appointmentTypeId') appointmentTypeId?: string,
   ) {
     const clinicId = user.clinicId;
     if (!clinicId) {
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
-    return this.schedulesService.updateSchedule(clinicId, dayOfWeek, dto, appointmentType);
+    return this.schedulesService.updateSchedule(clinicId, dayOfWeek, dto, appointmentType, appointmentTypeId);
   }
 
   @Patch(':dayOfWeek/toggle')
   @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
   @ApiOperation({ summary: 'Ativa/desativa um dia' })
   @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  @ApiQuery({ name: 'appointmentTypeId', required: false, description: 'ID do tipo de consulta personalizado' })
   async toggleSchedule(
     @CurrentUser() user: any,
     @Param('dayOfWeek', ParseIntPipe) dayOfWeek: number,
     @Query('appointmentType') appointmentType?: AppointmentType,
+    @Query('appointmentTypeId') appointmentTypeId?: string,
   ) {
     const clinicId = user.clinicId;
     if (!clinicId) {
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
-    return this.schedulesService.toggleSchedule(clinicId, dayOfWeek, appointmentType);
+    return this.schedulesService.toggleSchedule(clinicId, dayOfWeek, appointmentType, appointmentTypeId);
   }
 
   @Delete(':dayOfWeek')
   @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
   @ApiOperation({ summary: 'Remove horário de um dia' })
   @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  @ApiQuery({ name: 'appointmentTypeId', required: false, description: 'ID do tipo de consulta personalizado' })
   async deleteSchedule(
     @CurrentUser() user: any,
     @Param('dayOfWeek', ParseIntPipe) dayOfWeek: number,
     @Query('appointmentType') appointmentType?: AppointmentType,
+    @Query('appointmentTypeId') appointmentTypeId?: string,
   ) {
     const clinicId = user.clinicId;
     if (!clinicId) {
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
-    return this.schedulesService.deleteSchedule(clinicId, dayOfWeek, appointmentType);
+    return this.schedulesService.deleteSchedule(clinicId, dayOfWeek, appointmentType, appointmentTypeId);
   }
 
   // ==================== BLOCKED DATES ====================
@@ -255,16 +288,18 @@ export class SchedulesController {
   @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF, UserRole.PATIENT)
   @ApiOperation({ summary: 'Busca slots disponíveis para uma data' })
   @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  @ApiQuery({ name: 'appointmentTypeId', required: false, description: 'ID do tipo de consulta personalizado' })
   async getAvailableSlots(
     @CurrentUser() user: any,
     @Param('date') dateStr: string,
     @Query('appointmentType') appointmentType?: AppointmentType,
+    @Query('appointmentTypeId') appointmentTypeId?: string,
   ) {
     const clinicId = user.clinicId;
     if (!clinicId) {
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
     const date = new Date(dateStr);
-    return this.schedulesService.getAvailableSlots(clinicId, date, appointmentType);
+    return this.schedulesService.getAvailableSlots(clinicId, date, appointmentType, appointmentTypeId);
   }
 }

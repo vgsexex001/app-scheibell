@@ -22,6 +22,9 @@ export class AppointmentsService {
 
     return this.prisma.appointment.findMany({
       where,
+      include: {
+        clinicAppointmentType: true,
+      },
       orderBy: { date: 'asc' },
     });
   }
@@ -36,6 +39,9 @@ export class AppointmentsService {
         status: { not: AppointmentStatus.CANCELLED },
         date: { gte: new Date() },
       },
+      include: {
+        clinicAppointmentType: true,
+      },
       orderBy: { date: 'asc' },
       take: limit,
     });
@@ -47,6 +53,9 @@ export class AppointmentsService {
   async getAppointmentById(id: string, patientId: string) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
+      include: {
+        clinicAppointmentType: true,
+      },
     });
 
     if (!appointment) {
@@ -78,6 +87,23 @@ export class AppointmentsService {
       throw new NotFoundException('Paciente não encontrado');
     }
 
+    // Se appointmentTypeId foi fornecido, busca o tipo personalizado
+    let clinicAppointmentType = null;
+    let appointmentDurationFromType = null;
+    if (dto.appointmentTypeId) {
+      clinicAppointmentType = await this.prisma.clinicAppointmentType.findFirst({
+        where: {
+          id: dto.appointmentTypeId,
+          clinicId: patient.clinicId,
+          isActive: true,
+        },
+      });
+      if (!clinicAppointmentType) {
+        throw new BadRequestException('Tipo de consulta não encontrado ou inativo');
+      }
+      appointmentDurationFromType = clinicAppointmentType.defaultDuration;
+    }
+
     const appointmentDate = new Date(dto.date);
 
     // VALIDACAO 1: Nao permitir agendamento no passado
@@ -96,7 +122,7 @@ export class AppointmentsService {
       where: {
         clinicId: patient.clinicId,
         dayOfWeek: dayOfWeek,
-        appointmentType: dto.type,
+        appointmentType: dto.type ?? null,
       },
     });
     // Se não encontrou, busca schedule geral (legado)
@@ -177,8 +203,8 @@ export class AppointmentsService {
     }
 
     // Todas as validacoes passaram - criar o agendamento
-    // Salvar a duração do slot no momento da criação
-    const appointmentDuration = clinicSchedule.slotDuration;
+    // Usar duração do tipo personalizado se disponível, senão do schedule
+    const appointmentDuration = appointmentDurationFromType ?? clinicSchedule.slotDuration;
 
     const appointment = await this.prisma.appointment.create({
       data: {
@@ -190,6 +216,7 @@ export class AppointmentsService {
         time: dto.time,
         duration: appointmentDuration, // Duração em minutos
         type: dto.type,
+        appointmentTypeId: dto.appointmentTypeId,
         location: dto.location,
         notes: dto.notes,
         status: AppointmentStatus.PENDING,
@@ -306,6 +333,7 @@ export class AppointmentsService {
             user: { select: { name: true, email: true } },
           },
         },
+        clinicAppointmentType: true,
       },
       orderBy: { date: 'asc' },
     });
@@ -318,6 +346,9 @@ export class AppointmentsService {
   async getAppointmentHistory(patientId: string) {
     return this.prisma.appointment.findMany({
       where: { patientId },
+      include: {
+        clinicAppointmentType: true,
+      },
       orderBy: { date: 'desc' },
     });
   }

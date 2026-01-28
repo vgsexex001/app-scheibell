@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsBoolean, IsOptional, Min, Max, Matches, IsDateString, IsEnum } from 'class-validator';
+import { IsString, IsInt, IsBoolean, IsOptional, Min, Max, Matches, IsDateString, IsEnum, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AppointmentType } from '@prisma/client';
 
@@ -11,10 +11,15 @@ export class CreateScheduleDto {
   @Max(6)
   dayOfWeek: number;
 
-  @ApiPropertyOptional({ description: 'Tipo de atendimento', enum: AppointmentType })
+  @ApiPropertyOptional({ description: 'Tipo de atendimento (ENUM legado)', enum: AppointmentType })
   @IsOptional()
   @IsEnum(AppointmentType)
   appointmentType?: AppointmentType;
+
+  @ApiPropertyOptional({ description: 'ID do tipo de consulta personalizado' })
+  @IsOptional()
+  @IsUUID()
+  appointmentTypeId?: string;
 
   @ApiProperty({ description: 'Horário de abertura (HH:mm)', example: '08:00' })
   @IsString()
