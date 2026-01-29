@@ -168,8 +168,8 @@ model ClinicSchedule {
   id                String                 @id @default(uuid())
   clinicId          String
   dayOfWeek         Int
-  openTime          String                 @map("startTime")
-  closeTime         String                 @map("endTime")
+  openTime          String
+  closeTime         String
   slotDuration      Int                    @default(30)
   isActive          Boolean                @default(true)
   createdAt         DateTime               @default(now())
