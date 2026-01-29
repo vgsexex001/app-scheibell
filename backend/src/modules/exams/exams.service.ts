@@ -10,7 +10,10 @@ import {
   EXAM_ANALYSIS_FALLBACK,
   validateAiResponse,
   mapSuggestedStatusToEnum,
+  determineTriageFromAiResponse,
+  buildUserPromptWithExamType,
 } from '../../ai/prompts/exam-analysis.prompt';
+import { ExamTypesService } from '../exam-types/exam-types.service';
 
 @Injectable()
 export class ExamsService {
@@ -19,6 +22,7 @@ export class ExamsService {
   constructor(
     private prisma: PrismaService,
     private storageService: StorageService,
+    private examTypesService: ExamTypesService,
   ) {}
 
   // Buscar todos os exames do paciente
@@ -408,7 +412,7 @@ export class ExamsService {
           title: dto.title,
           type: dto.type || 'OUTROS',
           date: dto.date ? new Date(dto.date) : new Date(),
-          status: ExamStatus.PENDING_REVIEW,
+          status: isDocument ? ExamStatus.PENDING_REVIEW : ExamStatus.PENDING,
           fileUrl: uploadResult.publicUrl,
           fileName: file.originalname,
           fileSize: file.size,
@@ -416,6 +420,8 @@ export class ExamsService {
           notes: dto.notes,
           fileType: dto.fileType,
           aiStatus: isDocument ? AiAnalysisStatus.SKIPPED : AiAnalysisStatus.PENDING,
+          aiTriageResult: isDocument ? null : 'PENDING',
+          isUrgent: false,
           createdByRole: 'PATIENT',
           createdById: userId,
         },
@@ -522,6 +528,7 @@ export class ExamsService {
   /**
    * Análise assíncrona do arquivo com OpenAI Vision
    * Após análise, status muda para PENDING_REVIEW aguardando aprovação médica
+   * Integra configurações do ExamType (urgencyKeywords, requiresDoctorReview, etc.)
    */
   private async analyzeFileAsync(
     examId: string,
@@ -536,7 +543,44 @@ export class ExamsService {
     });
 
     try {
-      // Se for PDF, marcar para revisão manual
+      // Buscar o exame com paciente para obter clinicId e tipo
+      const exam = await this.prisma.exam.findUnique({
+        where: { id: examId },
+        select: {
+          type: true,
+          patient: { select: { clinicId: true } },
+        },
+      });
+
+      // Buscar configuração do ExamType da clínica (se existir)
+      let examTypeConfig: {
+        id: string;
+        name: string;
+        urgencyKeywords: string[];
+        urgencyInstructions: string | null;
+        referenceValues: any;
+        requiresDoctorReview: boolean;
+        validityDays: number | null;
+      } | null = null;
+
+      if (exam?.patient?.clinicId && exam.type) {
+        try {
+          const allTypes = await this.examTypesService.findAll(exam.patient.clinicId);
+          examTypeConfig = allTypes.find(
+            (t: any) => t.name.toLowerCase() === exam.type.toLowerCase(),
+          ) || null;
+
+          if (examTypeConfig) {
+            this.logger.log(`Exam ${examId}: ExamType encontrado: ${examTypeConfig.name} (requiresDoctorReview=${examTypeConfig.requiresDoctorReview})`);
+          } else {
+            this.logger.log(`Exam ${examId}: ExamType não encontrado para tipo "${exam.type}" — usando análise padrão`);
+          }
+        } catch (e) {
+          this.logger.warn(`Exam ${examId}: Erro ao buscar ExamType: ${e.message}`);
+        }
+      }
+
+      // Se for PDF, marcar como urgente (não analisável por IA visual)
       if (mimeType === 'application/pdf') {
         await this.prisma.exam.update({
           where: { id: examId },
@@ -545,37 +589,95 @@ export class ExamsService {
             aiSummary: 'Este documento será analisado pela equipe médica.',
             aiJson: EXAM_ANALYSIS_FALLBACK as object,
             status: ExamStatus.PENDING_REVIEW,
+            aiTriageResult: 'URGENT',
+            aiTriageReason: 'PDF não analisável por IA visual - revisão manual necessária.',
+            isUrgent: true,
           },
         });
+        this.logger.log(`Exam ${examId}: PDF → triagem URGENT (revisão manual)`);
         return;
       }
 
       // Baixar arquivo para análise
       const fileBuffer = await this.storageService.downloadFile(bucket, storagePath);
 
+      // Construir prompt customizado com configurações do ExamType
+      const userPrompt = buildUserPromptWithExamType(examTypeConfig);
+
       // Chamar OpenAI Vision para análise estruturada
-      const aiResponse = await this.analyzeImageWithOpenAI(fileBuffer, mimeType);
+      const aiResponse = await this.analyzeImageWithOpenAI(fileBuffer, mimeType, userPrompt);
 
       // Validar e sanitizar resposta
       const validatedResponse = validateAiResponse(aiResponse);
 
-      // Atualizar com resultado - status PENDING_REVIEW aguarda aprovação médica
+      // Determinar triagem de urgência
+      let triage = determineTriageFromAiResponse(validatedResponse);
+
+      // Override: se ExamType tem requiresDoctorReview=true, forçar URGENT
+      if (examTypeConfig?.requiresDoctorReview && !triage.isUrgent) {
+        this.logger.log(`Exam ${examId}: ExamType "${examTypeConfig.name}" requer revisão médica — forçando URGENT`);
+        triage = {
+          isUrgent: true,
+          triageResult: 'URGENT',
+          triageReason: `Tipo de exame "${examTypeConfig.name}" configurado para sempre requerer revisão médica.`,
+        };
+      }
+
+      // Override: verificar urgencyKeywords no resumo/notas da IA
+      if (examTypeConfig && !triage.isUrgent && examTypeConfig.urgencyKeywords.length > 0) {
+        const textToCheck = `${validatedResponse.patient_summary} ${validatedResponse.technical_notes}`.toLowerCase();
+        const matchedKeyword = examTypeConfig.urgencyKeywords.find(
+          (kw) => textToCheck.includes(kw.toLowerCase()),
+        );
+        if (matchedKeyword) {
+          this.logger.log(`Exam ${examId}: Keyword de urgência encontrada: "${matchedKeyword}" — forçando URGENT`);
+          triage = {
+            isUrgent: true,
+            triageResult: 'URGENT',
+            triageReason: `Palavra-chave de urgência detectada: "${matchedKeyword}".`,
+          };
+        }
+      }
+
+      // Mapear status sugerido para enum
+      const resultStatus = mapSuggestedStatusToEnum(validatedResponse.suggested_status);
+
+      // FLUXO: status baseado na triagem
+      // NON_URGENT → AVAILABLE (paciente vê resultado imediatamente)
+      // URGENT → PENDING_REVIEW (vai para fila do médico)
+      const newStatus = triage.isUrgent ? ExamStatus.PENDING_REVIEW : ExamStatus.AVAILABLE;
+
       await this.prisma.exam.update({
         where: { id: examId },
         data: {
           aiStatus: AiAnalysisStatus.COMPLETED,
           aiSummary: validatedResponse.patient_summary,
-          aiJson: validatedResponse as object,
+          aiJson: {
+            ...validatedResponse,
+            ...(examTypeConfig && {
+              examTypeId: examTypeConfig.id,
+              examTypeName: examTypeConfig.name,
+              validityDays: examTypeConfig.validityDays,
+            }),
+          } as object,
           aiAnalyzedAt: new Date(),
           aiConfidence: validatedResponse.confidence,
-          status: ExamStatus.PENDING_REVIEW, // Aguardando revisão médica
+          resultStatus: resultStatus as ExamResultStatus,
+          status: newStatus,
+          aiTriageResult: triage.triageResult,
+          aiTriageReason: triage.triageReason,
+          isUrgent: triage.isUrgent,
         },
       });
 
-      this.logger.log(`AI analysis completed for exam ${examId} - suggested: ${validatedResponse.suggested_status}`);
+      this.logger.log(
+        `Exam ${examId}: AI triage=${triage.triageResult}, status=${newStatus}, suggested=${validatedResponse.suggested_status}, confidence=${validatedResponse.confidence}` +
+        (examTypeConfig ? `, examType=${examTypeConfig.name}` : ''),
+      );
     } catch (error) {
       this.logger.error(`AI analysis failed for exam ${examId}: ${error.message}`);
 
+      // Em caso de falha, marcar como urgente por segurança
       await this.prisma.exam.update({
         where: { id: examId },
         data: {
@@ -583,6 +685,9 @@ export class ExamsService {
           aiSummary: 'Análise automática não disponível. Aguardando revisão médica.',
           aiJson: EXAM_ANALYSIS_FALLBACK as object,
           status: ExamStatus.PENDING_REVIEW,
+          aiTriageResult: 'URGENT',
+          aiTriageReason: 'Falha na análise automática - revisão manual necessária.',
+          isUrgent: true,
         },
       });
     }
@@ -591,7 +696,7 @@ export class ExamsService {
   /**
    * Análise de imagem com OpenAI Vision - retorna objeto estruturado
    */
-  private async analyzeImageWithOpenAI(fileBuffer: Buffer, mimeType: string): Promise<unknown> {
+  private async analyzeImageWithOpenAI(fileBuffer: Buffer, mimeType: string, customUserPrompt?: string): Promise<unknown> {
     const OpenAI = require('openai');
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
@@ -612,7 +717,7 @@ export class ExamsService {
           content: [
             {
               type: 'text',
-              text: EXAM_ANALYSIS_USER_PROMPT,
+              text: customUserPrompt || EXAM_ANALYSIS_USER_PROMPT,
             },
             {
               type: 'image_url',
@@ -704,6 +809,7 @@ export class ExamsService {
     const where: Prisma.ExamWhereInput = {
       patient: { clinicId },
       status: ExamStatus.PENDING_REVIEW,
+      isUrgent: true, // Apenas exames urgentes pendentes de revisão
       createdByRole: 'PATIENT', // Apenas exames enviados por pacientes
       ...(fileType && { fileType }),
     };
@@ -808,5 +914,181 @@ export class ExamsService {
     return this.prisma.exam.delete({
       where: { id: examId },
     });
+  }
+
+  // ========== URGENT EXAMS METHODS ==========
+
+  /**
+   * Listar exames urgentes pendentes de revisão médica
+   */
+  async getUrgentExams(clinicId: string, query: { page?: number; limit?: number }) {
+    const { page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ExamWhereInput = {
+      patient: { clinicId },
+      isUrgent: true,
+      status: ExamStatus.PENDING_REVIEW,
+      createdByRole: 'PATIENT',
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.exam.findMany({
+        where,
+        include: {
+          patient: {
+            select: {
+              id: true,
+              name: true,
+              user: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.exam.count({ where }),
+    ]);
+
+    const mappedItems = items.map((exam) => ({
+      ...exam,
+      patientName: exam.patient.user?.name || exam.patient.name || 'Paciente',
+    }));
+
+    return {
+      items: mappedItems,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Contador de exames urgentes (para badge no menu)
+   */
+  async getUrgentExamCount(clinicId: string): Promise<{ count: number }> {
+    const count = await this.prisma.exam.count({
+      where: {
+        patient: { clinicId },
+        isUrgent: true,
+        status: ExamStatus.PENDING_REVIEW,
+        createdByRole: 'PATIENT',
+      },
+    });
+    return { count };
+  }
+
+  // ========== EXAM HISTORY METHODS ==========
+
+  /**
+   * Histórico completo de exames — todos os exames de todos os pacientes
+   * Filtros: urgent (true/false), patientId, status, aiStatus
+   */
+  async getExamsHistory(clinicId: string, query: {
+    page?: number;
+    limit?: number;
+    urgent?: string;
+    patientId?: string;
+    status?: string;
+    aiStatus?: string;
+  }) {
+    const { page = 1, limit = 20, urgent, patientId, status, aiStatus } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ExamWhereInput = {
+      patient: { clinicId },
+      createdByRole: 'PATIENT',
+      ...(urgent === 'true' && { isUrgent: true }),
+      ...(urgent === 'false' && { isUrgent: false }),
+      ...(patientId && { patientId }),
+      ...(status && { status: status as ExamStatus }),
+      ...(aiStatus && { aiStatus: aiStatus as AiAnalysisStatus }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.exam.findMany({
+        where,
+        include: {
+          patient: {
+            select: {
+              id: true,
+              name: true,
+              user: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.exam.count({ where }),
+    ]);
+
+    const mappedItems = items.map((exam) => ({
+      ...exam,
+      patientName: exam.patient.user?.name || exam.patient.name || 'Paciente',
+    }));
+
+    return {
+      items: mappedItems,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Exames analisados pela IA (não urgentes, já resolvidos automaticamente)
+   */
+  async getAiAnalyzedExams(clinicId: string, query: {
+    page?: number;
+    limit?: number;
+    patientId?: string;
+  }) {
+    const { page = 1, limit = 20, patientId } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ExamWhereInput = {
+      patient: { clinicId },
+      createdByRole: 'PATIENT',
+      isUrgent: false,
+      aiStatus: AiAnalysisStatus.COMPLETED,
+      ...(patientId && { patientId }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.exam.findMany({
+        where,
+        include: {
+          patient: {
+            select: {
+              id: true,
+              name: true,
+              user: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.exam.count({ where }),
+    ]);
+
+    const mappedItems = items.map((exam) => ({
+      ...exam,
+      patientName: exam.patient.user?.name || exam.patient.name || 'Paciente',
+    }));
+
+    return {
+      items: mappedItems,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 }

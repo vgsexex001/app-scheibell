@@ -33,6 +33,9 @@ import '../../features/patient/screens/tela_medicamentos.dart';
 import '../../features/agenda/presentation/pages/agenda_page.dart';
 import '../../features/patient/screens/tela_editar_perfil.dart';
 import '../../features/patient/screens/tela_alterar_senha.dart';
+import '../../features/patient/screens/tela_fotos_pre_consulta.dart';
+import '../../features/patient/screens/tela_captura_foto.dart';
+import '../../features/patient/screens/tela_revisao_fotos_pre_consulta.dart';
 // Clinic screens
 import '../../features/clinic/screens/clinic_dashboard_screen.dart';
 import '../../features/clinic/screens/clinic_content_management_screen.dart';
@@ -44,6 +47,7 @@ import '../../features/clinic/screens/clinic_training_screen.dart';
 import '../../features/clinic/screens/clinic_exams_screen.dart';
 import '../../features/clinic/screens/clinic_medications_screen.dart';
 import '../../features/clinic/screens/clinic_documents_screen.dart';
+import '../../features/clinic/screens/clinic_diary_screen.dart';
 import '../../features/clinic/screens/patients_list_screen.dart';
 import '../../features/clinic/screens/patient_detail_screen.dart';
 import '../../features/clinic/screens/calendar_screen.dart';
@@ -52,6 +56,12 @@ import '../../features/clinic/screens/chat_screen.dart';
 import '../../features/clinic/screens/clinic_media_library_screen.dart';
 import '../../features/clinic/screens/clinic_schedule_settings_screen.dart';
 import '../../features/clinic/screens/add_patient_magic_link_screen.dart';
+import '../../features/clinic/screens/fila_revisao_fotos/tela_fila_revisao_fotos.dart';
+import '../../features/clinic/screens/appointment_types_screen.dart';
+import '../../features/clinic/screens/urgent_exams_screen.dart';
+import '../../features/clinic/screens/nurse_annotations_screen.dart';
+import '../../features/clinic/screens/exams_history_screen.dart';
+import '../../features/clinic/screens/exam_types_screen.dart';
 // Third party screens
 import '../../features/third_party/screens/third_party_home_screen.dart';
 import '../../features/third_party/screens/third_party_chat_screen.dart';
@@ -88,6 +98,9 @@ class AppRoutes {
   static const String agendamentos = '/agendamentos';
   static const String editarPerfil = '/editar-perfil';
   static const String alterarSenha = '/alterar-senha';
+  static const String fotosPreConsulta = '/fotos-pre-consulta';
+  static const String capturaFoto = '/captura-foto';
+  static const String revisaoFotosPreConsulta = '/revisao-fotos-pre-consulta';
 
   // Clinic routes
   static const String clinicDashboard = '/clinic-dashboard';
@@ -100,6 +113,7 @@ class AppRoutes {
   static const String clinicExams = '/clinic-exams';
   static const String clinicMedications = '/clinic-medications';
   static const String clinicDocuments = '/clinic-documents';
+  static const String clinicDiary = '/clinic-diary';
   static const String clinicPatientsList = '/clinic-patients';
   static const String clinicPatientDetail = '/clinic-patient-detail';
   static const String clinicCalendar = '/clinic-calendar';
@@ -107,6 +121,12 @@ class AppRoutes {
   static const String clinicChat = '/clinic-chat';
   static const String clinicMediaLibrary = '/clinic-media-library';
   static const String clinicScheduleSettings = '/clinic-schedule-settings';
+  static const String clinicFilaRevisaoFotos = '/clinic-fila-revisao-fotos';
+  static const String clinicAppointmentTypes = '/clinic-appointment-types';
+  static const String clinicUrgentExams = '/clinic-urgent-exams';
+  static const String clinicNurseAnnotations = '/clinic-nurse-annotations';
+  static const String clinicExamsHistory = '/clinic-exams-history';
+  static const String clinicExamTypes = '/clinic-exam-types';
 
   // Third party routes
   static const String thirdPartyHome = '/third-party-home';
@@ -146,6 +166,8 @@ class AppRoutes {
       agendamentos: (context) => const PatientGuard(child: AgendaPage()),
       editarPerfil: (context) => const PatientGuard(child: TelaEditarPerfil()),
       alterarSenha: (context) => const PatientGuard(child: TelaAlterarSenha()),
+      fotosPreConsulta: (context) => const PatientGuard(child: TelaFotosPreConsulta()),
+      capturaFoto: (context) => const PatientGuard(child: TelaCapturaFoto()),
 
       // Clinic routes
       clinicDashboard: (context) => ChangeNotifierProvider(
@@ -185,6 +207,10 @@ class AppRoutes {
         create: (_) => PatientsProvider(),
         child: const ClinicDocumentsScreen(),
       ),
+      clinicDiary: (context) => ChangeNotifierProvider(
+        create: (_) => PatientsProvider(),
+        child: const ClinicDiaryScreen(),
+      ),
       clinicPatientsList: (context) => ChangeNotifierProvider(
         create: (_) => PatientsProvider(),
         child: const PatientsListScreen(),
@@ -197,6 +223,12 @@ class AppRoutes {
       ),
       clinicMediaLibrary: (context) => const ClinicMediaLibraryScreen(),
       clinicScheduleSettings: (context) => const ClinicScheduleSettingsScreen(),
+      clinicFilaRevisaoFotos: (context) => const TelaFilaRevisaoFotos(),
+      clinicAppointmentTypes: (context) => const AppointmentTypesScreen(),
+      clinicUrgentExams: (context) => const UrgentExamsScreen(),
+      clinicNurseAnnotations: (context) => const NurseAnnotationsScreen(),
+      clinicExamsHistory: (context) => const ExamsHistoryScreen(),
+      clinicExamTypes: (context) => const ExamTypesScreen(),
       addPatientMagicLink: (context) => const AddPatientMagicLinkScreen(),
 
       // Third party routes

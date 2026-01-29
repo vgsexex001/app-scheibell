@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/routes/app_routes.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -52,14 +53,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   _buildLinksCard(),
                   const SizedBox(height: 12),
-                  _buildComingSoonCard(
-                    title: 'Configuração de Feedbacks/NPS',
-                    icon: Icons.star_outline,
+                  _buildNavigableCard(
+                    title: 'Definir Exames Urgentes',
+                    subtitle: 'Configure tipos, regras de urgência e IA',
+                    icon: Icons.science_outlined,
+                    route: AppRoutes.clinicExamTypes,
                   ),
                   const SizedBox(height: 12),
                   _buildComingSoonCard(
-                    title: 'Regras por Marco (D-dia)',
-                    icon: Icons.calendar_today_outlined,
+                    title: 'Configuração de Feedbacks/NPS',
+                    icon: Icons.star_outline,
                   ),
                   const SizedBox(height: 12),
                   _buildComingSoonCard(
@@ -318,6 +321,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildNavigableCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required String route,
+  }) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, route),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: ShapeDecoration(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(
+              width: 1,
+              color: Color(0xFFE5E7EB),
+            ),
+            borderRadius: BorderRadius.circular(24),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4F4A34).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                size: 20,
+                color: const Color(0xFF4F4A34),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xFF1A1A1A),
+                      fontSize: 14,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w600,
+                      height: 1.43,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFF757575),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              color: Color(0xFF9CA3AF),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
