@@ -685,24 +685,54 @@ class ApiService {
     return response.data;
   }
 
-  /// Atualiza o perfil do usuário
+  /// Atualiza o perfil do usuário (perfil progressivo)
   Future<Map<String, dynamic>> updateProfile({
+    // Dados pessoais
     String? name,
     String? phone,
     String? cpf,
     String? birthDate,
     String? surgeryDate,
     String? surgeryType,
+    // Endereço
+    String? cep,
+    String? street,
+    String? streetNumber,
+    String? city,
+    String? state,
+    // Saúde
+    String? bloodType,
+    String? allergies,
+    String? medicalNotes,
+    // Emergência
+    String? emergencyContactName,
+    String? emergencyContactRelation,
+    String? emergencyContactPhone,
   }) async {
     final response = await put(
       ApiConfig.profileEndpoint,
       data: {
+        // Dados pessoais
         if (name != null) 'name': name,
         if (phone != null) 'phone': phone,
         if (cpf != null) 'cpf': cpf,
         if (birthDate != null) 'birthDate': birthDate,
         if (surgeryDate != null) 'surgeryDate': surgeryDate,
         if (surgeryType != null) 'surgeryType': surgeryType,
+        // Endereço
+        if (cep != null) 'cep': cep,
+        if (street != null) 'street': street,
+        if (streetNumber != null) 'streetNumber': streetNumber,
+        if (city != null) 'city': city,
+        if (state != null) 'state': state,
+        // Saúde
+        if (bloodType != null) 'bloodType': bloodType,
+        if (allergies != null) 'allergies': allergies,
+        if (medicalNotes != null) 'medicalNotes': medicalNotes,
+        // Emergência
+        if (emergencyContactName != null) 'emergencyContactName': emergencyContactName,
+        if (emergencyContactRelation != null) 'emergencyContactRelation': emergencyContactRelation,
+        if (emergencyContactPhone != null) 'emergencyContactPhone': emergencyContactPhone,
       },
     );
     return response.data;
@@ -902,6 +932,7 @@ class ApiService {
     required String date,
     required String time,
     required String type,
+    String? appointmentTypeId,
     String? description,
     String? location,
     String? notes,
@@ -913,6 +944,7 @@ class ApiService {
         'date': date,
         'time': time,
         'type': type,
+        if (appointmentTypeId != null) 'appointmentTypeId': appointmentTypeId,
         if (description != null) 'description': description,
         if (location != null) 'location': location,
         if (notes != null) 'notes': notes,
@@ -943,6 +975,35 @@ class ApiService {
   Future<Map<String, dynamic>> confirmAppointment(String id) async {
     final response = await patch('${ApiConfig.appointmentsEndpoint}/$id/confirm');
     return response.data;
+  }
+
+  /// Busca a última consulta médica concluída (para progressão do diário)
+  /// Filtra por tipo CONSULTATION e status COMPLETED, ordenado por data desc
+  Future<Map<String, dynamic>?> getLastCompletedConsultation() async {
+    try {
+      final response = await get(
+        ApiConfig.appointmentsEndpoint,
+        queryParameters: {
+          'type': 'CONSULTATION',
+          'status': 'COMPLETED',
+        },
+      );
+
+      if (response.data is List && (response.data as List).isNotEmpty) {
+        // Ordenar por data (mais recente primeiro)
+        final appointments = List<Map<String, dynamic>>.from(response.data);
+        appointments.sort((a, b) {
+          final dateA = DateTime.tryParse(a['date'] ?? '') ?? DateTime(1900);
+          final dateB = DateTime.tryParse(b['date'] ?? '') ?? DateTime(1900);
+          return dateB.compareTo(dateA);
+        });
+        return appointments.first;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[ApiService] Erro ao buscar última consulta: $e');
+      return null;
+    }
   }
 
   // ==================== EVENTOS EXTERNOS ====================
@@ -2255,10 +2316,26 @@ class ApiService {
   }
 
   /// Lista todos os horários da clínica (opcionalmente filtrado por tipo)
-  Future<List<dynamic>> getClinicSchedules({String? appointmentType}) async {
+  /// - appointmentType: filtro por ENUM legado
+  /// - appointmentTypeId: filtro por tipo de consulta personalizado
+  /// - generalOnly: se true, retorna apenas horários gerais (sem tipo específico)
+  Future<List<dynamic>> getClinicSchedules({
+    String? appointmentType,
+    String? appointmentTypeId,
+    bool generalOnly = false,
+  }) async {
+    final Map<String, String> params = {};
+    if (generalOnly) {
+      params['generalOnly'] = 'true';
+    } else if (appointmentTypeId != null) {
+      params['appointmentTypeId'] = appointmentTypeId;
+    } else if (appointmentType != null) {
+      params['appointmentType'] = appointmentType;
+    }
+
     final response = await get(
       '/schedules',
-      queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     return response.data is List ? response.data : [];
   }
@@ -2269,11 +2346,19 @@ class ApiService {
     return response.data is Map ? response.data : {};
   }
 
-  /// Lista horários de um tipo de atendimento específico
+  /// Lista horários de um tipo de atendimento específico (ENUM legado)
   Future<List<dynamic>> getClinicSchedulesByType(String appointmentType) async {
     debugPrint('[API] getClinicSchedulesByType: appointmentType=$appointmentType');
     final response = await get('/schedules/by-type/$appointmentType');
     debugPrint('[API] getClinicSchedulesByType response: ${(response.data is List ? response.data : []).length} schedules');
+    return response.data is List ? response.data : [];
+  }
+
+  /// Lista horários de um tipo de consulta personalizado (appointmentTypeId UUID)
+  Future<List<dynamic>> getClinicSchedulesByAppointmentTypeId(String appointmentTypeId) async {
+    debugPrint('[API] getClinicSchedulesByAppointmentTypeId: appointmentTypeId=$appointmentTypeId');
+    final response = await get('/schedules/by-appointment-type-id/$appointmentTypeId');
+    debugPrint('[API] getClinicSchedulesByAppointmentTypeId response: ${(response.data is List ? response.data : []).length} schedules');
     return response.data is List ? response.data : [];
   }
 
@@ -2287,11 +2372,14 @@ class ApiService {
   }
 
   /// Cria ou atualiza horário de um dia
+  /// - appointmentType: ENUM legado
+  /// - appointmentTypeId: ID do tipo de consulta personalizado
   Future<Map<String, dynamic>> upsertClinicSchedule({
     required int dayOfWeek,
     required String openTime,
     required String closeTime,
     String? appointmentType,
+    String? appointmentTypeId,
     String? breakStart,
     String? breakEnd,
     int? slotDuration,
@@ -2305,6 +2393,7 @@ class ApiService {
         'openTime': openTime,
         'closeTime': closeTime,
         if (appointmentType != null) 'appointmentType': appointmentType,
+        if (appointmentTypeId != null) 'appointmentTypeId': appointmentTypeId,
         if (breakStart != null) 'breakStart': breakStart,
         if (breakEnd != null) 'breakEnd': breakEnd,
         if (slotDuration != null) 'slotDuration': slotDuration,
@@ -2344,10 +2433,23 @@ class ApiService {
   }
 
   /// Ativa/desativa um dia
-  Future<Map<String, dynamic>> toggleClinicSchedule(int dayOfWeek, {String? appointmentType}) async {
+  /// - appointmentType: ENUM legado
+  /// - appointmentTypeId: ID do tipo de consulta personalizado
+  Future<Map<String, dynamic>> toggleClinicSchedule(
+    int dayOfWeek, {
+    String? appointmentType,
+    String? appointmentTypeId,
+  }) async {
+    final Map<String, String> params = {};
+    if (appointmentTypeId != null) {
+      params['appointmentTypeId'] = appointmentTypeId;
+    } else if (appointmentType != null) {
+      params['appointmentType'] = appointmentType;
+    }
+
     final response = await patch(
       '/schedules/$dayOfWeek/toggle',
-      queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+      queryParameters: params.isNotEmpty ? params : null,
     );
     return response.data;
   }
@@ -2411,13 +2513,19 @@ class ApiService {
   }
 
   /// Busca slots disponíveis para uma data
-  Future<Map<String, dynamic>> getAvailableSlots(String date, {String? appointmentType}) async {
-    final url = '/schedules/available-slots/$date${appointmentType != null ? '?appointmentType=$appointmentType' : ''}';
+  Future<Map<String, dynamic>> getAvailableSlots(String date, {String? appointmentType, String? appointmentTypeId}) async {
+    final params = <String, String>{};
+    if (appointmentTypeId != null) {
+      params['appointmentTypeId'] = appointmentTypeId;
+    } else if (appointmentType != null) {
+      params['appointmentType'] = appointmentType;
+    }
+    final url = '/schedules/available-slots/$date${params.isNotEmpty ? '?${params.entries.map((e) => '${e.key}=${e.value}').join('&')}' : ''}';
     debugPrint('[API] getAvailableSlots: URL=$url');
     try {
       final response = await get(
         '/schedules/available-slots/$date',
-        queryParameters: appointmentType != null ? {'appointmentType': appointmentType} : null,
+        queryParameters: params.isNotEmpty ? params : null,
       );
       debugPrint('[API] getAvailableSlots response: available=${response.data['available']}, reason=${response.data['reason']}, slots=${(response.data['slots'] as List?)?.length ?? 0}');
       return response.data;
@@ -2473,5 +2581,299 @@ class ApiService {
   Future<Response> deleteVideo(String videoId, {bool hardDelete = false}) async {
     debugPrint('[API] deleteVideo() - Video: $videoId, Hard: $hardDelete');
     return delete('/api/videos/$videoId?hard=$hardDelete');
+  }
+
+  // ==================== DIÁRIO PÓS-OPERATÓRIO ====================
+
+  /// Upload de foto para o diário pós-operatório
+  /// Retorna o registro criado com análise IA pendente
+  Future<Map<String, dynamic>> uploadDiarioFoto({
+    required File file,
+    required int diaPosOp,
+    String? observacao,
+  }) async {
+    debugPrint('[API] uploadDiarioFoto() - Day: D+$diaPosOp');
+
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(file.path, filename: file.path.split('/').last),
+      'diaPosOp': diaPosOp.toString(),
+      'tipoRegistro': 'FOTO',
+      if (observacao != null) 'observacao': observacao,
+    });
+
+    final response = await _dio.post(
+      '/diary/upload/foto',
+      data: formData,
+      options: Options(
+        contentType: 'multipart/form-data',
+        sendTimeout: const Duration(minutes: 2),
+        receiveTimeout: const Duration(minutes: 2),
+      ),
+    );
+
+    debugPrint('[API] uploadDiarioFoto() - Status: ${response.statusCode}');
+    return response.data;
+  }
+
+  /// Upload de vídeo para o diário pós-operatório (via Azure)
+  /// Retorna o registro criado com análise IA pendente
+  Future<Map<String, dynamic>> uploadDiarioVideo({
+    required File file,
+    required int diaPosOp,
+    String? observacao,
+  }) async {
+    debugPrint('[API] uploadDiarioVideo() - Day: D+$diaPosOp');
+
+    final formData = FormData.fromMap({
+      'video': await MultipartFile.fromFile(file.path, filename: file.path.split('/').last),
+      'diaPosOp': diaPosOp.toString(),
+      'tipoRegistro': 'VIDEO',
+      if (observacao != null) 'observacao': observacao,
+    });
+
+    final response = await _dio.post(
+      '/diary/upload/video',
+      data: formData,
+      options: Options(
+        contentType: 'multipart/form-data',
+        sendTimeout: const Duration(minutes: 5),
+        receiveTimeout: const Duration(minutes: 5),
+      ),
+    );
+
+    debugPrint('[API] uploadDiarioVideo() - Status: ${response.statusCode}');
+    return response.data;
+  }
+
+  /// Upload de áudio para o diário pós-operatório
+  /// Retorna o registro criado com transcrição IA pendente
+  Future<Map<String, dynamic>> uploadDiarioAudio({
+    required File file,
+    required int diaPosOp,
+    String? observacao,
+  }) async {
+    debugPrint('[API] uploadDiarioAudio() - Day: D+$diaPosOp');
+
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(file.path, filename: file.path.split('/').last),
+      'diaPosOp': diaPosOp.toString(),
+      'tipoRegistro': 'AUDIO',
+      if (observacao != null) 'observacao': observacao,
+    });
+
+    final response = await _dio.post(
+      '/diary/upload/audio',
+      data: formData,
+      options: Options(
+        contentType: 'multipart/form-data',
+        sendTimeout: const Duration(minutes: 2),
+        receiveTimeout: const Duration(minutes: 2),
+      ),
+    );
+
+    debugPrint('[API] uploadDiarioAudio() - Status: ${response.statusCode}');
+    return response.data;
+  }
+
+  /// Cria um registro de texto no diário pós-operatório
+  Future<Map<String, dynamic>> criarDiarioTexto({
+    required int diaPosOp,
+    required String texto,
+  }) async {
+    debugPrint('[API] criarDiarioTexto() - Day: D+$diaPosOp');
+
+    final response = await post(
+      '/diary/texto',
+      data: {
+        'diaPosOp': diaPosOp,
+        'texto': texto,
+        'tipoRegistro': 'TEXTO',
+      },
+    );
+
+    debugPrint('[API] criarDiarioTexto() - Status: ${response.statusCode}');
+    return response.data;
+  }
+
+  /// Lista registros do diário do paciente autenticado
+  /// Pode filtrar por dia, tipo e status
+  Future<Map<String, dynamic>> getDiarioRegistros({
+    int? diaPosOp,
+    String? tipo,
+    String? status,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    debugPrint('[API] getDiarioRegistros() - Day: $diaPosOp, Type: $tipo, Status: $status');
+
+    final response = await get(
+      '/diary/registros',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (diaPosOp != null) 'diaPosOp': diaPosOp.toString(),
+        if (tipo != null) 'tipo': tipo,
+        if (status != null) 'status': status,
+      },
+    );
+
+    debugPrint('[API] getDiarioRegistros() - Items: ${(response.data['items'] as List?)?.length ?? 0}');
+    return response.data;
+  }
+
+  /// Busca um registro específico do diário pelo ID
+  Future<Map<String, dynamic>> getDiarioRegistroById(String registroId) async {
+    debugPrint('[API] getDiarioRegistroById() - ID: $registroId');
+
+    final response = await get('/diary/registros/$registroId');
+    return response.data;
+  }
+
+  /// Deleta um registro do diário (somente se criado pelo paciente e ainda pendente)
+  Future<Map<String, dynamic>> deleteDiarioRegistro(String registroId) async {
+    debugPrint('[API] deleteDiarioRegistro() - ID: $registroId');
+
+    final response = await delete('/diary/registros/$registroId');
+    return response.data;
+  }
+
+  /// Busca estatísticas do diário do paciente
+  Future<Map<String, dynamic>> getDiarioStats() async {
+    debugPrint('[API] getDiarioStats()');
+
+    final response = await get('/diary/stats');
+    return response.data;
+  }
+
+  /// Busca resumo do diário por dia (para timeline)
+  Future<List<dynamic>> getDiarioResumoPorDia() async {
+    debugPrint('[API] getDiarioResumoPorDia()');
+
+    final response = await get('/diary/resumo-por-dia');
+    return response.data is List ? response.data : [];
+  }
+
+  // ==================== DIÁRIO PÓS-OPERATÓRIO (ADMIN) ====================
+
+  /// Lista registros do diário de um paciente específico (admin)
+  Future<Map<String, dynamic>> getAdminDiarioRegistros(
+    String patientId, {
+    int? diaPosOp,
+    String? tipo,
+    String? status,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    debugPrint('[API] getAdminDiarioRegistros() - Patient: $patientId, Day: $diaPosOp');
+
+    final response = await get(
+      '/diary/admin/patients/$patientId/registros',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (diaPosOp != null) 'diaPosOp': diaPosOp.toString(),
+        if (tipo != null) 'tipo': tipo,
+        if (status != null) 'status': status,
+      },
+    );
+
+    return response.data;
+  }
+
+  /// Busca detalhes de um registro específico (admin)
+  Future<Map<String, dynamic>> getAdminDiarioRegistroById(
+    String patientId,
+    String registroId,
+  ) async {
+    debugPrint('[API] getAdminDiarioRegistroById() - Patient: $patientId, Registro: $registroId');
+
+    final response = await get('/diary/admin/patients/$patientId/registros/$registroId');
+    return response.data;
+  }
+
+  /// Envia avaliação médica de um registro do diário
+  Future<Map<String, dynamic>> avaliarDiarioRegistro(
+    String patientId,
+    String registroId, {
+    required String classificacao, // NORMAL, ATENCAO, URGENTE
+    required String feedback,
+    bool enviarNotificacao = true,
+  }) async {
+    debugPrint('[API] avaliarDiarioRegistro() - Patient: $patientId, Registro: $registroId');
+
+    final response = await post(
+      '/diary/admin/patients/$patientId/registros/$registroId/avaliar',
+      data: {
+        'classificacao': classificacao,
+        'feedback': feedback,
+        'enviarNotificacao': enviarNotificacao,
+      },
+    );
+
+    return response.data;
+  }
+
+  /// Solicita novo envio de um registro (rejeita o atual)
+  Future<Map<String, dynamic>> solicitarNovoEnvioDiario(
+    String patientId,
+    String registroId, {
+    required String motivo,
+  }) async {
+    debugPrint('[API] solicitarNovoEnvioDiario() - Patient: $patientId, Registro: $registroId');
+
+    final response = await post(
+      '/diary/admin/patients/$patientId/registros/$registroId/rejeitar',
+      data: {
+        'motivo': motivo,
+      },
+    );
+
+    return response.data;
+  }
+
+  /// Lista todos os registros pendentes de avaliação (admin dashboard)
+  Future<Map<String, dynamic>> getAdminDiarioPendentes({
+    int page = 1,
+    int limit = 20,
+    String? classificacaoIa, // Filtrar por classificação da IA
+  }) async {
+    debugPrint('[API] getAdminDiarioPendentes() - Page: $page');
+
+    final response = await get(
+      '/diary/admin/pendentes',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (classificacaoIa != null) 'classificacaoIa': classificacaoIa,
+      },
+    );
+
+    return response.data;
+  }
+
+  /// Busca estatísticas do diário para admin (total por status, alertas, etc)
+  Future<Map<String, dynamic>> getAdminDiarioStats() async {
+    debugPrint('[API] getAdminDiarioStats()');
+
+    final response = await get('/diary/admin/stats');
+    return response.data;
+  }
+
+  /// Lista registros classificados como urgente/atenção pela IA (alertas)
+  Future<Map<String, dynamic>> getAdminDiarioAlertas({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    debugPrint('[API] getAdminDiarioAlertas()');
+
+    final response = await get(
+      '/diary/admin/alertas',
+      queryParameters: {
+        'page': page.toString(),
+        'limit': limit.toString(),
+      },
+    );
+
+    return response.data;
   }
 }

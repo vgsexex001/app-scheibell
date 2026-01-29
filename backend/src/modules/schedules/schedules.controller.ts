@@ -125,6 +125,106 @@ export class SchedulesController {
     return this.schedulesService.getSchedulesByAppointmentTypeId(clinicId, appointmentTypeId);
   }
 
+  // ==================== BLOCKED DATES ====================
+  // IMPORTANTE: Rotas com caminhos estáticos (blocked-dates/*, available-slots/*)
+  // devem vir ANTES de rotas com parâmetros dinâmicos (:dayOfWeek)
+  // para evitar conflitos de roteamento no NestJS
+
+  @Get('blocked-dates/list')
+  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF, UserRole.PATIENT)
+  @ApiOperation({ summary: 'Lista datas bloqueadas da clínica' })
+  @ApiQuery({ name: 'fromToday', required: false })
+  @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  async getBlockedDates(
+    @CurrentUser() user: any,
+    @Query('fromToday') fromToday?: string,
+    @Query('appointmentType') appointmentType?: AppointmentType,
+  ) {
+    const clinicId = user.clinicId;
+    if (!clinicId) {
+      return { error: 'Usuário não está vinculado a uma clínica' };
+    }
+
+    const options: any = {};
+    if (fromToday === 'true') {
+      options.fromDate = new Date();
+    }
+    if (appointmentType) {
+      options.appointmentType = appointmentType;
+    }
+
+    return this.schedulesService.getBlockedDates(clinicId, Object.keys(options).length > 0 ? options : undefined);
+  }
+
+  @Post('blocked-dates')
+  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
+  @ApiOperation({ summary: 'Cria uma data bloqueada' })
+  async createBlockedDate(
+    @CurrentUser() user: any,
+    @Body() dto: CreateBlockedDateDto,
+  ) {
+    const clinicId = user.clinicId;
+    if (!clinicId) {
+      return { error: 'Usuário não está vinculado a uma clínica' };
+    }
+    return this.schedulesService.createBlockedDate(clinicId, dto);
+  }
+
+  @Put('blocked-dates/:id')
+  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
+  @ApiOperation({ summary: 'Atualiza uma data bloqueada' })
+  async updateBlockedDate(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateBlockedDateDto,
+  ) {
+    const clinicId = user.clinicId;
+    if (!clinicId) {
+      return { error: 'Usuário não está vinculado a uma clínica' };
+    }
+    return this.schedulesService.updateBlockedDate(clinicId, id, dto);
+  }
+
+  @Delete('blocked-dates/:id')
+  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
+  @ApiOperation({ summary: 'Remove uma data bloqueada' })
+  @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  async deleteBlockedDate(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query('appointmentType') appointmentType?: AppointmentType,
+  ) {
+    const clinicId = user.clinicId;
+    if (!clinicId) {
+      return { error: 'Usuário não está vinculado a uma clínica' };
+    }
+    return this.schedulesService.deleteBlockedDate(clinicId, id, appointmentType);
+  }
+
+  // ==================== UTILITY ENDPOINTS ====================
+
+  @Get('available-slots/:date')
+  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF, UserRole.PATIENT)
+  @ApiOperation({ summary: 'Busca slots disponíveis para uma data' })
+  @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
+  @ApiQuery({ name: 'appointmentTypeId', required: false, description: 'ID do tipo de consulta personalizado' })
+  async getAvailableSlots(
+    @CurrentUser() user: any,
+    @Param('date') dateStr: string,
+    @Query('appointmentType') appointmentType?: AppointmentType,
+    @Query('appointmentTypeId') appointmentTypeId?: string,
+  ) {
+    const clinicId = user.clinicId;
+    if (!clinicId) {
+      return { error: 'Usuário não está vinculado a uma clínica' };
+    }
+    const date = new Date(dateStr);
+    return this.schedulesService.getAvailableSlots(clinicId, date, appointmentType, appointmentTypeId);
+  }
+
+  // ==================== SCHEDULES COM PARÂMETROS DINÂMICOS ====================
+  // IMPORTANTE: Estas rotas com :dayOfWeek devem vir DEPOIS das rotas estáticas
+
   @Get(':dayOfWeek')
   @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
   @ApiOperation({ summary: 'Busca horário de um dia específico' })
@@ -220,99 +320,5 @@ export class SchedulesController {
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
     return this.schedulesService.deleteSchedule(clinicId, dayOfWeek, appointmentType, appointmentTypeId);
-  }
-
-  // ==================== BLOCKED DATES ====================
-
-  @Get('blocked-dates/list')
-  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF, UserRole.PATIENT)
-  @ApiOperation({ summary: 'Lista datas bloqueadas da clínica' })
-  @ApiQuery({ name: 'fromToday', required: false })
-  @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
-  async getBlockedDates(
-    @CurrentUser() user: any,
-    @Query('fromToday') fromToday?: string,
-    @Query('appointmentType') appointmentType?: AppointmentType,
-  ) {
-    const clinicId = user.clinicId;
-    if (!clinicId) {
-      return { error: 'Usuário não está vinculado a uma clínica' };
-    }
-
-    const options: any = {};
-    if (fromToday === 'true') {
-      options.fromDate = new Date();
-    }
-    if (appointmentType) {
-      options.appointmentType = appointmentType;
-    }
-
-    return this.schedulesService.getBlockedDates(clinicId, Object.keys(options).length > 0 ? options : undefined);
-  }
-
-  @Post('blocked-dates')
-  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
-  @ApiOperation({ summary: 'Cria uma data bloqueada' })
-  async createBlockedDate(
-    @CurrentUser() user: any,
-    @Body() dto: CreateBlockedDateDto,
-  ) {
-    const clinicId = user.clinicId;
-    if (!clinicId) {
-      return { error: 'Usuário não está vinculado a uma clínica' };
-    }
-    return this.schedulesService.createBlockedDate(clinicId, dto);
-  }
-
-  @Put('blocked-dates/:id')
-  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
-  @ApiOperation({ summary: 'Atualiza uma data bloqueada' })
-  async updateBlockedDate(
-    @CurrentUser() user: any,
-    @Param('id') id: string,
-    @Body() dto: UpdateBlockedDateDto,
-  ) {
-    const clinicId = user.clinicId;
-    if (!clinicId) {
-      return { error: 'Usuário não está vinculado a uma clínica' };
-    }
-    return this.schedulesService.updateBlockedDate(clinicId, id, dto);
-  }
-
-  @Delete('blocked-dates/:id')
-  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF)
-  @ApiOperation({ summary: 'Remove uma data bloqueada' })
-  @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
-  async deleteBlockedDate(
-    @CurrentUser() user: any,
-    @Param('id') id: string,
-    @Query('appointmentType') appointmentType?: AppointmentType,
-  ) {
-    const clinicId = user.clinicId;
-    if (!clinicId) {
-      return { error: 'Usuário não está vinculado a uma clínica' };
-    }
-    return this.schedulesService.deleteBlockedDate(clinicId, id, appointmentType);
-  }
-
-  // ==================== UTILITY ENDPOINTS ====================
-
-  @Get('available-slots/:date')
-  @Roles(UserRole.CLINIC_ADMIN, UserRole.CLINIC_STAFF, UserRole.PATIENT)
-  @ApiOperation({ summary: 'Busca slots disponíveis para uma data' })
-  @ApiQuery({ name: 'appointmentType', required: false, enum: AppointmentType })
-  @ApiQuery({ name: 'appointmentTypeId', required: false, description: 'ID do tipo de consulta personalizado' })
-  async getAvailableSlots(
-    @CurrentUser() user: any,
-    @Param('date') dateStr: string,
-    @Query('appointmentType') appointmentType?: AppointmentType,
-    @Query('appointmentTypeId') appointmentTypeId?: string,
-  ) {
-    const clinicId = user.clinicId;
-    if (!clinicId) {
-      return { error: 'Usuário não está vinculado a uma clínica' };
-    }
-    const date = new Date(dateStr);
-    return this.schedulesService.getAvailableSlots(clinicId, date, appointmentType, appointmentTypeId);
   }
 }

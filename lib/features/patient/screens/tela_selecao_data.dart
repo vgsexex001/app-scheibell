@@ -19,6 +19,7 @@ class Horario {
 /// Exibida após o usuário escolher o tipo de agendamento
 class TelaSelecaoData extends StatefulWidget {
   final String tipoAgendamento; // 'SPLINT_REMOVAL', 'PHYSIOTHERAPY', 'CONSULTATION' (apiValue do enum)
+  final String? appointmentTypeId; // ID do tipo de consulta personalizado (opcional)
   final String titulo;
   final String disponibilidade;
   final DateTime dataCirurgia;
@@ -26,6 +27,7 @@ class TelaSelecaoData extends StatefulWidget {
   const TelaSelecaoData({
     super.key,
     required this.tipoAgendamento,
+    this.appointmentTypeId,
     required this.titulo,
     required this.disponibilidade,
     required this.dataCirurgia,
@@ -53,6 +55,9 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
 
   // Serviço de disponibilidade
   late AvailabilityService _availabilityService;
+
+  // Consulta pendente de aprovação (se houver)
+  Map<String, dynamic>? _consultaPendente;
 
   // Dias disponíveis no mês
   List<AvailableDay> _diasDisponiveis = [];
@@ -102,6 +107,7 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
       final apiService = context.read<ApiService>();
       _availabilityService = AvailabilityService(apiService);
       _carregarDiasDisponiveis();
+      _verificarConsultaPendente();
     });
   }
 
@@ -119,6 +125,7 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
         year: _mesSelecionado.year,
         month: _mesSelecionado.month,
         appointmentType: widget.tipoAgendamento,
+        appointmentTypeId: widget.appointmentTypeId,
       );
 
       final diasComSlots = dias.where((d) => d.hasAvailableSlots).length;
@@ -140,6 +147,40 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
     }
   }
 
+  /// Verifica se há uma consulta pendente de aprovação do mesmo tipo
+  Future<void> _verificarConsultaPendente() async {
+    // Só verifica para consultas (CONSULTATION)
+    if (widget.tipoAgendamento.toUpperCase() != 'CONSULTATION') {
+      return;
+    }
+
+    try {
+      final apiService = context.read<ApiService>();
+      // Busca agendamentos do paciente
+      final appointments = await apiService.getUpcomingAppointments(limit: 10);
+
+      // Procura por uma consulta pendente do mesmo tipo
+      for (final appointment in appointments) {
+        final status = (appointment['status'] as String?)?.toUpperCase();
+        final type = (appointment['type'] as String?)?.toUpperCase();
+
+        if (status == 'PENDING' && type == widget.tipoAgendamento.toUpperCase()) {
+          if (mounted) {
+            setState(() {
+              _consultaPendente = appointment;
+            });
+          }
+          debugPrint('[SELECAO_DATA] Consulta pendente encontrada: ${appointment['id']}');
+          return;
+        }
+      }
+
+      debugPrint('[SELECAO_DATA] Nenhuma consulta pendente encontrada');
+    } catch (e) {
+      debugPrint('[SELECAO_DATA] Erro ao verificar consulta pendente: $e');
+    }
+  }
+
   /// Carrega os horários disponíveis para a data selecionada
   Future<void> _carregarHorarios(DateTime data) async {
     setState(() {
@@ -157,6 +198,7 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
       final slots = await _availabilityService.getSlotsForDay(
         date: data,
         appointmentType: widget.tipoAgendamento,
+        appointmentTypeId: widget.appointmentTypeId,
         includeOccupied: true, // Mostrar ocupados (desabilitados)
       );
 
@@ -211,6 +253,7 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
         date: _dataSelecionada!,
         time: _horarioSelecionado!,
         type: tipo,
+        appointmentTypeId: widget.appointmentTypeId,
         location: 'Clínica Scheibell',
         description: widget.titulo,
       );
@@ -447,8 +490,8 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Banner de solicitação pendente (apenas para consulta)
-          if (widget.tipoAgendamento == 'consulta') ...[
+          // Banner de solicitação pendente (apenas se houver uma consulta pendente)
+          if (_consultaPendente != null) ...[
             _buildBannerPendente(),
             const SizedBox(height: 16),
           ],
@@ -478,6 +521,18 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
   }
 
   Widget _buildBannerPendente() {
+    // Formata a data da consulta pendente se disponível
+    String dataFormatada = '';
+    if (_consultaPendente != null) {
+      final dateStr = _consultaPendente!['date'] as String?;
+      if (dateStr != null) {
+        try {
+          final date = DateTime.parse(dateStr);
+          dataFormatada = '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+        } catch (_) {}
+      }
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -486,13 +541,13 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: const Color(0xFFFF9800),
-          width: 4,
+          width: 1,
         ),
       ),
       child: Row(
         children: [
           const Icon(
-            Icons.warning_amber_rounded,
+            Icons.schedule,
             color: Color(0xFFFF9800),
             size: 24,
           ),
@@ -500,8 +555,8 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
+              children: [
+                const Text(
                   'Solicitação pendente',
                   style: TextStyle(
                     color: _textoPrimario,
@@ -509,10 +564,12 @@ class _TelaSelecaoDataState extends State<TelaSelecaoData> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  'Última solicitação aguardando aprovação',
-                  style: TextStyle(
+                  dataFormatada.isNotEmpty
+                      ? 'Aguardando aprovação para $dataFormatada'
+                      : 'Aguardando aprovação da clínica',
+                  style: const TextStyle(
                     color: Color(0xFF757575),
                     fontSize: 12,
                     fontWeight: FontWeight.w400,

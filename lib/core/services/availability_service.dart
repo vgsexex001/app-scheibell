@@ -51,10 +51,12 @@ class AvailabilityService {
   /// Retorna os slots de um dia específico
   /// [date] - Data para buscar slots
   /// [appointmentType] - Tipo de atendimento (null = todos os tipos para admin)
+  /// [appointmentTypeId] - ID do tipo de consulta personalizado (UUID)
   /// [includeOccupied] - Se true, inclui slots ocupados (para admin ver tudo)
   Future<List<TimeSlot>> getSlotsForDay({
     required DateTime date,
     String? appointmentType,
+    String? appointmentTypeId,
     bool includeOccupied = true,
   }) async {
     try {
@@ -65,11 +67,12 @@ class AvailabilityService {
       debugPrint('[AVAIL] Date: $date');
       debugPrint('[AVAIL] AppointmentType original: $appointmentType');
       debugPrint('[AVAIL] AppointmentType mapeado: $mappedType');
+      debugPrint('[AVAIL] AppointmentTypeId: $appointmentTypeId');
 
       final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-      debugPrint('[AVAIL] Chamando API: getAvailableSlots($dateStr, appointmentType: $mappedType)');
+      debugPrint('[AVAIL] Chamando API: getAvailableSlots($dateStr, appointmentType: $mappedType, appointmentTypeId: $appointmentTypeId)');
 
-      final response = await _apiService.getAvailableSlots(dateStr, appointmentType: mappedType);
+      final response = await _apiService.getAvailableSlots(dateStr, appointmentType: mappedType, appointmentTypeId: appointmentTypeId);
 
       debugPrint('[AVAIL] Resposta da API:');
       debugPrint('[AVAIL]   available: ${response['available']}');
@@ -153,6 +156,7 @@ class AvailabilityService {
     required int year,
     required int month,
     String? appointmentType,
+    String? appointmentTypeId,
   }) async {
     try {
       // Mapeia o tipo de agendamento para o formato do backend
@@ -162,6 +166,7 @@ class AvailabilityService {
       debugPrint('[AVAIL] Year: $year, Month: $month');
       debugPrint('[AVAIL] AppointmentType original: $appointmentType');
       debugPrint('[AVAIL] AppointmentType mapeado: $mappedType');
+      debugPrint('[AVAIL] AppointmentTypeId: $appointmentTypeId');
 
       final List<AvailableDay> days = [];
       final firstDay = DateTime(year, month, 1);
@@ -171,7 +176,10 @@ class AvailabilityService {
       // Buscar schedules configurados para este tipo
       debugPrint('[AVAIL] Buscando schedules...');
       List<dynamic> schedules;
-      if (mappedType != null) {
+      if (appointmentTypeId != null && appointmentTypeId.isNotEmpty) {
+        debugPrint('[AVAIL] Chamando getClinicSchedulesByAppointmentTypeId($appointmentTypeId)');
+        schedules = await _apiService.getClinicSchedulesByAppointmentTypeId(appointmentTypeId);
+      } else if (mappedType != null) {
         debugPrint('[AVAIL] Chamando getClinicSchedulesByType($mappedType)');
         schedules = await _apiService.getClinicSchedulesByType(mappedType);
       } else {
@@ -184,16 +192,21 @@ class AvailabilityService {
         debugPrint('[AVAIL]   - dayOfWeek: ${s['dayOfWeek']}, isActive: ${s['isActive']}, appointmentType: ${s['appointmentType']}');
       }
 
-      // Buscar datas bloqueadas
-      debugPrint('[AVAIL] Buscando datas bloqueadas...');
-      final blockedDatesResponse = await _apiService.getClinicBlockedDates(
-        fromToday: false,
-        appointmentType: mappedType,
-      );
-      final blockedDates = (blockedDatesResponse['all'] as List<dynamic>? ?? [])
-          .map((d) => DateTime.parse(d['date'].toString().substring(0, 10)))
-          .toSet();
-      debugPrint('[AVAIL] Datas bloqueadas: ${blockedDates.length}');
+      // Buscar datas bloqueadas (não-fatal: se falhar, continua sem bloqueios)
+      Set<DateTime> blockedDates = {};
+      try {
+        debugPrint('[AVAIL] Buscando datas bloqueadas...');
+        final blockedDatesResponse = await _apiService.getClinicBlockedDates(
+          fromToday: false,
+          appointmentType: mappedType,
+        );
+        blockedDates = (blockedDatesResponse['all'] as List<dynamic>? ?? [])
+            .map((d) => DateTime.parse(d['date'].toString().substring(0, 10)))
+            .toSet();
+        debugPrint('[AVAIL] Datas bloqueadas: ${blockedDates.length}');
+      } catch (e) {
+        debugPrint('[AVAIL] Erro ao buscar datas bloqueadas (ignorando): $e');
+      }
 
       // Criar mapa de dias da semana ativos
       final activeDaysOfWeek = <int>{};
