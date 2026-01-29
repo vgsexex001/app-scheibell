@@ -80,7 +80,9 @@ model Clinic {
   patients           Patient[]
   trainingProtocols  TrainingProtocol[]
   users              User[]
-  examTypes          ExamType[]
+  examTypes              ExamType[]
+  clinicAppointmentTypes ClinicAppointmentType[]
+  nurseAnnotations       NurseAnnotation[]
 
   @@index([isActive])
   @@map("clinics")
@@ -134,6 +136,7 @@ model Patient {
   clinic                   Clinic                     @relation(fields: [clinicId], references: [id])
   user                     User?                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   videoProgress            VideoProgress[]
+  nurseAnnotations         NurseAnnotation[]
 
   @@index([clinicId])
   @@index([clinicId, surgeryType])
@@ -141,24 +144,27 @@ model Patient {
 }
 
 model ClinicSchedule {
-  id              String           @id @default(uuid())
-  clinicId        String
-  dayOfWeek       Int
-  openTime        String
-  closeTime       String
-  slotDuration    Int              @default(30)
-  isActive        Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  breakEnd        String?
-  breakStart      String?
-  appointmentType AppointmentType?
-  maxAppointments Int?
-  clinic          Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  id                    String                 @id @default(uuid())
+  clinicId              String
+  dayOfWeek             Int
+  openTime              String
+  closeTime             String
+  slotDuration          Int                    @default(30)
+  isActive              Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  breakEnd              String?
+  breakStart            String?
+  appointmentType       AppointmentType?
+  appointmentTypeId     String?
+  maxAppointments       Int?
+  clinic                Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinicAppointmentType ClinicAppointmentType? @relation(fields: [appointmentTypeId], references: [id])
 
   @@unique([clinicId, dayOfWeek, appointmentType])
   @@index([clinicId])
   @@index([clinicId, appointmentType])
+  @@index([appointmentTypeId])
   @@map("clinic_schedules")
 }
 
@@ -192,29 +198,32 @@ model ClinicBlockedDate {
 }
 
 model Appointment {
-  id          String            @id @default(uuid())
-  patientId   String
-  clinicId    String
-  title       String
-  description String?
-  date        DateTime
-  time        String
-  type        AppointmentType
-  status      AppointmentStatus @default(PENDING)
-  location    String?
-  notes       String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  deletedAt   DateTime?
-  duration    Int               @default(30)
-  clinic      Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id                    String                 @id @default(uuid())
+  patientId             String
+  clinicId              String
+  title                 String
+  description           String?
+  date                  DateTime
+  time                  String
+  type                  AppointmentType
+  status                AppointmentStatus      @default(PENDING)
+  location              String?
+  notes                 String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  deletedAt             DateTime?
+  duration              Int                    @default(30)
+  appointmentTypeId     String?
+  clinic                Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient               Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicAppointmentType ClinicAppointmentType? @relation(fields: [appointmentTypeId], references: [id])
 
   @@index([patientId])
   @@index([patientId, status])
   @@index([patientId, date])
   @@index([status])
   @@index([date, time])
+  @@index([appointmentTypeId])
   @@map("appointments")
 }
 
@@ -299,6 +308,55 @@ model ExamType {
   clinic               Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   @@map("exam_types")
+}
+
+model ClinicAppointmentType {
+  id              String           @id @default(uuid())
+  clinicId        String
+  name            String
+  description     String?
+  icon            String?
+  color           String?
+  defaultDuration Int              @default(30)
+  isActive        Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @default(now())
+  clinic          Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  schedules       ClinicSchedule[]
+  appointments    Appointment[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+  @@index([clinicId, isActive])
+  @@map("clinic_appointment_types")
+}
+
+model NurseAnnotation {
+  id             String    @id @default(uuid())
+  clinicId       String
+  patientId      String
+  examId         String?
+  documentId     String?
+  type           String    @default("GENERAL")
+  title          String
+  annotation     String
+  priority       String    @default("NORMAL")
+  status         String    @default("PENDING")
+  createdAt      DateTime  @default(now())
+  createdBy      String
+  createdByName  String?
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  resolvedByName String?
+  clinic         Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient        Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId])
+  @@index([clinicId, patientId])
+  @@index([clinicId, status])
+  @@index([examId])
+  @@map("nurse_annotations")
 }
 
 model SystemContentTemplate {
