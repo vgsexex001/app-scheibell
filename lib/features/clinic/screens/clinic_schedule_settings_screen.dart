@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/services/api_service.dart';
+import '../models/clinic_appointment_type.dart';
 
 class ClinicScheduleSettingsScreen extends StatefulWidget {
-  const ClinicScheduleSettingsScreen({super.key});
+  final String? preSelectedTypeId;
+
+  const ClinicScheduleSettingsScreen({super.key, this.preSelectedTypeId});
 
   @override
   State<ClinicScheduleSettingsScreen> createState() =>
@@ -11,8 +14,7 @@ class ClinicScheduleSettingsScreen extends StatefulWidget {
 }
 
 class _ClinicScheduleSettingsScreenState
-    extends State<ClinicScheduleSettingsScreen>
-    with SingleTickerProviderStateMixin {
+    extends State<ClinicScheduleSettingsScreen> {
   final ApiService _apiService = ApiService();
 
   // Cores do tema
@@ -26,28 +28,6 @@ class _ClinicScheduleSettingsScreenState
   static const Color _errorColor = Color(0xFFE53935);
   static const Color _borderColor = Color(0xFFE0E0E0);
 
-  // Tipos de atendimento principais
-  static const List<Map<String, dynamic>> _appointmentTypes = [
-    {
-      'type': 'SPLINT_REMOVAL',
-      'name': 'Retirada de Splint',
-      'icon': Icons.healing,
-      'defaultDuration': 30,
-    },
-    {
-      'type': 'CONSULTATION',
-      'name': 'Consulta',
-      'icon': Icons.medical_services,
-      'defaultDuration': 30,
-    },
-    {
-      'type': 'PHYSIOTHERAPY',
-      'name': 'Fisioterapia',
-      'icon': Icons.fitness_center,
-      'defaultDuration': 60,
-    },
-  ];
-
   static const List<String> _weekDays = [
     'Domingo',
     'Segunda-feira',
@@ -58,34 +38,28 @@ class _ClinicScheduleSettingsScreenState
     'Sábado',
   ];
 
-  late TabController _tabController;
   bool _isLoading = true;
   bool _isSaving = false;
   String? _error;
 
-  // Schedules agrupados por tipo
-  Map<String, Map<int, Map<String, dynamic>>> _schedulesByType = {};
+  // Tipos de consulta carregados da API
+  List<ClinicAppointmentType> _appointmentTypes = [];
+
+  // Tipo selecionado no dropdown (null = horário geral)
+  String? _selectedTypeId;
+
+  // Schedules do tipo selecionado
+  Map<int, Map<String, dynamic>> _currentSchedules = {};
 
   // Datas bloqueadas
   List<Map<String, dynamic>> _globalBlockedDates = [];
-  Map<String, List<Map<String, dynamic>>> _blockedDatesByType = {};
+  List<Map<String, dynamic>> _typeBlockedDates = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _appointmentTypes.length, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {});
-      }
-    });
+    _selectedTypeId = widget.preSelectedTypeId;
     _loadData();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -95,38 +69,26 @@ class _ClinicScheduleSettingsScreenState
     });
 
     try {
-      // Carregar schedules de cada tipo
-      for (final typeConfig in _appointmentTypes) {
-        final type = typeConfig['type'] as String;
-        final schedules = await _apiService.getClinicSchedules(appointmentType: type);
+      // Carregar tipos de consulta
+      final typesResponse = await _apiService.get('/appointment-types');
+      final List<dynamic> typesData = typesResponse.data as List<dynamic>;
+      _appointmentTypes = typesData
+          .map((json) => ClinicAppointmentType.fromJson(json as Map<String, dynamic>))
+          .toList();
 
-        _schedulesByType[type] = {};
-        for (final schedule in schedules) {
-          final dayOfWeek = schedule['dayOfWeek'] as int;
-          _schedulesByType[type]![dayOfWeek] = Map<String, dynamic>.from(schedule);
+      // Se tinha um tipo pré-selecionado, verifica se existe
+      if (_selectedTypeId != null) {
+        final exists = _appointmentTypes.any((t) => t.id == _selectedTypeId);
+        if (!exists) {
+          _selectedTypeId = null;
         }
       }
+
+      // Carregar horários do tipo selecionado (ou gerais)
+      await _loadSchedulesForSelectedType();
 
       // Carregar datas bloqueadas
-      final blockedDatesResponse = await _apiService.getClinicBlockedDates();
-
-      // Datas bloqueadas globais
-      final globalList = blockedDatesResponse['global'];
-      if (globalList is List) {
-        _globalBlockedDates = globalList.map((e) => Map<String, dynamic>.from(e)).toList();
-      }
-
-      // Carregar datas bloqueadas por tipo
-      for (final typeConfig in _appointmentTypes) {
-        final type = typeConfig['type'] as String;
-        final typeBlockedResponse = await _apiService.getClinicBlockedDates(appointmentType: type);
-        final byTypeList = typeBlockedResponse['byType'];
-        if (byTypeList is List) {
-          _blockedDatesByType[type] = byTypeList.map((e) => Map<String, dynamic>.from(e)).toList();
-        } else {
-          _blockedDatesByType[type] = [];
-        }
-      }
+      await _loadBlockedDates();
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -141,24 +103,61 @@ class _ClinicScheduleSettingsScreenState
     }
   }
 
-  String get _currentType => _appointmentTypes[_tabController.index]['type'] as String;
+  Future<void> _loadSchedulesForSelectedType() async {
+    List<dynamic> schedules;
 
-  Map<int, Map<String, dynamic>> get _currentSchedules =>
-      _schedulesByType[_currentType] ?? {};
+    if (_selectedTypeId != null) {
+      // Carregar horários do tipo específico
+      schedules = await _apiService.getClinicSchedules(appointmentTypeId: _selectedTypeId);
+    } else {
+      // Carregar horários gerais
+      schedules = await _apiService.getClinicSchedules(generalOnly: true);
+    }
 
-  List<Map<String, dynamic>> get _currentBlockedDates {
-    final byType = _blockedDatesByType[_currentType] ?? [];
-    // Combinar com datas bloqueadas globais
-    final combined = <Map<String, dynamic>>[
-      ..._globalBlockedDates.map((e) => {...e, 'isGlobal': true}),
-      ...byType.map((e) => {...e, 'isGlobal': false}),
-    ];
-    combined.sort((a, b) {
-      final dateA = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime.now();
-      final dateB = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime.now();
-      return dateA.compareTo(dateB);
+    _currentSchedules = {};
+    for (final schedule in schedules) {
+      final dayOfWeek = schedule['dayOfWeek'] as int;
+      _currentSchedules[dayOfWeek] = Map<String, dynamic>.from(schedule);
+    }
+  }
+
+  Future<void> _loadBlockedDates() async {
+    final blockedDatesResponse = await _apiService.getClinicBlockedDates();
+
+    // Datas bloqueadas globais
+    final globalList = blockedDatesResponse['global'];
+    if (globalList is List) {
+      _globalBlockedDates = globalList.map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+
+    // Datas bloqueadas do tipo específico
+    _typeBlockedDates = [];
+    if (_selectedTypeId != null) {
+      // TODO: implementar busca de datas bloqueadas por appointmentTypeId
+    }
+  }
+
+  Future<void> _onTypeChanged(String? newTypeId) async {
+    setState(() {
+      _selectedTypeId = newTypeId;
+      _isLoading = true;
     });
-    return combined;
+
+    try {
+      await _loadSchedulesForSelectedType();
+      await _loadBlockedDates();
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = e.toString();
+        });
+      }
+    }
   }
 
   Future<void> _toggleDay(int dayIndex, bool value) async {
@@ -167,21 +166,30 @@ class _ClinicScheduleSettingsScreenState
     try {
       final result = await _apiService.toggleClinicSchedule(
         dayIndex,
-        appointmentType: _currentType,
+        appointmentTypeId: _selectedTypeId,
       );
 
-      // Atualizar estado local
-      if (_schedulesByType[_currentType] == null) {
-        _schedulesByType[_currentType] = {};
-      }
-      _schedulesByType[_currentType]![dayIndex] = Map<String, dynamic>.from(result);
+      _currentSchedules[dayIndex] = Map<String, dynamic>.from(result);
+
+      // Recarregar tipos para atualizar hasCustomSchedule no dropdown
+      try {
+        final typesResponse = await _apiService.get('/appointment-types');
+        final List<dynamic> typesData = typesResponse.data as List<dynamic>;
+        _appointmentTypes = typesData
+            .map((json) => ClinicAppointmentType.fromJson(json as Map<String, dynamic>))
+            .toList();
+      } catch (_) {}
 
       if (mounted) {
+        final typeName = _selectedTypeId != null
+            ? _appointmentTypes.firstWhere((t) => t.id == _selectedTypeId).name
+            : 'Tipos de Consulta';
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               value
-                  ? '${_weekDays[dayIndex]} ativado para ${_appointmentTypes[_tabController.index]['name']}'
+                  ? '${_weekDays[dayIndex]} ativado para $typeName'
                   : '${_weekDays[dayIndex]} desativado',
             ),
             backgroundColor: _successColor,
@@ -213,15 +221,15 @@ class _ClinicScheduleSettingsScreenState
         dayOfWeek: dayIndex,
         openTime: schedule['openTime'] ?? '08:00',
         closeTime: schedule['closeTime'] ?? '18:00',
-        appointmentType: _currentType,
+        appointmentTypeId: _selectedTypeId,
         breakStart: schedule['breakStart'],
         breakEnd: schedule['breakEnd'],
-        slotDuration: schedule['slotDuration'] ?? _appointmentTypes[_tabController.index]['defaultDuration'],
+        slotDuration: schedule['slotDuration'] ?? 30,
         maxAppointments: schedule['maxAppointments'],
         isActive: schedule['isActive'] ?? true,
       );
 
-      _schedulesByType[_currentType]![dayIndex] = Map<String, dynamic>.from(result);
+      _currentSchedules[dayIndex] = Map<String, dynamic>.from(result);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -250,11 +258,13 @@ class _ClinicScheduleSettingsScreenState
   }
 
   Future<void> _addBlockedDate() async {
+    final typeName = _selectedTypeId != null
+        ? _appointmentTypes.firstWhere((t) => t.id == _selectedTypeId).name
+        : 'Todos os tipos';
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => _BlockedDateDialog(
-        appointmentTypeName: _appointmentTypes[_tabController.index]['name'] as String,
-      ),
+      builder: (context) => _BlockedDateDialog(appointmentTypeName: typeName),
     );
 
     if (result != null) {
@@ -266,10 +276,11 @@ class _ClinicScheduleSettingsScreenState
         await _apiService.createClinicBlockedDate(
           date: date.toIso8601String().split('T')[0],
           reason: result['reason'] as String?,
-          appointmentType: isGlobal ? null : _currentType,
+          // TODO: passar appointmentTypeId quando for específico
+          appointmentType: isGlobal ? null : null,
         );
 
-        await _loadData();
+        await _loadBlockedDates();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -277,12 +288,13 @@ class _ClinicScheduleSettingsScreenState
               content: Text(
                 isGlobal
                     ? 'Data bloqueada para todos os tipos!'
-                    : 'Data bloqueada para ${_appointmentTypes[_tabController.index]['name']}!',
+                    : 'Data bloqueada para $typeName!',
               ),
               backgroundColor: _successColor,
               duration: const Duration(seconds: 2),
             ),
           );
+          setState(() {});
         }
       } catch (e) {
         if (mounted) {
@@ -324,13 +336,8 @@ class _ClinicScheduleSettingsScreenState
     if (confirm == true) {
       setState(() => _isSaving = true);
       try {
-        final isGlobal = blockedDate['isGlobal'] == true;
-        await _apiService.deleteClinicBlockedDate(
-          blockedDate['id'] as String,
-          appointmentType: isGlobal ? null : _currentType,
-        );
-
-        await _loadData();
+        await _apiService.deleteClinicBlockedDate(blockedDate['id'] as String);
+        await _loadBlockedDates();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -340,6 +347,7 @@ class _ClinicScheduleSettingsScreenState
               duration: Duration(seconds: 2),
             ),
           );
+          setState(() {});
         }
       } catch (e) {
         if (mounted) {
@@ -358,6 +366,19 @@ class _ClinicScheduleSettingsScreenState
     }
   }
 
+  List<Map<String, dynamic>> get _currentBlockedDates {
+    final combined = <Map<String, dynamic>>[
+      ..._globalBlockedDates.map((e) => {...e, 'isGlobal': true}),
+      ..._typeBlockedDates.map((e) => {...e, 'isGlobal': false}),
+    ];
+    combined.sort((a, b) {
+      final dateA = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime.now();
+      final dateB = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime.now();
+      return dateA.compareTo(dateB);
+    });
+    return combined;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -370,32 +391,298 @@ class _ClinicScheduleSettingsScreenState
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         elevation: 0,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400, fontSize: 13),
-          tabs: _appointmentTypes.map((type) {
-            return Tab(
-              icon: Icon(type['icon'] as IconData, size: 20),
-              text: type['name'] as String,
-            );
-          }).toList(),
-        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: _primaryDark))
           : _error != null
               ? _buildErrorState()
-              : TabBarView(
-                  controller: _tabController,
-                  children: _appointmentTypes.map((type) {
-                    return _buildTypeContent(type);
-                  }).toList(),
+              : RefreshIndicator(
+                  onRefresh: _loadData,
+                  color: _primaryDark,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Dropdown de tipo de consulta
+                        _buildTypeSelector(),
+                        const SizedBox(height: 20),
+
+                        // Info do tipo selecionado
+                        _buildSelectedTypeInfo(),
+                        const SizedBox(height: 20),
+
+                        // Seção: Dias da Semana
+                        _buildSectionHeader(
+                          icon: Icons.calendar_today,
+                          title: 'Dias de Atendimento',
+                          subtitle: 'Configure os dias e horários de funcionamento',
+                        ),
+                        const SizedBox(height: 12),
+                        ...List.generate(7, (index) => _buildDayCard(index)),
+
+                        const SizedBox(height: 24),
+
+                        // Seção: Datas Bloqueadas
+                        _buildSectionHeader(
+                          icon: Icons.block,
+                          title: 'Datas Bloqueadas',
+                          subtitle: 'Feriados, férias e datas especiais',
+                          trailing: ElevatedButton.icon(
+                            onPressed: _isSaving ? null : _addBlockedDate,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Adicionar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primaryDark,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildBlockedDatesSection(),
+
+                        const SizedBox(height: 32),
+                      ],
+                    ),
+                  ),
                 ),
+    );
+  }
+
+  Widget _buildTypeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Tipo de Consulta',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: _textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Selecione o tipo para configurar os horários',
+            style: TextStyle(
+              fontSize: 12,
+              color: _textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: _borderColor),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: _selectedTypeId,
+                isExpanded: true,
+                hint: const Text('Selecione o tipo'),
+                items: [
+                  // Opção de horário geral
+                  DropdownMenuItem<String?>(
+                    value: null,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: _primaryLight.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.schedule,
+                            color: _primaryDark,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Tipos de Consulta',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Text(
+                                'Padrão para todos os tipos de consulta',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const DropdownMenuItem<String?>(
+                    value: '__divider__',
+                    enabled: false,
+                    child: Divider(),
+                  ),
+                  // Tipos de consulta dinâmicos
+                  ..._appointmentTypes.map((type) {
+                    final hasCustom = type.hasCustomSchedule;
+                    return DropdownMenuItem<String?>(
+                      value: type.id,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: _hexToColor(type.color ?? '#4CAF50').withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              _getIconData(type.icon),
+                              color: _hexToColor(type.color ?? '#4CAF50'),
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      type.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    if (hasCustom) ...[
+                                      const SizedBox(width: 8),
+                                      const Icon(
+                                        Icons.check_circle,
+                                        color: _successColor,
+                                        size: 14,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                Text(
+                                  hasCustom
+                                      ? 'Horário personalizado'
+                                      : 'Usando horário geral',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: hasCustom ? _successColor : _textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ],
+                onChanged: _onTypeChanged,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectedTypeInfo() {
+    final isGeneral = _selectedTypeId == null;
+    final selectedType = isGeneral
+        ? null
+        : _appointmentTypes.firstWhere((t) => t.id == _selectedTypeId);
+
+    final color = isGeneral
+        ? _primaryDark
+        : _hexToColor(selectedType?.color ?? '#4CAF50');
+
+    final icon = isGeneral
+        ? Icons.schedule
+        : _getIconData(selectedType?.icon);
+
+    final name = isGeneral ? 'Horário Geral' : selectedType!.name;
+    final description = isGeneral
+        ? 'Este horário será usado como padrão para todos os tipos de consulta'
+        : 'Configure os horários específicos para "${selectedType!.name}". Duração padrão: ${selectedType.defaultDuration} minutos.';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color, color.withOpacity(0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -428,104 +715,6 @@ class _ClinicScheduleSettingsScreenState
             style: ElevatedButton.styleFrom(
               backgroundColor: _primaryDark,
               foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTypeContent(Map<String, dynamic> typeConfig) {
-    final type = typeConfig['type'] as String;
-    final schedules = _schedulesByType[type] ?? {};
-
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      color: _primaryDark,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header com info do tipo
-            _buildTypeHeader(typeConfig),
-            const SizedBox(height: 20),
-
-            // Seção: Dias da Semana
-            _buildSectionHeader(
-              icon: Icons.calendar_today,
-              title: 'Dias de Atendimento',
-              subtitle: 'Configure os dias e horários de funcionamento',
-            ),
-            const SizedBox(height: 12),
-            ...List.generate(7, (index) => _buildDayCard(index, type, schedules)),
-
-            const SizedBox(height: 24),
-
-            // Seção: Datas Bloqueadas
-            _buildSectionHeader(
-              icon: Icons.block,
-              title: 'Datas Bloqueadas',
-              subtitle: 'Feriados, férias e datas especiais',
-              trailing: ElevatedButton.icon(
-                onPressed: _isSaving ? null : _addBlockedDate,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Adicionar'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryDark,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildBlockedDatesSection(),
-
-            const SizedBox(height: 32),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTypeHeader(Map<String, dynamic> typeConfig) {
-    final name = typeConfig['name'] as String;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_primaryDark, _primaryDark.withOpacity(0.8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              typeConfig['icon'] as IconData,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Text(
-            name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
             ),
           ),
         ],
@@ -577,12 +766,12 @@ class _ClinicScheduleSettingsScreenState
     );
   }
 
-  Widget _buildDayCard(int dayIndex, String type, Map<int, Map<String, dynamic>> schedules) {
-    final schedule = schedules[dayIndex];
+  Widget _buildDayCard(int dayIndex) {
+    final schedule = _currentSchedules[dayIndex];
     final isActive = schedule?['isActive'] == true;
     final openTime = schedule?['openTime']?.toString() ?? '08:00';
     final closeTime = schedule?['closeTime']?.toString() ?? '18:00';
-    final slotDuration = schedule?['slotDuration'] ?? _appointmentTypes[_tabController.index]['defaultDuration'];
+    final slotDuration = schedule?['slotDuration'] ?? 30;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -643,7 +832,7 @@ class _ClinicScheduleSettingsScreenState
                         ),
                         child: Text(
                           '${slotDuration}min',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: _primaryDark,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
@@ -661,20 +850,18 @@ class _ClinicScheduleSettingsScreenState
                     ),
                   ),
           ),
-          children: isActive
-              ? [_buildScheduleEditor(dayIndex, schedule ?? {}, type)]
-              : [],
+          children: isActive ? [_buildScheduleEditor(dayIndex, schedule ?? {})] : [],
         ),
       ),
     );
   }
 
-  Widget _buildScheduleEditor(int dayIndex, Map<String, dynamic> schedule, String type) {
+  Widget _buildScheduleEditor(int dayIndex, Map<String, dynamic> schedule) {
     String openTime = schedule['openTime']?.toString() ?? '08:00';
     String closeTime = schedule['closeTime']?.toString() ?? '18:00';
     String? breakStart = schedule['breakStart']?.toString();
     String? breakEnd = schedule['breakEnd']?.toString();
-    int slotDuration = schedule['slotDuration'] ?? _appointmentTypes[_tabController.index]['defaultDuration'] as int;
+    int slotDuration = schedule['slotDuration'] ?? 30;
 
     return StatefulBuilder(
       builder: (context, setLocalState) {
@@ -839,7 +1026,6 @@ class _ClinicScheduleSettingsScreenState
     required Function(String) onChanged,
     bool optional = false,
   }) {
-    // Guarda o valor original para restaurar se cancelar
     final originalValue = value;
 
     return Column(
@@ -856,7 +1042,6 @@ class _ClinicScheduleSettingsScreenState
         const SizedBox(height: 6),
         InkWell(
           onTap: () async {
-            // Pega o valor atual ou usa 08:00 como padrão para exibição inicial
             final parts = originalValue.isNotEmpty ? originalValue.split(':') : ['08', '00'];
             final initialTime = TimeOfDay(
               hour: int.tryParse(parts[0]) ?? 8,
@@ -877,11 +1062,9 @@ class _ClinicScheduleSettingsScreenState
             );
 
             if (picked != null) {
-              // Usuário clicou em OK - salva o novo horário
               final formatted = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
               onChanged(formatted);
             } else {
-              // Usuário clicou em Cancelar - limpa o campo
               onChanged('');
             }
           },
@@ -974,7 +1157,6 @@ class _ClinicScheduleSettingsScreenState
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                // Badge da data
                 Container(
                   width: 50,
                   height: 50,
@@ -1007,7 +1189,6 @@ class _ClinicScheduleSettingsScreenState
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Informações
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1069,7 +1250,6 @@ class _ClinicScheduleSettingsScreenState
                     ],
                   ),
                 ),
-                // Botão deletar
                 IconButton(
                   icon: const Icon(Icons.delete_outline, color: _errorColor, size: 20),
                   onPressed: _isSaving ? null : () => _deleteBlockedDate(blockedDate),
@@ -1082,6 +1262,41 @@ class _ClinicScheduleSettingsScreenState
         );
       }).toList(),
     );
+  }
+
+  Color _hexToColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) {
+      hex = 'FF$hex';
+    }
+    return Color(int.parse(hex, radix: 16));
+  }
+
+  IconData _getIconData(String? iconName) {
+    switch (iconName) {
+      case 'stethoscope':
+        return Icons.medical_services_outlined;
+      case 'calendar-check':
+        return Icons.event_available_outlined;
+      case 'clipboard-list':
+        return Icons.assignment_outlined;
+      case 'bandage':
+        return Icons.healing_outlined;
+      case 'dumbbell':
+        return Icons.fitness_center_outlined;
+      case 'microscope':
+        return Icons.biotech_outlined;
+      case 'scalpel':
+        return Icons.local_hospital_outlined;
+      case 'heart-pulse':
+        return Icons.monitor_heart_outlined;
+      case 'syringe':
+        return Icons.vaccines_outlined;
+      case 'ellipsis-h':
+        return Icons.more_horiz_outlined;
+      default:
+        return Icons.event_outlined;
+    }
   }
 
   String _capitalizeFirst(String text) {
@@ -1120,7 +1335,6 @@ class _BlockedDateDialogState extends State<_BlockedDateDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Seletor de data
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.calendar_today),
@@ -1142,8 +1356,6 @@ class _BlockedDateDialogState extends State<_BlockedDateDialog> {
               },
             ),
             const Divider(),
-
-            // Motivo
             TextField(
               controller: _reasonController,
               decoration: const InputDecoration(
@@ -1154,8 +1366,6 @@ class _BlockedDateDialogState extends State<_BlockedDateDialog> {
               maxLines: 2,
             ),
             const SizedBox(height: 16),
-
-            // Checkbox global
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Bloquear para todos os tipos'),

@@ -33,17 +33,18 @@ export class AppointmentTypesService {
     // Para cada tipo, verificar se tem schedules personalizados
     const typesWithScheduleInfo = await Promise.all(
       types.map(async (type) => {
-        const scheduleCount = await this.prisma.clinicSchedule.count({
+        const activeScheduleCount = await this.prisma.clinicSchedule.count({
           where: {
             clinicId,
             appointmentTypeId: type.id,
+            isActive: true,
           },
         });
 
         return {
           ...type,
-          hasCustomSchedule: scheduleCount > 0,
-          customScheduleCount: scheduleCount,
+          hasCustomSchedule: activeScheduleCount > 0,
+          customScheduleCount: activeScheduleCount,
         };
       }),
     );
