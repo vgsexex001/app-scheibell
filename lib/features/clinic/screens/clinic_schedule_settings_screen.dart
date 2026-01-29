@@ -77,6 +77,7 @@ class _ClinicScheduleSettingsScreenState
       final List<dynamic> typesData = typesResponse.data as List<dynamic>;
       _appointmentTypes = typesData
           .map((json) => ClinicAppointmentType.fromJson(json as Map<String, dynamic>))
+          .where((type) => type.name.toLowerCase() != 'outro')
           .toList();
 
       // Se tinha um tipo pré-selecionado, verifica se existe
