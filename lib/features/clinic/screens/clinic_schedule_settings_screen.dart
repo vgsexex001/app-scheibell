@@ -51,6 +51,9 @@ class _ClinicScheduleSettingsScreenState
   // Schedules do tipo selecionado
   Map<int, Map<String, dynamic>> _currentSchedules = {};
 
+  // Mapa local: typeId -> tem pelo menos 1 schedule ativo
+  final Map<String, bool> _typeHasActiveSchedule = {};
+
   // Datas bloqueadas
   List<Map<String, dynamic>> _globalBlockedDates = [];
   List<Map<String, dynamic>> _typeBlockedDates = [];
@@ -84,6 +87,9 @@ class _ClinicScheduleSettingsScreenState
         }
       }
 
+      // Verificar quais tipos têm schedules ativos (para o dropdown)
+      await _loadActiveScheduleStatus();
+
       // Carregar horários do tipo selecionado (ou gerais)
       await _loadSchedulesForSelectedType();
 
@@ -99,6 +105,18 @@ class _ClinicScheduleSettingsScreenState
           _isLoading = false;
           _error = e.toString();
         });
+      }
+    }
+  }
+
+  Future<void> _loadActiveScheduleStatus() async {
+    for (final type in _appointmentTypes) {
+      try {
+        final schedules = await _apiService.getClinicSchedulesByAppointmentTypeId(type.id);
+        final hasActive = schedules.any((s) => s['isActive'] == true);
+        _typeHasActiveSchedule[type.id] = hasActive;
+      } catch (_) {
+        _typeHasActiveSchedule[type.id] = false;
       }
     }
   }
@@ -171,14 +189,11 @@ class _ClinicScheduleSettingsScreenState
 
       _currentSchedules[dayIndex] = Map<String, dynamic>.from(result);
 
-      // Recarregar tipos para atualizar hasCustomSchedule no dropdown
-      try {
-        final typesResponse = await _apiService.get('/appointment-types');
-        final List<dynamic> typesData = typesResponse.data as List<dynamic>;
-        _appointmentTypes = typesData
-            .map((json) => ClinicAppointmentType.fromJson(json as Map<String, dynamic>))
-            .toList();
-      } catch (_) {}
+      // Atualizar status local do tipo atual no dropdown
+      if (_selectedTypeId != null) {
+        final hasAnyActive = _currentSchedules.values.any((s) => s['isActive'] == true);
+        _typeHasActiveSchedule[_selectedTypeId!] = hasAnyActive;
+      }
 
       if (mounted) {
         final typeName = _selectedTypeId != null
@@ -545,7 +560,7 @@ class _ClinicScheduleSettingsScreenState
                   ),
                   // Tipos de consulta dinâmicos
                   ..._appointmentTypes.map((type) {
-                    final hasCustom = type.hasCustomSchedule;
+                    final hasCustom = _typeHasActiveSchedule[type.id] ?? false;
                     return DropdownMenuItem<String?>(
                       value: type.id,
                       child: Row(
