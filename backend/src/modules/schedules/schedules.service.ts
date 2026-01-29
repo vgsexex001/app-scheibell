@@ -60,71 +60,6 @@ export class SchedulesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Cria um schedule usando raw SQL para compatibilidade com colunas extras no banco
-   * (startTime/endTime que existem no DB mas não no Prisma schema)
-   */
-  private async createScheduleRaw(data: {
-    clinicId: string;
-    dayOfWeek: number;
-    openTime: string;
-    closeTime: string;
-    slotDuration: number;
-    isActive: boolean;
-    appointmentType?: string | null;
-    appointmentTypeId?: string | null;
-    breakStart?: string | null;
-    breakEnd?: string | null;
-    maxAppointments?: number | null;
-  }) {
-    const id = require('crypto').randomUUID();
-    const now = new Date();
-    const appointmentType = data.appointmentType ?? null;
-    const appointmentTypeId = data.appointmentTypeId ?? null;
-
-    this.logger.log(`createScheduleRaw: id=${id}, clinicId=${data.clinicId}, day=${data.dayOfWeek}, type=${appointmentType}, typeId=${appointmentTypeId}`);
-
-    // Validar appointmentTypeId como UUID se fornecido
-    if (appointmentTypeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appointmentTypeId)) {
-      throw new Error(`Invalid appointmentTypeId format: ${appointmentTypeId}`);
-    }
-
-    // Validar appointmentType como enum válido se fornecido
-    const validTypes = Object.values(AppointmentType);
-    if (appointmentType && !validTypes.includes(appointmentType as AppointmentType)) {
-      throw new Error(`Invalid appointmentType: ${appointmentType}`);
-    }
-
-    // Construir SQL dinâmico para lidar com campos nullable de enum
-    const typeClause = appointmentType
-      ? `'${appointmentType}'::"AppointmentType"`
-      : 'NULL';
-    const typeIdClause = appointmentTypeId
-      ? `'${appointmentTypeId}'::uuid`
-      : 'NULL';
-
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO clinic_schedules (id, "clinicId", "dayOfWeek", "openTime", "closeTime", "startTime", "endTime", "slotDuration", "isActive", "appointmentType", "appointmentTypeId", "breakStart", "breakEnd", "maxAppointments", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${typeClause}, ${typeIdClause}, $10, $11, $12, $13, $14)`,
-      id,
-      data.clinicId,
-      data.dayOfWeek,
-      data.openTime,
-      data.closeTime,
-      data.openTime, // startTime = openTime
-      data.closeTime, // endTime = closeTime
-      data.slotDuration,
-      data.isActive,
-      data.breakStart ?? null,
-      data.breakEnd ?? null,
-      data.maxAppointments ?? null,
-      now,
-      now,
-    );
-
-    return this.prisma.clinicSchedule.findUnique({ where: { id } });
-  }
-
   // ==================== APPOINTMENT TYPES ====================
 
   getAppointmentTypes() {
@@ -321,19 +256,21 @@ export class SchedulesService {
       return schedule;
     }
 
-    // Criar novo usando raw SQL para compatibilidade com colunas extras no banco
-    const schedule = await this.createScheduleRaw({
-      clinicId,
-      dayOfWeek,
-      appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
-      appointmentTypeId: appointmentTypeId ?? null,
-      openTime: dto.openTime,
-      closeTime: dto.closeTime,
-      breakStart: dto.breakStart,
-      breakEnd: dto.breakEnd,
-      slotDuration: dto.slotDuration ?? APPOINTMENT_TYPE_CONFIG[appointmentType ?? AppointmentType.CONSULTATION]?.defaultDuration ?? 30,
-      maxAppointments: dto.maxAppointments,
-      isActive: dto.isActive ?? true,
+    // Criar novo
+    const schedule = await this.prisma.clinicSchedule.create({
+      data: {
+        clinicId,
+        dayOfWeek,
+        appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
+        appointmentTypeId: appointmentTypeId ?? null,
+        openTime: dto.openTime,
+        closeTime: dto.closeTime,
+        breakStart: dto.breakStart,
+        breakEnd: dto.breakEnd,
+        slotDuration: dto.slotDuration ?? APPOINTMENT_TYPE_CONFIG[appointmentType ?? AppointmentType.CONSULTATION]?.defaultDuration ?? 30,
+        maxAppointments: dto.maxAppointments,
+        isActive: dto.isActive ?? true,
+      },
     });
 
     this.logger.log(`Schedule created for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}`);
@@ -403,18 +340,20 @@ export class SchedulesService {
 
         this.logger.log(`toggleSchedule: criando novo schedule, defaultDuration=${defaultDuration}`);
 
-        const schedule = await this.createScheduleRaw({
-          clinicId,
-          dayOfWeek,
-          appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
-          appointmentTypeId: appointmentTypeId ?? null,
-          openTime: '08:00',
-          closeTime: '18:00',
-          slotDuration: defaultDuration,
-          isActive: true,
+        const schedule = await this.prisma.clinicSchedule.create({
+          data: {
+            clinicId,
+            dayOfWeek,
+            appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
+            appointmentTypeId: appointmentTypeId ?? null,
+            openTime: '08:00',
+            closeTime: '18:00',
+            slotDuration: defaultDuration,
+            isActive: true,
+          },
         });
 
-        this.logger.log(`toggleSchedule: schedule criado com id=${schedule?.id}`);
+        this.logger.log(`toggleSchedule: schedule criado com id=${schedule.id}`);
         return schedule;
       }
 
