@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAppointmentDto, UpdateStatusDto } from './dto';
-import { AppointmentStatus, NotificationType, NotificationStatus } from '@prisma/client';
+import { AppointmentStatus, AppointmentType, NotificationType, NotificationStatus } from '@prisma/client';
 import { WebsocketService } from '../../websocket/websocket.service';
 
 @Injectable()
@@ -215,7 +215,7 @@ export class AppointmentsService {
         date: appointmentDate,
         time: dto.time,
         duration: appointmentDuration, // Duração em minutos
-        type: dto.type,
+        type: dto.type || AppointmentType.CONSULTATION,
         appointmentTypeId: dto.appointmentTypeId,
         location: dto.location,
         notes: dto.notes,
