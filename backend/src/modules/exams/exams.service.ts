@@ -355,7 +355,17 @@ export class ExamsService {
     file: Express.Multer.File,
     dto: PatientUploadFileDto,
   ) {
-    this.logger.log(`Patient ${patientId} uploading ${dto.fileType}: ${dto.title}`);
+    this.logger.log(`[UPLOAD] ═══════════════════════════════════════════`);
+    this.logger.log(`[UPLOAD] Início do upload`);
+    this.logger.log(`[UPLOAD] patientId: ${patientId}`);
+    this.logger.log(`[UPLOAD] userId: ${userId}`);
+    this.logger.log(`[UPLOAD] fileType: ${dto.fileType}`);
+    this.logger.log(`[UPLOAD] title: ${dto.title}`);
+    this.logger.log(`[UPLOAD] file.originalname: ${file.originalname}`);
+    this.logger.log(`[UPLOAD] file.mimetype: ${file.mimetype}`);
+    this.logger.log(`[UPLOAD] file.size: ${file.size}`);
+    this.logger.log(`[UPLOAD] file.buffer exists: ${!!file.buffer}`);
+    this.logger.log(`[UPLOAD] file.buffer length: ${file.buffer?.length ?? 'null'}`);
 
     // Gerar nome único para o arquivo
     const ext = file.originalname.split('.').pop() || 'bin';
@@ -363,49 +373,68 @@ export class ExamsService {
 
     // Determinar bucket baseado no tipo
     const bucket = dto.fileType === PatientFileType.EXAM ? 'exam-files' : 'patient-documents';
+    const filePath = `${patientId}/${uniqueFilename}`;
+
+    this.logger.log(`[UPLOAD] bucket: ${bucket}`);
+    this.logger.log(`[UPLOAD] filePath: ${filePath}`);
 
     // Upload para Supabase Storage
     let uploadResult;
     try {
+      this.logger.log(`[UPLOAD] Iniciando upload para storage...`);
       uploadResult = await this.storageService.uploadFile(
         bucket,
-        `${patientId}/${uniqueFilename}`,
+        filePath,
         file.buffer,
         file.mimetype,
       );
+      this.logger.log(`[UPLOAD] Upload OK: ${JSON.stringify(uploadResult)}`);
     } catch (error) {
-      this.logger.error(`Upload failed: ${error.message}`);
-      throw new Error('Falha ao fazer upload do arquivo');
+      this.logger.error(`[UPLOAD] ERRO no storage upload: ${error.message}`);
+      this.logger.error(`[UPLOAD] Stack: ${error.stack}`);
+      throw new Error(`Falha ao fazer upload do arquivo: ${error.message}`);
     }
 
     // Documentos não passam por análise de IA - apenas exames
     const isDocument = dto.fileType === PatientFileType.DOCUMENT;
 
     // Criar registro no banco
-    const exam = await this.prisma.exam.create({
-      data: {
-        patientId,
-        title: dto.title,
-        type: dto.type || 'OUTROS',
-        date: dto.date ? new Date(dto.date) : new Date(),
-        status: ExamStatus.PENDING_REVIEW,
-        fileUrl: uploadResult.publicUrl,
-        fileName: file.originalname,
-        fileSize: file.size,
-        mimeType: file.mimetype,
-        notes: dto.notes,
-        fileType: dto.fileType,
-        aiStatus: isDocument ? AiAnalysisStatus.SKIPPED : AiAnalysisStatus.PENDING,
-        createdByRole: 'PATIENT',
-        createdById: userId,
-      },
-    });
+    this.logger.log(`[UPLOAD] Criando registro no banco...`);
+    let exam;
+    try {
+      exam = await this.prisma.exam.create({
+        data: {
+          patientId,
+          title: dto.title,
+          type: dto.type || 'OUTROS',
+          date: dto.date ? new Date(dto.date) : new Date(),
+          status: ExamStatus.PENDING_REVIEW,
+          fileUrl: uploadResult.publicUrl,
+          fileName: file.originalname,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          notes: dto.notes,
+          fileType: dto.fileType,
+          aiStatus: isDocument ? AiAnalysisStatus.SKIPPED : AiAnalysisStatus.PENDING,
+          createdByRole: 'PATIENT',
+          createdById: userId,
+        },
+      });
+      this.logger.log(`[UPLOAD] Registro criado: ${exam.id}`);
+    } catch (error) {
+      this.logger.error(`[UPLOAD] ERRO ao criar registro no banco: ${error.message}`);
+      this.logger.error(`[UPLOAD] Stack: ${error.stack}`);
+      throw new Error(`Falha ao salvar no banco: ${error.message}`);
+    }
 
     // Disparar análise IA de forma assíncrona (apenas para exames)
     if (!isDocument) {
+      this.logger.log(`[UPLOAD] Disparando análise IA assíncrona...`);
       this.analyzeFileAsync(exam.id, uploadResult.path, file.mimetype, bucket);
     }
 
+    this.logger.log(`[UPLOAD] Upload concluído com sucesso`);
+    this.logger.log(`[UPLOAD] ═══════════════════════════════════════════`);
     return exam;
   }
 

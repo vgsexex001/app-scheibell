@@ -10,6 +10,8 @@ import {
   UseGuards,
   Request,
   BadRequestException,
+  InternalServerErrorException,
+  Logger,
   Patch,
   UseInterceptors,
   UploadedFile,
@@ -49,6 +51,8 @@ interface AuthenticatedRequest extends ExpressRequest {
 @Controller('exams')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ExamsController {
+  private readonly logger = new Logger(ExamsController.name);
+
   constructor(private readonly examsService: ExamsService) {}
 
   private getPatientId(req: AuthenticatedRequest): string {
@@ -146,7 +150,17 @@ export class ExamsController {
     const patientId = this.getPatientId(req);
     const userId = req.user.sub;
 
-    return this.examsService.uploadPatientFile(patientId, userId, file, dto);
+    this.logger.log(`[UPLOAD] Controller recebeu upload de ${req.user.email}, patientId=${patientId}`);
+    this.logger.log(`[UPLOAD] file: ${file?.originalname}, size=${file?.size}, mime=${file?.mimetype}`);
+    this.logger.log(`[UPLOAD] dto: ${JSON.stringify(dto)}`);
+
+    try {
+      return await this.examsService.uploadPatientFile(patientId, userId, file, dto);
+    } catch (error) {
+      this.logger.error(`[UPLOAD] ERRO no controller: ${error.message}`);
+      this.logger.error(`[UPLOAD] Stack: ${error.stack}`);
+      throw new InternalServerErrorException(`Upload falhou: ${error.message}`);
+    }
   }
 
   // DELETE /api/exams/patient/:id - Deletar arquivo próprio
