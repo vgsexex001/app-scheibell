@@ -182,7 +182,7 @@ model ClinicSchedule {
   clinic            Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   clinicAppointmentType ClinicAppointmentType? @relation(fields: [appointmentTypeId], references: [id], onDelete: SetNull)
 
-  @@unique([clinicId, dayOfWeek, appointmentType])
+  @@unique([clinicId, dayOfWeek, appointmentType, appointmentTypeId])
   @@index([clinicId])
   @@index([clinicId, appointmentType])
   @@index([clinicId, appointmentTypeId])
