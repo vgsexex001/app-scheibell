@@ -11,6 +11,7 @@ import {
   UseGuards,
   ParseIntPipe,
   Logger,
+  HttpException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -188,7 +189,19 @@ export class SchedulesController {
     if (!clinicId) {
       return { error: 'Usuário não está vinculado a uma clínica' };
     }
-    return this.schedulesService.toggleSchedule(clinicId, dayOfWeek, appointmentType, appointmentTypeId);
+    try {
+      return await this.schedulesService.toggleSchedule(clinicId, dayOfWeek, appointmentType, appointmentTypeId);
+    } catch (error: any) {
+      throw new HttpException(
+        {
+          statusCode: 500,
+          message: error.message || 'Erro interno ao alternar horário',
+          error: 'Internal Server Error',
+          details: error.code ? `Prisma error ${error.code}: ${JSON.stringify(error.meta)}` : undefined,
+        },
+        500,
+      );
+    }
   }
 
   @Delete(':dayOfWeek')

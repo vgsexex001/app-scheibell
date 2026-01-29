@@ -311,51 +311,66 @@ export class SchedulesService {
   }
 
   async toggleSchedule(clinicId: string, dayOfWeek: number, appointmentType?: AppointmentType, appointmentTypeId?: string) {
-    // Monta o where clause baseado em appointmentTypeId ou appointmentType
-    const whereClause: any = { clinicId, dayOfWeek };
-    if (appointmentTypeId) {
-      whereClause.appointmentTypeId = appointmentTypeId;
-    } else if (appointmentType) {
-      whereClause.appointmentType = appointmentType;
-      whereClause.appointmentTypeId = null;
-    } else {
-      whereClause.appointmentType = null;
-      whereClause.appointmentTypeId = null;
-    }
+    this.logger.log(`toggleSchedule: clinicId=${clinicId}, dayOfWeek=${dayOfWeek}, appointmentType=${appointmentType}, appointmentTypeId=${appointmentTypeId}`);
 
-    const existing = await this.prisma.clinicSchedule.findFirst({
-      where: whereClause,
-    });
+    try {
+      // Monta o where clause baseado em appointmentTypeId ou appointmentType
+      const whereClause: any = { clinicId, dayOfWeek };
+      if (appointmentTypeId) {
+        whereClause.appointmentTypeId = appointmentTypeId;
+      } else if (appointmentType) {
+        whereClause.appointmentType = appointmentType;
+        whereClause.appointmentTypeId = null;
+      } else {
+        whereClause.appointmentType = null;
+        whereClause.appointmentTypeId = null;
+      }
 
-    if (!existing) {
-      // Se não existe, cria com valores padrão ativo
-      const defaultDuration = APPOINTMENT_TYPE_CONFIG[appointmentType ?? AppointmentType.CONSULTATION]?.defaultDuration ?? 30;
+      this.logger.log(`toggleSchedule: whereClause=${JSON.stringify(whereClause)}`);
 
-      const schedule = await this.prisma.clinicSchedule.create({
+      const existing = await this.prisma.clinicSchedule.findFirst({
+        where: whereClause,
+      });
+
+      this.logger.log(`toggleSchedule: existing=${existing ? existing.id : 'null'}`);
+
+      if (!existing) {
+        // Se não existe, cria com valores padrão ativo
+        const defaultDuration = APPOINTMENT_TYPE_CONFIG[appointmentType ?? AppointmentType.CONSULTATION]?.defaultDuration ?? 30;
+
+        this.logger.log(`toggleSchedule: criando novo schedule, defaultDuration=${defaultDuration}`);
+
+        const schedule = await this.prisma.clinicSchedule.create({
+          data: {
+            clinicId,
+            dayOfWeek,
+            appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
+            appointmentTypeId: appointmentTypeId ?? null,
+            openTime: '08:00',
+            closeTime: '18:00',
+            slotDuration: defaultDuration,
+            isActive: true,
+          },
+        });
+        this.logger.log(`toggleSchedule: schedule criado com id=${schedule.id}`);
+        return schedule;
+      }
+
+      const schedule = await this.prisma.clinicSchedule.update({
+        where: { id: existing.id },
         data: {
-          clinicId,
-          dayOfWeek,
-          appointmentType: appointmentTypeId ? null : (appointmentType ?? null),
-          appointmentTypeId: appointmentTypeId ?? null,
-          openTime: '08:00',
-          closeTime: '18:00',
-          slotDuration: defaultDuration,
-          isActive: true,
+          isActive: !existing.isActive,
+          updatedAt: new Date(),
         },
       });
+
+      this.logger.log(`Schedule toggled for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}: ${schedule.isActive}`);
       return schedule;
+    } catch (error: any) {
+      this.logger.error(`toggleSchedule ERRO: ${error.message}`, error.stack);
+      this.logger.error(`toggleSchedule ERRO code: ${error.code}, meta: ${JSON.stringify(error.meta)}`);
+      throw error;
     }
-
-    const schedule = await this.prisma.clinicSchedule.update({
-      where: { id: existing.id },
-      data: {
-        isActive: !existing.isActive,
-        updatedAt: new Date(),
-      },
-    });
-
-    this.logger.log(`Schedule toggled for clinic ${clinicId}, day ${dayOfWeek}, appointmentTypeId=${appointmentTypeId}, type=${appointmentType ?? 'GENERAL'}: ${schedule.isActive}`);
-    return schedule;
   }
 
   async deleteSchedule(clinicId: string, dayOfWeek: number, appointmentType?: AppointmentType, appointmentTypeId?: string) {
