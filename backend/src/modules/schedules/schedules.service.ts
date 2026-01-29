@@ -79,21 +79,42 @@ export class SchedulesService {
   }) {
     const id = require('crypto').randomUUID();
     const now = new Date();
+    const appointmentType = data.appointmentType ?? null;
+    const appointmentTypeId = data.appointmentTypeId ?? null;
+
+    this.logger.log(`createScheduleRaw: id=${id}, clinicId=${data.clinicId}, day=${data.dayOfWeek}, type=${appointmentType}, typeId=${appointmentTypeId}`);
+
+    // Validar appointmentTypeId como UUID se fornecido
+    if (appointmentTypeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appointmentTypeId)) {
+      throw new Error(`Invalid appointmentTypeId format: ${appointmentTypeId}`);
+    }
+
+    // Validar appointmentType como enum válido se fornecido
+    const validTypes = Object.values(AppointmentType);
+    if (appointmentType && !validTypes.includes(appointmentType as AppointmentType)) {
+      throw new Error(`Invalid appointmentType: ${appointmentType}`);
+    }
+
+    // Construir SQL dinâmico para lidar com campos nullable de enum
+    const typeClause = appointmentType
+      ? `'${appointmentType}'::"AppointmentType"`
+      : 'NULL';
+    const typeIdClause = appointmentTypeId
+      ? `'${appointmentTypeId}'::uuid`
+      : 'NULL';
 
     await this.prisma.$executeRawUnsafe(
       `INSERT INTO clinic_schedules (id, "clinicId", "dayOfWeek", "openTime", "closeTime", "startTime", "endTime", "slotDuration", "isActive", "appointmentType", "appointmentTypeId", "breakStart", "breakEnd", "maxAppointments", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::"AppointmentType", $11::uuid, $12, $13, $14, $15, $16)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${typeClause}, ${typeIdClause}, $10, $11, $12, $13, $14)`,
       id,
       data.clinicId,
       data.dayOfWeek,
       data.openTime,
       data.closeTime,
-      data.openTime, // startTime = openTime para compatibilidade
-      data.closeTime, // endTime = closeTime para compatibilidade
+      data.openTime, // startTime = openTime
+      data.closeTime, // endTime = closeTime
       data.slotDuration,
       data.isActive,
-      data.appointmentType ?? null,
-      data.appointmentTypeId ?? null,
       data.breakStart ?? null,
       data.breakEnd ?? null,
       data.maxAppointments ?? null,
