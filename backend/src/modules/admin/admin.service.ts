@@ -53,37 +53,61 @@ export class AdminService {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     // 1. Consultas hoje (CONFIRMED ou COMPLETED)
-    const consultationsToday = await this.prisma.appointment.count({
-      where: {
-        patient: { clinicId },
-        date: {
-          gte: today,
-          lt: tomorrow,
+    let consultationsToday = 0;
+    try {
+      consultationsToday = await this.prisma.appointment.count({
+        where: {
+          patient: { clinicId },
+          date: {
+            gte: today,
+            lt: tomorrow,
+          },
+          status: {
+            in: [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED],
+          },
         },
-        status: {
-          in: [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED],
-        },
-      },
-    });
+      });
+      this.logger.log(`[getDashboardSummary] consultationsToday=${consultationsToday}`);
+    } catch (e) {
+      this.logger.error(`[getDashboardSummary] Erro ao contar consultas hoje: ${e.message}`, e.stack);
+    }
 
     // 2. Consultas pendentes de aprovação
-    const pendingApprovals = await this.prisma.appointment.count({
-      where: {
-        patient: { clinicId },
-        status: AppointmentStatus.PENDING,
-      },
-    });
+    let pendingApprovals = 0;
+    try {
+      pendingApprovals = await this.prisma.appointment.count({
+        where: {
+          patient: { clinicId },
+          status: AppointmentStatus.PENDING,
+        },
+      });
+      this.logger.log(`[getDashboardSummary] pendingApprovals=${pendingApprovals}`);
+    } catch (e) {
+      this.logger.error(`[getDashboardSummary] Erro ao contar pendentes: ${e.message}`, e.stack);
+    }
 
     // 3. Alertas ativos
-    const activeAlerts = await this.prisma.alert.count({
-      where: {
-        clinicId,
-        status: AlertStatus.ACTIVE,
-      },
-    });
+    let activeAlerts = 0;
+    try {
+      activeAlerts = await this.prisma.alert.count({
+        where: {
+          clinicId,
+          status: AlertStatus.ACTIVE,
+        },
+      });
+      this.logger.log(`[getDashboardSummary] activeAlerts=${activeAlerts}`);
+    } catch (e) {
+      this.logger.error(`[getDashboardSummary] Erro ao contar alertas: ${e.message}`, e.stack);
+    }
 
     // 4. Taxa de adesão combinada (50% medicações + 50% treinos)
-    const adherenceRate = await this.calculateCombinedAdherence(clinicId);
+    let adherenceRate = 0;
+    try {
+      adherenceRate = await this.calculateCombinedAdherence(clinicId);
+      this.logger.log(`[getDashboardSummary] adherenceRate=${adherenceRate}`);
+    } catch (e) {
+      this.logger.error(`[getDashboardSummary] Erro ao calcular adesão: ${e.message}`, e.stack);
+    }
 
     return {
       consultationsToday,
@@ -114,45 +138,51 @@ export class AdminService {
     const patientIds = patients.map((p) => p.id);
 
     // Taxa de medicações: logs registrados / esperados
-    // Simplificação: contar logs nos últimos 7 dias / (7 dias * 3 doses/dia estimadas * pacientes)
-    const medicationLogs = await this.prisma.medicationLog.count({
-      where: {
-        patientId: { in: patientIds },
-        takenAt: { gte: sevenDaysAgo },
-      },
-    });
-
-    // Estimativa: 3 medicações/dia * 7 dias * número de pacientes
-    const expectedMedicationLogs = patients.length * 7 * 3;
-    const medicationRate = expectedMedicationLogs > 0
-      ? Math.min(100, (medicationLogs / expectedMedicationLogs) * 100)
-      : 0;
+    let medicationRate = 0;
+    try {
+      const medicationLogs = await this.prisma.medicationLog.count({
+        where: {
+          patientId: { in: patientIds },
+          takenAt: { gte: sevenDaysAgo },
+        },
+      });
+      const expectedMedicationLogs = patients.length * 7 * 3;
+      medicationRate = expectedMedicationLogs > 0
+        ? Math.min(100, (medicationLogs / expectedMedicationLogs) * 100)
+        : 0;
+    } catch (e) {
+      this.logger.error(`[calculateCombinedAdherence] Erro ao contar medicationLogs: ${e.message}`);
+    }
 
     // Taxa de treinos: sessões completadas / total de sessões disponíveis
-    const sessionsCompleted = await this.prisma.patientSessionCompletion.count({
-      where: {
-        patientId: { in: patientIds },
-        completedAt: { gte: sevenDaysAgo },
-      },
-    });
+    let trainingRate = 0;
+    try {
+      const sessionsCompleted = await this.prisma.patientSessionCompletion.count({
+        where: {
+          patientId: { in: patientIds },
+          completedAt: { gte: sevenDaysAgo },
+        },
+      });
 
-    // Buscar total de sessões disponíveis para os pacientes (baseado nas semanas atuais)
-    const totalSessions = await this.prisma.trainingSession.count({
-      where: {
-        week: {
-          progress: {
-            some: {
-              patientId: { in: patientIds },
-              status: { in: ['COMPLETED', 'CURRENT'] },
+      const totalSessions = await this.prisma.trainingSession.count({
+        where: {
+          week: {
+            progress: {
+              some: {
+                patientId: { in: patientIds },
+                status: { in: ['COMPLETED', 'CURRENT'] },
+              },
             },
           },
         },
-      },
-    });
+      });
 
-    const trainingRate = totalSessions > 0
-      ? Math.min(100, (sessionsCompleted / totalSessions) * 100)
-      : 0;
+      trainingRate = totalSessions > 0
+        ? Math.min(100, (sessionsCompleted / totalSessions) * 100)
+        : 0;
+    } catch (e) {
+      this.logger.error(`[calculateCombinedAdherence] Erro ao contar treinos: ${e.message}`);
+    }
 
     // Combinado: 50% medicações + 50% treinos
     return (medicationRate * 0.5) + (trainingRate * 0.5);

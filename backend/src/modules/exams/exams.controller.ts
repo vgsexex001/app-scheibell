@@ -207,6 +207,47 @@ export class ExamsController {
     return this.examsService.getPendingReviewExams(clinicId, query);
   }
 
+  // GET /api/exams/admin/urgent - Listar exames urgentes
+  @Get('admin/urgent')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getUrgentExams(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: PendingReviewQueryDto,
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getUrgentExams(clinicId, query);
+  }
+
+  // GET /api/exams/admin/urgent/count - Contador de exames urgentes (para badge)
+  @Get('admin/urgent/count')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getUrgentExamCount(@Request() req: AuthenticatedRequest) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getUrgentExamCount(clinicId);
+  }
+
+  // GET /api/exams/admin/history - Histórico completo de exames
+  @Get('admin/history')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getExamsHistory(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: { page?: number; limit?: number; urgent?: string; patientId?: string; status?: string; aiStatus?: string },
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getExamsHistory(clinicId, query);
+  }
+
+  // GET /api/exams/admin/ai-analyzed - Exames analisados pela IA (não urgentes)
+  @Get('admin/ai-analyzed')
+  @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
+  async getAiAnalyzedExams(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: { page?: number; limit?: number; patientId?: string },
+  ) {
+    const clinicId = this.getClinicId(req);
+    return this.examsService.getAiAnalyzedExams(clinicId, query);
+  }
+
   // PUT /api/exams/admin/:id/approve - Aprovar exame e liberar para paciente
   @Put('admin/:id/approve')
   @Roles('CLINIC_ADMIN', 'CLINIC_STAFF')
