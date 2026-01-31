@@ -852,7 +852,9 @@ export class ExamsService {
    * Listar arquivos do paciente com filtro por tipo
    */
   async getPatientFiles(patientId: string, query: PatientFilesQueryDto) {
-    const { fileType, page = 1, limit = 20 } = query;
+    const { fileType } = query;
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
 
     const where: Prisma.ExamWhereInput = {
@@ -922,7 +924,8 @@ export class ExamsService {
    * Listar exames urgentes pendentes de revisão médica
    */
   async getUrgentExams(clinicId: string, query: { page?: number; limit?: number }) {
-    const { page = 1, limit = 20 } = query;
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
 
     const where: Prisma.ExamWhereInput = {
@@ -994,7 +997,9 @@ export class ExamsService {
     status?: string;
     aiStatus?: string;
   }) {
-    const { page = 1, limit = 20, urgent, patientId, status, aiStatus } = query;
+    const { urgent, patientId, status, aiStatus } = query;
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
 
     const where: Prisma.ExamWhereInput = {
@@ -1048,7 +1053,9 @@ export class ExamsService {
     limit?: number;
     patientId?: string;
   }) {
-    const { page = 1, limit = 20, patientId } = query;
+    const { patientId } = query;
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
 
     const where: Prisma.ExamWhereInput = {
