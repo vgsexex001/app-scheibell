@@ -28,6 +28,7 @@ import { VideosModule } from './modules/videos/videos.module';
 import { AppointmentTypesModule } from './modules/appointment-types/appointment-types.module';
 import { NurseAnnotationsModule } from './modules/nurse-annotations/nurse-annotations.module';
 import { ExamTypesModule } from './modules/exam-types/exam-types.module';
+import { PhotoValidationModule } from './modules/photo-validation/photo-validation.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { ExamTypesModule } from './modules/exam-types/exam-types.module';
     AppointmentTypesModule,
     NurseAnnotationsModule,
     ExamTypesModule,
+    PhotoValidationModule,
   ],
   controllers: [],
   providers: [
